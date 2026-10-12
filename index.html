@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Headway</title>
+  <meta name="description" content="Chennai Metro next-train timer built on the official CMRL timetable.">
+  <meta name="theme-color" content="#f2f2f7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Headway">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400..600,0..1,0&icon_names=add,alarm,apartment,arrow_downward,bedtime,bookmark,calendar_month,check,chevron_left,chevron_right,close,description,directions_subway,directions_walk,expand_more,flag,flight,keyboard_arrow_down,map,more_horiz,navigation,notifications,notifications_active,route,schedule,search,subway,transfer_within_a_station,unfold_more&display=block">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint so dark mode never flashes light.
+    try {
+      const t = JSON.parse(localStorage.getItem('headway:v2') || '{}').theme;
+      if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+    } catch {}
+  </script>
+</head>
+<body>
+  <main id="view" aria-live="off"></main>
+  <div id="dock" class="dock"></div>
+  <div id="sheet-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

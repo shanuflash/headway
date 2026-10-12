@@ -1,0 +1,10 @@
+{
+  "name": "headway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python serve.py",
+    "start:lan": "python serve.py 5173 0.0.0.0",
+    "test": "node --test tests/*.test.js"
+  }
+}
