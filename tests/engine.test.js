@@ -94,3 +94,26 @@ test('after a line closes, trips that need it start from its first train tomorro
   const wait = (yellow.dep - js[0].legs[js[0].legs.indexOf(yellow) - 1].arr) / 60_000;
   assert.ok(wait < 20, `waits ${wait} min at Vadapalani`);
 });
+
+test('route departures list only direct trains that stop at the destination', () => {
+  const s = new Schedule();
+  const deps = s.routeDepartures('guindy', 'central', at(2026, 10, 12, 8, 38), 6);
+  assert.equal(deps.length, 6);
+  for (const d of deps) {
+    assert.ok(d.arr > d.dep);
+    assert.ok(['blue', 'loop'].includes(d.trip.route));
+  }
+  // Short loops end at Washermenpet, so they never serve stations beyond it.
+  const far = s.routeDepartures('guindy', 'tollgate', at(2026, 10, 12, 8, 38), 6);
+  assert.ok(far.every((d) => d.trip.route === 'blue'));
+  assert.equal(hhmm(s.lastRouteDeparture('guindy', 'central', at(2026, 10, 12, 8, 38)).dep), '23:10');
+});
+
+test('direct destinations group stations by direction of travel', async () => {
+  const { directDestinations } = await import('../js/network.js');
+  const groups = directDestinations('alandur');
+  const towardCentralViaCmbt = groups.find((g) => g.next === 'ekkattuthangal');
+  assert.ok(towardCentralViaCmbt.stations.some((x) => x.id === 'koyambedu'));
+  const south = groups.find((g) => g.next === 'nanganallur-road');
+  assert.deepEqual(south.terminals.sort(), ['airport']);
+});

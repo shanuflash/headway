@@ -1,10 +1,11 @@
 import { Schedule, serviceDateKey, bandAt, hm } from './engine.js';
-import { STATIONS, ROUTES, LINES, PICKER_GROUPS } from './network.js';
+import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations } from './network.js';
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
 
 const MIN = 60_000;
-const STORE = 'headway:v2';
+const STORE = 'headway:v3';
+const ARRIVE_CHOICES = [0, 5, 10, 15, 20, 30];
 const view = document.getElementById('view');
 const dock = document.getElementById('dock');
 const sheetRoot = document.getElementById('sheet-root');
@@ -14,41 +15,43 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 /* ---------- preferences ---------- */
 
 const DEFAULTS = {
-  from: null,
-  to: null,
-  walk: 4,
+  routes: [],
+  expanded: null,
   remindLead: 2,
   lastWarn: true,
   theme: 'auto',
   override: null,
   feedUrl: '',
-  saved: [],
-  recents: [],
   reminder: null,
-  ride: null,
-  rideAlert: true,
 };
+
+const routeId = (from, to) => `${from}>${to}`;
 
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
     if (saved) return { ...DEFAULTS, ...saved };
-    // Carry over a trip from the first version of the app.
-    const v1 = JSON.parse(localStorage.getItem('headway:v1') || 'null');
-    if (v1?.from && v1?.to) return { ...DEFAULTS, from: v1.from, to: v1.to, walk: v1.walk ?? DEFAULTS.walk };
+    // Carry the last trip from the trip-planner versions over as a first route.
+    const old = JSON.parse(localStorage.getItem('headway:v2') || localStorage.getItem('headway:v1') || 'null');
+    if (old?.from && old?.to && STATIONS[old.from] && STATIONS[old.to]) {
+      return { ...DEFAULTS, theme: old.theme ?? 'auto', routes: [{ id: routeId(old.from, old.to), from: old.from, to: old.to, arrive: 0 }] };
+    }
   } catch {}
   return { ...DEFAULTS };
 }
 
 let prefs = load();
-if (prefs.from && !STATIONS[prefs.from]) prefs.from = null;
-if (prefs.to && !STATIONS[prefs.to]) prefs.to = null;
+prefs.routes = prefs.routes.filter((r) => STATIONS[r.from] && STATIONS[r.to]);
 
 function save(patch) {
   prefs = { ...prefs, ...patch };
   try {
     localStorage.setItem(STORE, JSON.stringify(prefs));
   } catch {}
+}
+
+function updateRoute(id, patch) {
+  save({ routes: prefs.routes.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 }
 
 /* ---------- data ---------- */
@@ -62,7 +65,6 @@ function scheduleContext() {
 
 function refreshSchedule() {
   schedule.setContext(scheduleContext());
-  lastCache.clear();
   render({ force: true });
 }
 
@@ -108,90 +110,62 @@ function bigParts(ms) {
 const FORMATS = {
   big: (ms) => bigParts(ms)[0],
   bigUnit: (ms) => bigParts(ms)[1],
-  in: (ms) => (ms < 45_000 ? 'now' : `in ${span(ms)}`),
-  mins: (ms) => `${mins(ms)}`,
-  leave: (ms) => (ms < 30_000 ? 'Leave now' : `Leave in ${span(ms)}`),
+  // Floors like the hero number, so "in 7 min" and a big "7" always agree.
+  in: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `in ${mins(ms)} min` : `in ${span(ms)}`),
 };
 const live = (at, fmt) => `<span data-at="${at}" data-fmt="${fmt}">${FORMATS[fmt](at - Date.now())}</span>`;
 
 const lineName = (line) => LINES[line].name;
-function legLabel(trip) {
-  if (trip.route === 'loop') return `${lineName(trip.line)}, short loop`;
-  if (trip.route === 'inter') return `${lineName(trip.line)} via CMBT`;
-  return lineName(trip.line);
+
+function trainNote(trip) {
+  if (trip.route === 'loop') return 'short loop';
+  if (trip.route === 'inter') return 'via CMBT';
+  return '';
 }
 
-/* ---------- planning helpers ---------- */
-
-const lastCache = new Map();
-
-// Last departure of the service day that still reaches `to`: binary search on start time.
-function lastJourney(from, to, nowMs) {
-  const day = serviceDateKey(nowMs);
-  const key = `${from}|${to}|${day}`;
-  if (lastCache.has(key)) return lastCache.get(key);
-  const first = schedule.plan(from, to, nowMs);
-  let best = first && first.legs[0].trip.serviceDate === day ? first : null;
-  if (best) {
-    let lo = best.dep;
-    let hi = nowMs + 30 * 60 * MIN;
-    while (hi - lo > MIN) {
-      const mid = (lo + hi) / 2;
-      const j = schedule.plan(from, to, mid);
-      if (j && j.legs[0].trip.serviceDate === day) {
-        best = j;
-        lo = Math.max(mid, j.dep);
-      } else hi = mid;
-    }
-  }
-  lastCache.set(key, best);
-  return best;
+/** "Blue Line toward Wimco Nagar Depot", from the routes that serve this pair. */
+function routeLabel(r) {
+  const groups = directDestinations(r.from);
+  const g = groups.find((x) => x.stations.some((s) => s.id === r.to));
+  if (!g) return '';
+  return `${lineName(g.line)} toward ${g.terminals.map(name).join(' or ')}`;
 }
 
-function changesText(j) {
-  const n = j.legs.length - 1;
-  if (!n) return 'Direct';
-  return `${plural(n, 'change')}, at ${j.legs
-    .slice(1)
-    .map((l) => name(l.from))
-    .join(' and ')}`;
+function routeLine(r) {
+  const g = directDestinations(r.from).find((x) => x.stations.some((s) => s.id === r.to));
+  return g?.line ?? 'blue';
 }
 
-/* ---------- model ---------- */
+/* ---------- route model ---------- */
 
-let model = null;
-
-function computeNow(now) {
-  const today = schedule.today(now);
-  const notices = activeNotices(feedState.feed, now);
-  if (!prefs.from || !prefs.to) return { kind: 'empty', today, notices };
-
-  const walk = prefs.walk * MIN;
-  const js = schedule.journeys(prefs.from, prefs.to, now + walk, 4);
-  const board = schedule.departures(prefs.from, now, 80);
-  if (!js.length) return { kind: 'none', today, notices, board };
-
-  const j = js[0];
-  const day = j.legs[0].trip.serviceDate;
-  const closed = day !== today.key;
-  const last = closed ? null : lastJourney(prefs.from, prefs.to, now);
-  const sameDay = js.filter((x) => x.legs[0].trip.serviceDate === day);
+function routeModel(r, now) {
+  const today = schedule.today(now).key;
+  const reach = now + r.arrive * MIN;
+  const deps = schedule.routeDepartures(r.from, r.to, now, 16);
+  const catchable = deps.filter((d) => d.dep >= reach);
+  const missed = deps.filter((d) => d.dep < reach);
+  const next = catchable[0] ?? null;
+  if (!next) return { r, kind: 'none' };
+  const last = schedule.lastRouteDeparture(r.from, r.to, now);
+  const closed = next.trip.serviceDate !== today;
+  const todays = catchable.filter((d) => d.trip.serviceDate === today);
   const late = !closed && !!last && prefs.lastWarn && last.dep - now < 60 * MIN;
-  const nextDay = late ? schedule.plan(prefs.from, prefs.to, last.dep + 1) : null;
-
+  const tomorrow = catchable.find((d) => d.trip.serviceDate !== today) ?? null;
   return {
-    kind: closed ? 'closed' : 'trip',
-    today,
-    notices,
-    j,
-    later: js.slice(1, 4),
-    leaveAt: j.dep - walk,
+    r,
+    kind: closed ? 'closed' : 'open',
+    now,
+    reach,
+    next,
+    more: catchable.slice(1, 3),
+    missed: missed.at(-1) ?? null,
     last,
     late,
-    remaining: sameDay.length < js.length ? sameDay.length : null,
-    nextDay,
-    board,
-    running: board.some((d) => d.trip.serviceDate === today.key),
+    remaining: todays.length,
+    tomorrow,
+    // Still running tonight, but the arrival time is too late for the last train.
+    missedLast: closed && !!last && last.dep >= now,
+    running: !!last && last.dep >= now,
   };
 }
 
@@ -201,210 +175,172 @@ function topbar(right, left = '') {
   return `<div class="topbar">${left}<span class="spacer"></span>${right}</div>`;
 }
 
-function nowScreen(m) {
+function routesScreen(now) {
+  const notices = activeNotices(feedState.feed, now).map(noticeCard).join('');
   const head = `
     ${topbar(`
-      <button class="round" data-act="new-trip" aria-label="New trip">${ic('add')}</button>
+      <button class="round" data-act="add-route" aria-label="Add a route">${ic('add')}</button>
       <button class="round" data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>`)}
-    <div class="title">
-      <h1>Now</h1>
-      <button class="link" data-act="pick" data-field="from">${
-        prefs.from ? `From ${esc(name(prefs.from))}` : 'Set a starting station'
-      }${ic('expand_more')}</button>
-    </div>
-    ${prefs.ride ? rideBanner() : ''}
-    ${m.notices.map(noticeCard).join('')}`;
+    <div class="title"><h1>Routes</h1></div>
+    ${notices}`;
 
-  if (m.kind === 'empty') return head + emptyHero();
-  if (m.kind === 'none') {
-    return `${head}<div class="card hero"><div class="hero-head"><div class="grow"><span class="t">No trains found</span><span class="s">There's no scheduled service between these stations.</span></div></div></div>`;
-  }
-  return head + (m.kind === 'closed' ? closedHero(m) : tripHero(m)) + departures(m);
-}
-
-function rideBanner() {
-  const r = prefs.ride;
-  return `
-    <button class="card row tap" data-act="open-ride" style="border-radius: 20px">
-      <span class="badge-icon">${ic('directions_subway')}</span>
-      <span class="grow"><span class="t strong">On board to ${esc(name(r.legs.at(-1).to))}</span><span class="s">Arriving ${clock(r.arr)}, ${live(r.arr, 'in')}</span></span>
-      ${ic('chevron_right', 'chev')}
-    </button>`;
+  const cards = [];
+  if (preview) cards.push(routeCard(routeModel(preview, now), true, true));
+  if (!prefs.routes.length && !preview) return head + emptyState();
+  const expanded = prefs.routes.find((r) => r.id === prefs.expanded) ?? prefs.routes[0];
+  for (const r of prefs.routes) cards.push(routeCard(routeModel(r, now), r === expanded && !preview, false));
+  return head + cards.join('');
 }
 
 function noticeCard(n) {
   return `<div class="strip info"><span class="grow"><span class="t">${esc(n.title)}</span><span class="s">${esc(n.body ?? '')}</span></span></div>`;
 }
 
-function emptyHero() {
+function emptyState() {
+  const step = (n, text) => `<div class="step"><span class="num-badge">${n}</span><span>${text}</span></div>`;
   return `
-    <div class="card hero" style="padding-top: 20px">
-      <span style="font-size: 28px; line-height: 34px; font-weight: 700">Where to?</span>
-      <span class="sub" style="font-size: 15px; line-height: 20px">Pick where you start and where you're going. Headway shows your next train, when to leave, and the last train home.</span>
-      <button class="search-like" data-act="pick" data-field="to">${ic('search')}Search stations</button>
-      <div class="quick">
-        <button data-act="quick" data-id="central">Chennai Central</button>
-        <button data-act="quick" data-id="airport">Airport</button>
-        <button data-act="quick" data-id="koyambedu">Koyambedu</button>
-        <button data-act="quick" data-id="vadapalani">Vadapalani</button>
+    <div class="card hero" style="padding-top: 20px; gap: 16px">
+      <span style="font-size: 28px; line-height: 34px; font-weight: 700">Add your daily route</span>
+      <span class="sub" style="font-size: 15px; line-height: 20px">Save where you board and where you get off. Headway shows every train you can still make, even when you're coming off a bus.</span>
+      <div class="steps">
+        ${step(1, 'Pick the station you board at')}
+        ${step(2, 'Pick where you get off')}
+        ${step(3, "Tap how soon you'll be there")}
+      </div>
+      <button class="cta" data-act="add-route">${ic('add')}Add a route</button>
+    </div>
+    <span class="section-title">Or check any station</span>
+    <button class="search-like card" style="background: var(--card); height: 52px" data-act="look">${ic('search')}Search stations</button>`;
+}
+
+const reminderOn = (r, dep) => !!(prefs.reminder && prefs.reminder.routeId === r.id && prefs.reminder.dep === dep && !prefs.reminder.fired);
+
+function arriveChips(r) {
+  return `
+    <div class="arrive">
+      <span class="label">I'll be at ${esc(name(r.from))} in</span>
+      <div class="arrive-chips" role="radiogroup" aria-label="When you reach ${esc(name(r.from))}">
+        ${ARRIVE_CHOICES.map(
+          (m) =>
+            `<button role="radio" aria-checked="${r.arrive === m}" data-act="arrive" data-route="${r.id}" data-min="${m}">${m === 0 ? 'Now' : `${m}m`}</button>`,
+        ).join('')}
       </div>
     </div>`;
 }
 
-const reminderOn = (dep) => !!(prefs.reminder && prefs.reminder.dep === dep && !prefs.reminder.fired);
-
-function tripHero(m) {
-  const { j } = m;
-  const leg = j.legs[0];
-  const [n, u] = bigParts(j.dep - Date.now());
-  const on = reminderOn(j.dep);
-  const badge = m.late
-    ? `<span class="tag">${m.remaining && m.remaining <= 2 ? `Last ${plural(m.remaining, 'train')}` : 'Last hour'}</span>`
-    : ic('chevron_right', 'chev');
-  const strip = prefs.walk
-    ? `<span class="grow"><span class="t">${live(m.leaveAt, 'leave')}</span><span class="s">${prefs.walk} min walk to the platform</span></span>`
-    : `<span class="grow"><span class="t">Be on the platform by ${clock(j.dep)}</span><span class="s">Set your walk time in Settings</span></span>`;
-  const chips = m.later
-    .map((x) => {
-      const note = x.legs[0].trip.route === 'loop' ? 'short loop' : `arr ${clock(x.arr)}`;
-      return `<button class="chip" data-act="trip" data-dep="${x.dep}"><span class="t">${clock(x.dep)}</span><span class="s">${note}</span></button>`;
-    })
-    .join('');
-  const footnote =
-    m.late && m.nextDay
-      ? `<div class="note">${ic('bedtime')}<span>After ${clock(m.last.dep)}, the next train to ${esc(name(prefs.to))} is at ${clock(m.nextDay.dep)} tomorrow.</span></div>`
-      : '';
-  return `
-    <div class="card hero">
-      <button class="hero-head" data-act="trip" data-dep="${j.dep}">
-        <span class="badge-icon">${ic('subway')}</span>
-        <span class="grow"><span class="t">To ${esc(name(prefs.to))}</span><span class="s">${esc(legLabel(leg.trip))} toward ${esc(name(leg.trip.dest))}${
-          j.legs.length > 1 ? `, ${plural(j.legs.length - 1, 'change')}` : ''
-        }</span></span>
-        ${badge}
-      </button>
-      <div class="big-row">
-        <div class="big" role="timer"><span class="n" data-at="${j.dep}" data-fmt="big">${n}</span><span class="u" data-at="${j.dep}" data-fmt="bigUnit">${u}</span></div>
-        <div class="big-side"><span class="t">${clock(j.dep)}</span><span class="s">arrives ${clock(j.arr)}</span></div>
-      </div>
-      <div class="strip">
-        ${ic('directions_walk')}
-        ${strip}
-        <button class="strip-btn ${on ? 'on' : ''}" data-act="remind" data-dep="${j.dep}" aria-pressed="${on}" aria-label="Remind me when to leave">${ic('notifications', on ? 'fill' : '')}</button>
-      </div>
-      ${chips ? `<div class="chips">${chips}</div>` : ''}
-      ${footnote}
-    </div>`;
-}
-
-function closedHero(m) {
-  const { j } = m;
-  const remindAt = j.dep - prefs.walk * MIN - prefs.remindLead * MIN;
-  const on = reminderOn(j.dep);
-  // Other lines can still be running when only part of this trip has closed (Yellow Line ends at 21:00).
-  const { running } = m;
-  const yellow = j.legs.some((l) => l.trip.line === 'yellow');
-  const spec = TIMETABLE[schedule.today(j.dep).type]?.yellow;
-  const note =
-    yellow && spec
-      ? `The Yellow Line runs ${spec.first.fwd} to ${spec.last.fwd}.`
-      : 'Trains run from about 05:00 to 23:00.';
-  return `
-    <div class="card hero">
-      <div class="hero-head">
-        <span class="badge-icon muted">${ic('bedtime', 'fill')}</span>
-        <span class="grow"><span class="t">${running ? 'No more trains tonight' : 'Metro is closed'}</span><span class="s">First trip to ${esc(name(prefs.to))}</span></span>
-      </div>
-      <div class="big-row">
-        <div class="big"><span class="n">${clock(j.dep)}</span></div>
-        <div class="big-side"><span class="t">${live(j.dep, 'in')}</span><span class="s">arrives ${clock(j.arr)}</span></div>
-      </div>
-      <button class="wide-btn ${on ? 'on' : ''}" data-act="remind" data-dep="${j.dep}">${ic('alarm')}${
-        on ? `Reminder set for ${clock(remindAt)}` : `Remind me at ${clock(remindAt)}`
-      }</button>
-      <span class="sub" style="font-size: 13px; line-height: 18px; padding: 0 2px">${note}</span>
-    </div>`;
-}
-
-function departures(m) {
-  const groups = new Map();
-  for (const d of m.board) {
-    const k = `${d.trip.route}:${d.trip.dir}`;
-    if (!groups.has(k)) groups.set(k, { trip: d.trip, at: [] });
-    groups.get(k).at.push(d);
-  }
-  if (!groups.size) return '';
-  const today = m.today.key;
-  const overnight = m.kind === 'closed' && !m.running;
-  const rows = [...groups.values()]
-    // While trains are running, a pattern with nothing left today (peak short loops) drops out.
-    .filter((g) => overnight || g.at.some((d) => d.trip.serviceDate === today))
-    .sort((a, b) => a.at[0].at - b.at[0].at)
-    .slice(0, 5)
-    .map((g) => {
-      const todays = g.at.filter((d) => d.trip.serviceDate === today);
-      const warn = m.kind === 'trip' && prefs.lastWarn && todays.length > 0 && todays.length <= 2;
-      const shown = (overnight || !todays.length ? g.at : todays).slice(0, 2);
-      const times =
-        overnight
-          ? shown.map((d) => clock(d.at)).join(', ')
-          : `${shown.map((d) => live(d.at, 'mins')).join(', ')} min`;
-      const sub = warn
-        ? `${legLabel(g.trip)}, last ${clock(todays.at(-1).at)}`
-        : g.trip.route === 'loop'
-          ? 'Short loop'
-          : g.trip.route === 'inter'
-            ? 'Green Line via CMBT'
-            : lineName(g.trip.line);
-      return `
-        <div class="row">
-          <span class="bar ${g.trip.line} ${g.trip.route === 'loop' ? 'dim' : ''}"></span>
-          <span class="grow"><span class="t">${esc(name(g.trip.dest))}</span><span class="s">${esc(sub)}</span></span>
-          <span class="v ${warn ? 'warn' : ''}">${times}</span>
-        </div>`;
-    });
-  if (m.kind === 'trip' && m.last && !m.late) {
-    rows.push(`
-      <div class="row">
-        <span class="bar neutral"></span>
-        <span class="grow"><span class="t">Last train to ${esc(name(prefs.to))}</span><span class="s">Tonight, arrives ${clock(m.last.arr)}</span></span>
-        <span class="v">${clock(m.last.dep)}</span>
-      </div>`);
-  }
-  return `
-    <span class="section-title">${overnight ? 'First trains' : m.late ? 'Last departures' : 'Departures'}</span>
-    <div class="card list">${rows.join('')}</div>`;
-}
-
-/* ----- trips tab ----- */
-
-function tripsScreen() {
-  const now = Date.now();
-  const item = (t) => {
-    const j = schedule.plan(t.from, t.to, now + prefs.walk * MIN);
-    const line = j ? j.legs[0].trip.line : 'blue';
+function routeCard(m, expanded, isPreview) {
+  const { r } = m;
+  const line = routeLine(r);
+  if (!expanded) {
+    const right =
+      m.kind === 'none'
+        ? '<span class="v light">No trains</span>'
+        : `<span class="col-end"><span class="v">${clock(m.next.dep)}</span><span class="s">${
+            m.kind === 'closed' ? 'tomorrow' : live(m.next.dep, 'in')
+          }</span></span>`;
     return `
-      <button class="row tap" data-act="use-trip" data-from="${t.from}" data-to="${t.to}">
-        <span class="bar ${line}"></span>
-        <span class="grow"><span class="t">${esc(name(t.to))}</span><span class="s">From ${esc(name(t.from))}${
-          j ? `, ${esc(changesText(j).toLowerCase())}` : ''
-        }</span></span>
-        <span class="v">${j ? `${live(j.dep, 'mins')} min` : ''}</span>
-      </button>`;
-  };
-  const valid = (t) => STATIONS[t.from] && STATIONS[t.to];
-  const saved = prefs.saved.filter(valid);
-  const recents = prefs.recents.filter((t) => valid(t) && !saved.some((s) => s.from === t.from && s.to === t.to));
-  return `
-    ${topbar(`<button class="round" data-act="new-trip" aria-label="New trip">${ic('add')}</button>`)}
-    <div class="title"><h1>Trips</h1></div>
-    <span class="section-title">Saved</span>
-    ${
-      saved.length
-        ? `<div class="card list">${saved.map(item).join('')}</div>`
-        : `<div class="card empty">Save a trip from its detail screen and it shows up here with its next train.</div>`
+      <div class="card route compact">
+        <div class="route-head">
+          <span class="bar ${line}"></span>
+          <button class="grow" data-act="expand" data-route="${r.id}">
+            <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
+            <span class="s">${esc(routeLabel(r))}</span>
+          </button>
+          ${right}
+        </div>
+      </div>`;
+  }
+
+  const head = `
+    <div class="route-head">
+      <span class="bar ${line}"></span>
+      <button class="grow" data-act="expand" data-route="${r.id}">
+        <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
+        <span class="s">${esc(routeLabel(r))}</span>
+      </button>
+      ${
+        isPreview
+          ? `<button class="mini" data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
+          : m.late
+            ? `<span class="tag">${m.remaining <= 2 ? `Last ${plural(m.remaining, 'train')}` : 'Last hour'}</span>`
+            : `<button class="mini" data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_horiz')}</button>`
+      }
+    </div>`;
+
+  let body = '';
+  if (m.kind === 'none') {
+    body = `<div class="sub" style="font-size: 15px">No direct trains between these stations.</div>`;
+  } else if (m.kind === 'closed') {
+    const title = m.missedLast
+      ? `You'll miss the last train at ${clock(m.last.dep)}`
+      : m.running
+        ? 'No more trains tonight'
+        : 'Metro is closed';
+    const on = reminderOn(r, m.next.dep);
+    const remindAt = m.next.dep - (r.arrive + prefs.remindLead) * MIN;
+    body = `
+      ${arriveChips(r)}
+      <div class="closed-row">${ic('bedtime', 'fill')}<span>${esc(title)}</span></div>
+      <div class="big-row">
+        <div class="big"><span class="n">${clock(m.next.dep)}</span></div>
+        <div class="big-side"><span class="t">${live(m.next.dep, 'in')}</span><span class="s">first train, arrives ${clock(m.next.arr)}</span></div>
+      </div>
+      <button class="wide-btn ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${m.next.dep}">${ic('alarm')}${
+        on ? `Reminder set for ${clock(remindAt)}` : `Remind me at ${clock(remindAt)}`
+      }</button>`;
+  } else {
+    const [n, u] = bigParts(m.next.dep - m.now);
+    const wait = Math.round((m.next.dep - m.reach) / MIN);
+    const on = reminderOn(r, m.next.dep);
+    const note = trainNote(m.next.trip);
+    const waitTitle = r.arrive === 0 ? `Leaves ${live(m.next.dep, 'in')}` : wait < 1 ? 'It leaves as you get there' : `You'll wait ${wait} min`;
+    const waitSub =
+      r.arrive === 0
+        ? `Tap when you'll get there to skip trains you can't make.${note ? ` This one is a ${note}.` : ''}`
+        : `Reach the platform by ${clock(m.reach)}.${note ? ` ${note[0].toUpperCase()}${note.slice(1)}.` : ''}`;
+    const rows = m.more.map((d) => {
+      const w = Math.round((d.dep - m.reach) / MIN);
+      const extra = trainNote(d.trip);
+      const isLast = m.last && d.dep === m.last.dep;
+      return `<div class="train-row"><span class="time">${clock(d.dep)}</span><span class="note">${
+        isLast ? 'last train, ' : extra ? `${extra}, ` : ''
+      }arrives ${clock(d.arr)}</span><span class="right ${isLast ? 'warn' : ''}">${r.arrive ? `wait ${w} min` : live(d.dep, 'in')}</span></div>`;
+    });
+    if (m.missed && r.arrive) {
+      const by = Math.max(1, Math.round((m.reach - m.missed.dep) / MIN));
+      rows.push(`<div class="train-row missed"><span class="time">${clock(m.missed.dep)}</span><span class="note">leaves ${by} min before you get there</span><span class="right">missed</span></div>`);
     }
-    ${recents.length ? `<span class="section-title">Recent</span><div class="card list">${recents.slice(0, 6).map(item).join('')}</div>` : ''}`;
+    const footnote =
+      m.late && m.tomorrow
+        ? `<div class="note">${ic('bedtime')}<span>After ${clock(m.last.dep)}, the next train to ${esc(name(r.to))} is at ${clock(m.tomorrow.dep)} tomorrow.</span></div>`
+        : '';
+    body = `
+      ${arriveChips(r)}
+      <div class="big-row">
+        <div class="catch">
+          <span class="label tint">Catch the ${clock(m.next.dep)}</span>
+          <div class="big"><span class="n" data-at="${m.next.dep}" data-fmt="big">${n}</span><span class="u" data-at="${m.next.dep}" data-fmt="bigUnit">${u}</span></div>
+        </div>
+        <div class="big-side"><span class="t">${clock(m.next.dep)}</span><span class="s">arrives ${clock(m.next.arr)}</span></div>
+      </div>
+      <div class="strip info-strip">
+        ${ic('hourglass_top')}
+        <span class="grow"><span class="t">${waitTitle}</span><span class="s">${esc(waitSub)}</span></span>
+        <button class="strip-btn ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${m.next.dep}" aria-pressed="${on}" aria-label="Remind me before this train">${ic(
+          'notifications',
+          on ? 'fill' : '',
+        )}</button>
+      </div>
+      ${rows.length ? `<div class="train-list">${rows.join('')}</div>` : ''}
+      ${footnote}`;
+  }
+
+  return `
+    <div class="card hero route">
+      ${head}
+      ${body}
+      ${isPreview ? `<button class="cta" data-act="save-preview">${ic('add')}Save this route</button>` : ''}
+    </div>`;
 }
 
 /* ----- lines tab ----- */
@@ -452,169 +388,6 @@ function linesScreen() {
     }Source: <a href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener">CMRL timetable</a>, ${TIMETABLE_SOURCE.published}.</p>`;
 }
 
-/* ----- trip detail ----- */
-
-let tripDep = null;
-
-function tripJourneys() {
-  return schedule.journeys(prefs.from, prefs.to, Date.now() + prefs.walk * MIN, 4);
-}
-
-function selectedJourney() {
-  const js = tripJourneys();
-  return js.find((x) => x.dep === tripDep) ?? js[0] ?? null;
-}
-
-function tripScreen() {
-  const j = selectedJourney();
-  const isSaved = prefs.saved.some((t) => t.from === prefs.from && t.to === prefs.to);
-  const head = topbar(
-    `<button class="round ${isSaved ? 'on' : ''}" data-act="save-trip" aria-pressed="${isSaved}" aria-label="${
-      isSaved ? 'Remove from saved' : 'Save trip'
-    }">${ic('bookmark', isSaved ? 'fill' : '')}</button>`,
-    `<button class="round" data-act="back" aria-label="Back">${ic('chevron_left')}</button>`,
-  );
-  if (!j) return `${head}<div class="card empty">No upcoming trains for this trip.</div>`;
-
-  const [n, u] = bigParts(j.dep - Date.now());
-  const leaveAt = j.dep - prefs.walk * MIN;
-  const on = reminderOn(j.dep);
-  const parts = [];
-  const steps = [];
-  j.legs.forEach((leg, i) => {
-    if (i > 0) {
-      const prev = j.legs[i - 1];
-      const wait = (leg.dep - prev.arr) / MIN;
-      const walkT = STATIONS[leg.from].transfer ?? 4;
-      const spare = Math.round(wait) - walkT;
-      parts.push(`<span class="wait" style="flex: ${wait}"></span>`);
-      steps.push(`
-        <div class="row walk">${ic('directions_walk')}<span class="grow">Change at ${esc(name(leg.from))}, ${walkT} min walk${
-          spare > 0 ? `, ${spare} min spare` : ''
-        }</span></div>`);
-    }
-    parts.push(`<span class="${leg.trip.line}" style="flex: ${(leg.arr - leg.dep) / MIN}"></span>`);
-    const stops = leg.stops.length - 1;
-    const detail = leg.trip.line === 'yellow' && stops === 1 ? `non-stop, ${span(leg.arr - leg.dep)}` : plural(stops, 'stop');
-    steps.push(`
-      <div class="row">
-        <span class="bar ${leg.trip.line}"></span>
-        <span class="grow"><span class="t">${esc(lineName(leg.trip.line))} to ${esc(name(leg.to))}</span><span class="s">Toward ${esc(name(leg.trip.dest))}, ${detail}</span></span>
-        <span class="v">${clock(leg.dep)}</span>
-      </div>`);
-  });
-  steps.push(`
-    <div class="row">
-      <span class="bar neutral"></span>
-      <span class="grow"><span class="t strong">Arrive at ${esc(name(prefs.to))}</span><span class="s">${span(j.arr - j.dep)} from the platform</span></span>
-      <span class="v">${clock(j.arr)}</span>
-    </div>`);
-
-  return `
-    ${head}
-    <div class="card hero">
-      <div class="hero-head">
-        <span class="badge-icon">${ic('route')}</span>
-        <span class="grow"><span class="t">To ${esc(name(prefs.to))}</span><span class="s">From ${esc(name(prefs.from))}, ${esc(changesText(j).toLowerCase())}</span></span>
-      </div>
-      <div class="big-row">
-        <div class="big"><span class="n" data-at="${j.dep}" data-fmt="big">${n}</span><span class="u" data-at="${j.dep}" data-fmt="bigUnit">${u}</span></div>
-        <div class="big-side"><span class="t">${clock(j.dep)}</span><span class="s">arrives ${clock(j.arr)}</span></div>
-      </div>
-      <div class="segbar" aria-hidden="true">${parts.join('')}</div>
-      <div class="strip">
-        ${ic('directions_walk')}
-        <span class="grow"><span class="t">${live(leaveAt, 'leave')}</span><span class="s">${prefs.walk} min walk to the platform</span></span>
-        <button class="strip-btn ${on ? 'on' : ''}" data-act="remind" data-dep="${j.dep}" aria-pressed="${on}" aria-label="Remind me when to leave">${ic('notifications', on ? 'fill' : '')}</button>
-      </div>
-    </div>
-    <span class="section-title">Steps</span>
-    <div class="card list">${steps.join('')}</div>`;
-}
-
-/* ----- ride ----- */
-
-function rideStops(ride) {
-  const out = [];
-  ride.legs.forEach((leg, li) => {
-    leg.stops.forEach((s, si) => {
-      if (li > 0 && si === 0) return;
-      out.push({ ...s, line: leg.line, change: li < ride.legs.length - 1 && si === leg.stops.length - 1 });
-    });
-  });
-  return out;
-}
-
-function rideScreen(now) {
-  const ride = prefs.ride;
-  if (!ride) return tripScreen();
-  const stops = rideStops(ride);
-  let idx = stops.findIndex((s) => s.at > now);
-  if (idx === -1) idx = stops.length - 1;
-  if (idx < 1) idx = 1;
-  const next = stops[idx];
-  const waiting = now < ride.dep;
-  const done = stops.slice(1).filter((s) => s.at <= now).length;
-  const left = stops.length - 1 - done;
-  const segs = stops
-    .slice(1)
-    .map((s, i) => {
-      const a = stops[i].at;
-      if (now >= s.at) return '<span class="done"></span>';
-      if (now > a) return `<span class="part" style="--p: ${Math.round(((now - a) / (s.at - a)) * 100)}%"></span>`;
-      return '<span></span>';
-    })
-    .join('');
-  const [n, u] = bigParts(ride.arr - now);
-  const upcoming = waiting ? stops.slice(1, -1) : stops.slice(idx + 1, -1);
-  const shown = upcoming.slice(0, 3);
-  const first = ride.legs[0];
-
-  const nextLine = waiting
-    ? `Departs ${esc(name(first.from))}`
-    : next.change
-      ? `Change at ${esc(name(next.s))}`
-      : `Next: ${esc(name(next.s))}`;
-
-  return `
-    ${topbar(
-      `<button class="round pill" data-act="end-ride">End trip</button>`,
-      `<button class="round" data-act="back" aria-label="Minimise">${ic('keyboard_arrow_down')}</button>`,
-    )}
-    <div class="title"><h1>On board</h1><span class="sub">${esc(lineName(first.line))} toward ${esc(name(first.dest))}</span></div>
-    <div class="card hero">
-      <div class="hero-head">
-        <span class="badge-icon">${ic('flag')}</span>
-        <span class="grow"><span class="t">Get off at ${esc(name(ride.legs.at(-1).to))}</span><span class="s">${plural(left, 'stop')} to go</span></span>
-      </div>
-      <div class="big-row">
-        <div class="big"><span class="n" data-at="${ride.arr}" data-fmt="big">${n}</span><span class="u" data-at="${ride.arr}" data-fmt="bigUnit">${u}</span></div>
-        <div class="big-side"><span class="t">${clock(ride.arr)}</span><span class="s">arrival</span></div>
-      </div>
-      <div class="stops-progress" style="grid-template-columns: repeat(${stops.length - 1}, minmax(0, 1fr))" role="img" aria-label="${done} of ${stops.length - 1} stops done">${segs}</div>
-      <div class="strip info">
-        ${ic(waiting ? 'schedule' : next.change ? 'transfer_within_a_station' : 'arrow_downward')}
-        <span class="grow"><span class="t">${nextLine}</span></span>
-        <span class="t">${live(waiting ? ride.dep : next.at, 'in')}</span>
-      </div>
-    </div>
-    ${
-      shown.length
-        ? `<span class="section-title">Coming up</span>
-      <div class="card list">
-        ${shown
-          .map(
-            (s) => `<div class="row plain"><span class="grow"><span class="t">${esc(name(s.s))}</span></span>${
-              s.change ? `<span class="pill-tag ${s.line}">Change</span>` : ''
-            }<span class="v light">${clock(s.at)}</span></div>`,
-          )
-          .join('')}
-        ${upcoming.length > 3 ? `<div class="row plain"><span class="grow"><span class="t sub">${plural(upcoming.length - 3, 'more stop')}</span></span></div>` : ''}
-      </div>`
-        : ''
-    }`;
-}
-
 /* ----- settings ----- */
 
 function settingsScreen() {
@@ -650,16 +423,11 @@ function settingsScreen() {
     <p class="footnote">Auto follows the calendar and public holidays (${esc(auto.reason)}). Pick Sunday or holiday if CMRL announces it for today.</p>
 
     <div class="card list">
-      <div class="row icon" style="padding-right: 8px">
-        <span class="icon-tile" style="background: #ff9500">${ic('directions_walk')}</span>
-        <span class="grow"><span class="t">Walk to platform</span></span>
-        <span class="stepper"><button data-act="walk" data-d="-1" aria-label="Less">−</button><span class="v" id="walk-v">${prefs.walk} min</span><button data-act="walk" data-d="1" aria-label="More">+</button></span>
-      </div>
       <div class="row icon">
         <span class="icon-tile" style="background: #ff3b30">${ic('notifications')}</span>
-        <span class="grow"><span class="t">Leave reminder</span></span>
-        ${select('lead', 'Leave reminder', String(prefs.remindLead), [
-          ['0', 'On time'],
+        <span class="grow"><span class="t">Reminder</span></span>
+        ${select('lead', 'Reminder', String(prefs.remindLead), [
+          ['0', 'When to set off'],
           ['1', '1 min early'],
           ['2', '2 min early'],
           ['5', '5 min early'],
@@ -671,7 +439,7 @@ function settingsScreen() {
         <button class="switch" role="switch" aria-checked="${prefs.lastWarn}" data-act="last-warn" aria-label="Last train warning"><i></i></button>
       </div>
     </div>
-    <p class="footnote">Trains you can't reach in time are skipped. The warning shows in the last hour before your last train.</p>
+    <p class="footnote">Reminders count back from the train, minus the time you said you'll take to get to the station. The warning shows in the last hour before your last train.</p>
 
     <div class="card hero" style="gap: 12px">
       <span>Appearance</span>
@@ -704,35 +472,22 @@ function settingsScreen() {
 let dockMode = '';
 
 function renderDock(screen) {
-  const mode = ['trip', 'ride', 'settings'].includes(screen) ? screen : 'tabs';
+  const mode = screen === 'settings' ? 'none' : 'tabs';
   if (mode !== dockMode) {
     dockMode = mode;
-    if (mode === 'trip') {
-      dock.innerHTML = `
-        <button class="primary" data-act="start-ride">${ic('navigation')}Start trip</button>
-        <button class="orb glass" data-act="later" aria-label="Show the next train">${ic('schedule')}</button>`;
-    } else if (mode === 'ride') {
-      dock.innerHTML = `
-        <div class="bar-row glass">
-          ${ic('notifications_active', 'fill')}
-          <label for="ride-alert">Alert one stop before</label>
-          <button class="switch" id="ride-alert" role="switch" aria-checked="${prefs.rideAlert}" data-act="ride-alert"><i></i></button>
-        </div>`;
-    } else if (mode === 'settings') {
-      dock.innerHTML = '';
-    } else {
-      dock.innerHTML = `
-        <nav class="tabs glass" aria-label="Sections">
-          <span class="tab-pill"></span>
-          <a class="tab" href="#now" data-tab="now">${ic('schedule')}Now</a>
-          <a class="tab" href="#trips" data-tab="trips">${ic('route')}Trips</a>
-          <a class="tab" href="#lines" data-tab="lines">${ic('map')}Lines</a>
-        </nav>
-        <button class="orb glass" data-act="new-trip" aria-label="Search stations">${ic('search')}</button>`;
-    }
+    dock.innerHTML =
+      mode === 'none'
+        ? ''
+        : `
+      <nav class="tabs glass two" aria-label="Sections">
+        <span class="tab-pill"></span>
+        <a class="tab" href="#routes" data-tab="routes">${ic('commute')}Routes</a>
+        <a class="tab" href="#lines" data-tab="lines">${ic('map')}Lines</a>
+      </nav>
+      <button class="orb glass" data-act="look" aria-label="Check any station">${ic('search')}</button>`;
   }
   if (mode === 'tabs') {
-    const i = Math.max(0, ['now', 'trips', 'lines'].indexOf(nav.tab));
+    const i = nav.tab === 'lines' ? 1 : 0;
     dock.querySelector('.tab-pill').style.transform = `translateX(${i * 100}%)`;
     dock.querySelectorAll('.tab').forEach((t) => {
       if (t.dataset.tab === nav.tab) t.setAttribute('aria-current', 'page');
@@ -743,29 +498,32 @@ function renderDock(screen) {
 
 /* ---------- navigation + render ---------- */
 
-const nav = { tab: 'now', stack: [] };
+const nav = { tab: 'routes', stack: [] };
 const screenNow = () => nav.stack.at(-1) ?? nav.tab;
-
+let preview = null;
+let nextChange = Infinity;
 let lastKey = '';
 let lastRender = 0;
 
 function build(now) {
   const screen = screenNow();
-  model = null;
-  if (screen === 'now') {
-    model = computeNow(now);
-    return nowScreen(model);
+  if (screen === 'routes') {
+    // Re-render when a train leaves or stops being catchable.
+    nextChange = Infinity;
+    for (const r of [...prefs.routes, ...(preview ? [preview] : [])]) {
+      const m = routeModel(r, now);
+      if (m.next) nextChange = Math.min(nextChange, m.next.dep - r.arrive * MIN, m.next.dep);
+    }
+    return routesScreen(now);
   }
-  if (screen === 'trips') return tripsScreen();
+  nextChange = Infinity;
   if (screen === 'lines') return linesScreen();
-  if (screen === 'trip') return tripScreen();
-  if (screen === 'ride') return rideScreen(now);
   if (screen === 'settings') return settingsScreen();
   return '';
 }
 
 // Live countdown text is excluded from the diff, so a ticking clock never rebuilds the DOM.
-const stableKey = (html) => html.replace(/(data-at="\d+" data-fmt="\w+">)[^<]*/g, '$1').replace(/--p: \d+%/g, '');
+const stableKey = (html) => html.replace(/(data-at="\d+" data-fmt="\w+">)[^<]*/g, '$1');
 
 function render({ force = false, animate = false } = {}) {
   const now = Date.now();
@@ -827,14 +585,7 @@ function switchTab(tab) {
 
 function tick() {
   const now = Date.now();
-  const screen = screenNow();
-  if (
-    now - lastRender > 30_000 ||
-    (screen === 'ride' && now - lastRender > 5_000) ||
-    (model?.j && now >= model.j.dep)
-  ) {
-    render();
-  }
+  if (now - lastRender > 15_000 || now >= nextChange) render();
   for (const el of view.querySelectorAll('[data-at]')) {
     const text = FORMATS[el.dataset.fmt](Number(el.dataset.at) - now);
     if (el.textContent === text) continue;
@@ -846,7 +597,6 @@ function tick() {
     }
   }
   checkReminder(now);
-  if (prefs.ride) rideAlerts(now);
 }
 
 function startClock() {
@@ -885,15 +635,16 @@ async function notify(title, body) {
 }
 
 function checkReminder(now) {
-  const r = prefs.reminder;
-  if (!r || r.fired || now < r.at) return;
-  save({ reminder: { ...r, fired: true } });
-  notify(prefs.walk ? 'Time to leave' : 'Train soon', `${clock(r.dep)} from ${name(r.from)} to ${name(r.to)}`);
+  const rem = prefs.reminder;
+  if (!rem || rem.fired || now < rem.at) return;
+  save({ reminder: { ...rem, fired: true } });
+  const r = prefs.routes.find((x) => x.id === rem.routeId);
+  notify(`Catch the ${clock(rem.dep)}`, r ? `${name(r.from)} to ${name(r.to)}. Head to the platform now.` : 'Head to the platform now.');
   render({ force: true });
 }
 
-async function toggleReminder(dep) {
-  if (reminderOn(dep)) {
+async function toggleReminder(r, dep) {
+  if (reminderOn(r, dep)) {
     save({ reminder: null });
     toast('Reminder off');
     render({ force: true });
@@ -904,205 +655,170 @@ async function toggleReminder(dep) {
       await Notification.requestPermission();
     } catch {}
   }
-  const at = Math.max(Date.now() + 5000, dep - prefs.walk * MIN - prefs.remindLead * MIN);
-  save({ reminder: { at, dep, from: prefs.from, to: prefs.to, fired: false } });
+  const at = Math.max(Date.now() + 5000, dep - (r.arrive + prefs.remindLead) * MIN);
+  save({ reminder: { routeId: r.id, dep, at, fired: false } });
   toast(`Reminder set for ${clock(at)}. Keep Headway open.`);
   render({ force: true });
 }
 
-function rideAlerts(now) {
-  const ride = prefs.ride;
-  if (now > ride.arr + 3 * MIN) {
-    save({ ride: null });
-    if (screenNow() === 'ride') back();
-    else render({ force: true });
-    return;
-  }
-  if (!prefs.rideAlert) return;
-  for (const leg of ride.legs) {
-    const at = leg.stops.at(-1).at;
-    const key = `${leg.to}@${at}`;
-    if (ride.alerted?.includes(key) || at <= now || at - now > 2.5 * MIN) continue;
-    save({ ride: { ...ride, alerted: [...(ride.alerted ?? []), key] } });
-    const final = leg === ride.legs.at(-1);
-    notify(final ? 'Your stop is next' : 'Change coming up', `${name(leg.to)} at ${clock(at)}`);
-  }
-}
-
-/* ---------- trips ---------- */
-
-function setTrip(from, to) {
-  const recents = [{ from, to }, ...prefs.recents.filter((t) => !(t.from === from && t.to === to))].slice(0, 10);
-  save({ from, to, recents, reminder: null });
-  lastCache.clear();
-}
-
-function startRide() {
-  const j = selectedJourney();
-  if (!j) return;
-  buzz(14);
-  save({
-    ride: {
-      dep: j.dep,
-      arr: j.arr,
-      legs: j.legs.map((l) => ({
-        from: l.from,
-        to: l.to,
-        line: l.trip.line,
-        dest: l.trip.dest,
-        stops: l.stops.map((s) => ({ s: s.s, at: s.at })),
-      })),
-      alerted: [],
-    },
-    reminder: null,
-  });
-  history.replaceState({ screen: 'ride' }, '');
-  transition('push', () => {
-    nav.stack[nav.stack.length - 1] = 'ride';
-  });
-}
-
-/* ---------- picker sheet ---------- */
+/* ---------- route picker sheet ---------- */
 
 let sheetOpen = false;
 
-function openPicker(field) {
-  const asking = field === 'from' || !prefs.from ? 'from' : 'to';
-  const origin = asking === 'to' ? prefs.from : null;
-  const title = asking === 'from' ? 'Starting from' : 'Going to';
-  sheetRoot.innerHTML = `
-    <div class="scrim"></div>
-    <div class="sheet" role="dialog" aria-modal="true" aria-label="${title}">
-      <div class="grab"><i></i></div>
-      <div class="sheet-head">
-        <button class="round" data-act="close-sheet" aria-label="Close">${ic('close')}</button>
-        <div class="mid"><span class="t">${title}</span>${origin ? `<span class="s">from ${esc(name(origin))}</span>` : ''}</div>
-        <span></span>
-      </div>
-      <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
-      <div class="sheet-body"></div>
-    </div>`;
+function openSheet(html, onMount) {
+  sheetRoot.innerHTML = `<div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
   const scrim = sheetRoot.querySelector('.scrim');
   const sheet = sheetRoot.querySelector('.sheet');
-  const body = sheet.querySelector('.sheet-body');
-  const input = sheet.querySelector('input');
+  if (!sheetOpen) history.pushState({ sheet: true }, '');
   sheetOpen = true;
-  history.pushState({ sheet: true }, '');
   requestAnimationFrame(() => {
     scrim.classList.add('open');
     sheet.classList.add('open');
   });
   scrim.addEventListener('click', () => history.back());
   dragToDismiss(sheet);
+  onMount?.(sheet);
+}
 
-  const now = Date.now();
-  const plans = new Map();
-  const planTo = (id) => {
-    if (!origin || id === origin) return null;
-    if (!plans.has(id)) plans.set(id, schedule.plan(origin, id, now + prefs.walk * MIN));
-    return plans.get(id);
-  };
-  const current = asking === 'from' ? prefs.from : prefs.to;
-  const stationRow = (id, line) => {
-    const st = STATIONS[id];
-    const j = planTo(id);
-    const tags = st.lines
-      .filter((l) => l !== line)
-      .map((l) => `<span class="pill-tag ${l}">${LINES[l].name}</span>`)
-      .join('');
-    const sub = j ? changesText(j) : st.long ?? '';
-    const right = j
-      ? `<span class="v light">${span(j.arr - j.dep)}</span>`
-      : id === origin
-        ? '<span class="v light">Starting here</span>'
-        : '';
-    return `
-      <button class="row tap plain" data-pick="${id}" data-search="${esc(`${st.name} ${st.long ?? ''}`.toLowerCase())}">
-        <span class="grow"><span class="t ${id === current ? 'strong' : ''}" ${id === current ? 'style="color: var(--tint)"' : ''}>${esc(st.name)}</span>${
-          sub ? `<span class="s">${esc(sub)}</span>` : ''
-        }</span>
-        ${tags}${right}
-      </button>`;
-  };
+/** Swaps the sheet's contents in place, for the station → destination step. */
+function replaceSheet(html, onMount) {
+  const sheet = sheetRoot.querySelector('.sheet');
+  if (!sheet) return openSheet(html, onMount);
+  sheet.innerHTML = html;
+  dragToDismiss(sheet);
+  onMount?.(sheet);
+}
 
-  const recentIds = [...new Set(prefs.recents.map((t) => (asking === 'from' ? t.from : t.to)))]
-    .filter((id) => STATIONS[id] && id !== origin)
-    .slice(0, 4);
-  const shortcuts = [
-    { id: 'central', icon: 'apartment', label: 'Central' },
-    { id: 'airport', icon: 'flight', label: 'Airport' },
-  ]
-    .filter((s) => s.id !== origin)
-    .map((s) => {
-      const j = planTo(s.id);
-      return `<button class="shortcut" data-pick="${s.id}"><span class="orb">${ic(s.icon, 'fill')}</span><span class="grow"><span class="t">${s.label}</span><span class="s">${
-        j ? span(j.arr - j.dep) : esc(name(s.id))
-      }</span></span></button>`;
-    })
-    .join('');
-
-  // Build the long list a frame later so the sheet starts moving immediately.
-  body.innerHTML = `<div class="shortcuts" data-block>${shortcuts}</div>`;
-  setTimeout(() => {
-    body.insertAdjacentHTML(
-      'beforeend',
-      `${
-        recentIds.length
-          ? `<div data-block style="display: contents"><span class="section-title">Recent</span><div class="card list">${recentIds
-              .map((id) => stationRow(id, STATIONS[id].lines[0]))
-              .join('')}</div></div>`
-          : ''
+function sheetHead(title, sub, backAct) {
+  return `
+    <div class="grab"><i></i></div>
+    <div class="sheet-head">
+      ${
+        backAct
+          ? `<button class="round" data-act="${backAct}" aria-label="Back">${ic('chevron_left')}</button>`
+          : `<button class="round" data-act="close-sheet" aria-label="Close">${ic('close')}</button>`
       }
+      <div class="mid"><span class="t">${esc(title)}</span>${sub ? `<span class="s">${esc(sub)}</span>` : ''}</div>
+      <span></span>
+    </div>`;
+}
+
+let pickMode = 'save';
+
+function openStationStep(mode, initial = false) {
+  pickMode = mode;
+  const html = `
+    ${sheetHead(mode === 'look' ? 'Check a station' : 'Where do you board?', null, null)}
+    <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
+    <div class="sheet-body">
       ${PICKER_GROUPS.map(
         (g) => `
         <div class="group" style="display: flex; flex-direction: column; gap: 14px">
           <span class="section-title">${LINES[g.line].name}</span>
-          <div class="card list">${g.stations.map((id) => stationRow(id, g.line)).join('')}</div>
+          <div class="card list">${g.stations
+            .map((id) => {
+              const st = STATIONS[id];
+              const tags = st.lines
+                .filter((l) => l !== g.line)
+                .map((l) => `<span class="pill-tag ${l}">${LINES[l].name}</span>`)
+                .join('');
+              return `<button class="row tap plain" data-board="${id}" data-search="${esc(`${st.name} ${st.long ?? ''}`.toLowerCase())}">
+                <span class="grow"><span class="t">${esc(st.name)}</span>${st.long ? `<span class="s">${esc(st.long)}</span>` : ''}</span>${tags}</button>`;
+            })
+            .join('')}</div>
         </div>`,
-      ).join('')}`,
-    );
-  }, 60);
-
-  input.addEventListener('input', () => {
-    const q = input.value.trim().toLowerCase();
-    body.querySelectorAll('[data-block]').forEach((el) => (el.hidden = !!q));
-    body.querySelectorAll('.group').forEach((g) => {
-      let any = false;
-      g.querySelectorAll('[data-search]').forEach((row) => {
-        const hit = !q || row.dataset.search.includes(q);
-        row.hidden = !hit;
-        any ||= hit;
+      ).join('')}
+    </div>`;
+  const mount = (sheet) => {
+    const input = sheet.querySelector('input');
+    const body = sheet.querySelector('.sheet-body');
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      body.querySelectorAll('.group').forEach((g) => {
+        let any = false;
+        g.querySelectorAll('[data-search]').forEach((row) => {
+          const hit = !q || row.dataset.search.includes(q);
+          row.hidden = !hit;
+          any ||= hit;
+        });
+        g.hidden = !any;
       });
-      g.hidden = !any;
     });
-  });
-
-  sheet.addEventListener('click', (e) => {
-    const el = e.target.closest('[data-pick]');
-    if (!el) return;
-    buzz();
-    const id = el.dataset.pick;
-    history.back();
-    if (asking === 'from') {
-      const to = prefs.to === id ? prefs.from : prefs.to;
-      if (to) {
-        setTrip(id, to);
-        afterTripChange();
-      } else {
-        save({ from: id });
-        render({ force: true });
-        setTimeout(() => openPicker('to'), 450);
-      }
-    } else {
-      setTrip(prefs.from, id);
-      afterTripChange();
-    }
-  });
+  };
+  if (initial) openSheet(html, mount);
+  else replaceSheet(html, mount);
 }
 
-function afterTripChange() {
-  if (nav.tab !== 'now' || nav.stack.length) switchTab('now');
-  else render({ force: true, animate: true });
+function openDestinationStep(from) {
+  const groups = directDestinations(from);
+  const html = `
+    ${sheetHead(`Where to from ${name(from)}?`, 'Direct trains only', 'pick-back')}
+    <div class="sheet-body">
+      ${groups
+        .map(
+          (g) => `
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div class="dir-head"><span class="dot ${g.line}"></span><span class="t">Toward ${esc(g.terminals.map(name).join(' or '))}</span></div>
+          <div class="card list">${g.stations
+            .map((s) => {
+              const st = STATIONS[s.id];
+              const tags = st.lines
+                .filter((l) => l !== g.line)
+                .map((l) => `<span class="pill-tag ${l}">${LINES[l].name}</span>`)
+                .join('');
+              return `<button class="row tap plain" data-dest="${s.id}" data-from="${from}"><span class="grow"><span class="t">${esc(st.name)}</span></span>${tags}<span class="v light">${s.minutes} min</span></button>`;
+            })
+            .join('')}</div>
+        </div>`,
+        )
+        .join('')}
+    </div>`;
+  replaceSheet(html);
+}
+
+sheetRoot.addEventListener('click', (e) => {
+  const board = e.target.closest('[data-board]');
+  if (board) {
+    buzz();
+    openDestinationStep(board.dataset.board);
+    return;
+  }
+  const dest = e.target.closest('[data-dest]');
+  if (dest) {
+    buzz();
+    const from = dest.dataset.from;
+    const to = dest.dataset.dest;
+    history.back();
+    if (pickMode === 'look') {
+      preview = { id: 'preview', from, to, arrive: 0 };
+      toast(`${name(from)} to ${name(to)}`);
+    } else addRoute(from, to);
+    if (nav.tab !== 'routes' || nav.stack.length) switchTab('routes');
+    else render({ force: true, animate: true });
+  }
+});
+
+function addRoute(from, to) {
+  const id = routeId(from, to);
+  if (!prefs.routes.some((r) => r.id === id)) save({ routes: [{ id, from, to, arrive: 0 }, ...prefs.routes] });
+  save({ expanded: id });
+  toast(`Saved ${name(from)} → ${name(to)}`);
+}
+
+function openRouteMenu(id) {
+  const r = prefs.routes.find((x) => x.id === id);
+  if (!r) return;
+  openSheet(
+    `${sheetHead(`${name(r.from)} → ${name(r.to)}`, null, null)}
+    <div class="sheet-body" style="flex: none">
+      <div class="card list">
+        <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
+        <button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>
+        <button class="row tap plain" data-act="remove-route" data-route="${id}" style="color: #d70015">${ic('delete')}<span class="grow"><span class="t">Remove route</span></span></button>
+      </div>
+    </div>`,
+  );
+  sheetRoot.querySelector('.sheet').classList.add('short');
 }
 
 function closeSheet() {
@@ -1120,6 +836,7 @@ function closeSheet() {
 
 function dragToDismiss(sheet) {
   for (const h of [sheet.querySelector('.grab'), sheet.querySelector('.sheet-head')]) {
+    if (!h) continue;
     let y0 = null;
     let t0 = 0;
     h.addEventListener('pointerdown', (e) => {
@@ -1148,73 +865,71 @@ function dragToDismiss(sheet) {
 
 /* ---------- events ---------- */
 
+const routeOf = (el) => (el.dataset.route === 'preview' ? preview : prefs.routes.find((r) => r.id === el.dataset.route));
+
 const ACTIONS = {
-  pick: (el) => openPicker(el.dataset.field),
-  'new-trip': () => openPicker('to'),
-  quick: (el) => {
-    if (!prefs.from) {
-      save({ to: el.dataset.id });
-      openPicker('from');
-    } else {
-      setTrip(prefs.from, el.dataset.id);
-      render({ force: true, animate: true });
-    }
-  },
+  'add-route': () => openStationStep('save', true),
+  look: () => openStationStep('look', true),
+  'pick-back': () => openStationStep(pickMode),
+  'close-sheet': () => history.back(),
   settings: () => push('settings'),
   back: () => back(),
-  'close-sheet': () => history.back(),
-  trip: (el) => {
-    tripDep = Number(el.dataset.dep);
-    push('trip');
-  },
-  later: () => {
-    const js = tripJourneys();
-    const i = js.findIndex((x) => x.dep === tripDep);
-    tripDep = js[(i + 1) % js.length]?.dep ?? null;
+  expand: (el) => {
+    if (el.dataset.route === 'preview') return;
     buzz();
+    save({ expanded: el.dataset.route });
+    render({ force: true, animate: true });
+  },
+  arrive: (el) => {
+    buzz();
+    const m = Number(el.dataset.min);
+    if (el.dataset.route === 'preview') preview = { ...preview, arrive: m };
+    else updateRoute(el.dataset.route, { arrive: m });
     render({ force: true });
-    if (tripDep) toast(`Showing the ${clock(tripDep)}`);
   },
   remind: (el) => {
     buzz(14);
-    const dep = Number(el.dataset.dep);
-    if (dep) toggleReminder(dep);
+    const r = routeOf(el);
+    if (r && r !== preview) toggleReminder(r, Number(el.dataset.dep));
+    else if (r) toast('Save the route to set a reminder');
   },
-  'save-trip': () => {
-    buzz();
-    const exists = prefs.saved.some((t) => t.from === prefs.from && t.to === prefs.to);
-    save({
-      saved: exists
-        ? prefs.saved.filter((t) => !(t.from === prefs.from && t.to === prefs.to))
-        : [...prefs.saved, { from: prefs.from, to: prefs.to }],
-    });
-    toast(exists ? 'Removed from saved trips' : 'Saved to Trips');
-    render({ force: true });
+  'route-menu': (el) => openRouteMenu(el.dataset.route),
+  'reverse-route': (el) => {
+    const r = routeOf(el);
+    history.back();
+    if (r) addRoute(r.to, r.from);
+    render({ force: true, animate: true });
   },
-  'use-trip': (el) => {
-    setTrip(el.dataset.from, el.dataset.to);
-    switchTab('now');
+  'top-route': (el) => {
+    const r = routeOf(el);
+    history.back();
+    if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)], expanded: r.id });
+    render({ force: true, animate: true });
   },
-  'start-ride': () => startRide(),
-  'open-ride': () => push('ride'),
-  'end-ride': () => {
-    save({ ride: null });
-    back();
+  'remove-route': (el) => {
+    const r = routeOf(el);
+    history.back();
+    if (!r) return;
+    save({ routes: prefs.routes.filter((x) => x.id !== r.id), reminder: prefs.reminder?.routeId === r.id ? null : prefs.reminder });
+    toast(`Removed ${name(r.from)} → ${name(r.to)}`);
+    render({ force: true, animate: true });
   },
-  'ride-alert': (el) => {
-    save({ rideAlert: !prefs.rideAlert });
-    el.setAttribute('aria-checked', String(prefs.rideAlert));
-    buzz();
+  'close-preview': () => {
+    preview = null;
+    render({ force: true, animate: true });
+  },
+  'save-preview': () => {
+    if (!preview) return;
+    const { from, to, arrive } = preview;
+    preview = null;
+    addRoute(from, to);
+    updateRoute(routeId(from, to), { arrive });
+    render({ force: true, animate: true });
   },
   'last-warn': (el) => {
     save({ lastWarn: !prefs.lastWarn });
     el.setAttribute('aria-checked', String(prefs.lastWarn));
     buzz();
-  },
-  walk: (el) => {
-    buzz();
-    save({ walk: Math.max(0, Math.min(30, prefs.walk + Number(el.dataset.d))), reminder: null });
-    document.getElementById('walk-v').textContent = `${prefs.walk} min`;
   },
   theme: (el) => {
     buzz();
@@ -1269,12 +984,6 @@ function applyTheme() {
 applyTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 history.replaceState({ screen: 'root' }, '');
-if (prefs.ride && prefs.ride.arr + 3 * MIN > Date.now()) {
-  nav.stack = ['ride'];
-  history.pushState({ screen: 'ride' }, '');
-} else if (prefs.ride) {
-  save({ ride: null });
-}
 render({ force: true, animate: true });
 startClock();
 feed.start();

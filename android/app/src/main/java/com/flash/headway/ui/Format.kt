@@ -21,7 +21,12 @@ fun span(ms: Long): String {
     return if (m < 60) "$m min" else "${m / 60} h ${m % 60} min"
 }
 
-fun inSpan(ms: Long): String = if (ms < 45_000) "now" else "in ${span(ms)}"
+// Floors like the hero number, so "in 7 min" and a big "7" always agree.
+fun inSpan(ms: Long): String = when {
+    ms < 60_000 -> "now"
+    ms < 60 * 60_000 -> "in ${mins(ms)} min"
+    else -> "in ${span(ms)}"
+}
 
 fun leaveText(ms: Long): String = if (ms < 30_000) "Leave now" else "Leave in ${span(ms)}"
 

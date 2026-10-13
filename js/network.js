@@ -153,3 +153,34 @@ export const PICKER_GROUPS = [
   { line: 'green', stations: GREEN_FWD.map(([s]) => s) },
   { line: 'yellow', stations: YELLOW_FWD.map(([s]) => s) },
 ];
+
+/**
+ * Stations reachable from `from` without changing trains, grouped by direction of travel
+ * (the next stop). Each group lists stations in travel order with typical ride minutes.
+ */
+export function directDestinations(from) {
+  const groups = new Map();
+  for (const id of ['blue', 'green', 'inter', 'yellow']) {
+    const route = ROUTES[id];
+    for (const dir of ['fwd', 'rev']) {
+      const seq = route[dir];
+      const i = seq.findIndex(([s]) => s === from);
+      if (i < 0 || i === seq.length - 1) continue;
+      const next = seq[i + 1][0];
+      if (!groups.has(next)) groups.set(next, { next, line: route.line, terminals: new Set(), stations: new Map() });
+      const g = groups.get(next);
+      g.terminals.add(seq.at(-1)[0]);
+      for (let k = i + 1; k < seq.length; k++) {
+        const [s, cum] = seq[k];
+        const min = Math.round(cum - seq[i][1]);
+        if (!g.stations.has(s) || g.stations.get(s) > min) g.stations.set(s, min);
+      }
+    }
+  }
+  return [...groups.values()].map((g) => ({
+    next: g.next,
+    line: g.line,
+    terminals: [...g.terminals],
+    stations: [...g.stations.entries()].sort((a, b) => a[1] - b[1]).map(([id, minutes]) => ({ id, minutes })),
+  }));
+}

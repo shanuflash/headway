@@ -10,10 +10,8 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.flash.headway.data.DayType
-import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.engine.DayOverride
-import com.flash.headway.engine.Stop
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -22,43 +20,39 @@ private val Context.dataStore by preferencesDataStore("headway")
 
 enum class ThemeMode { LIGHT, DARK, AUTO }
 
-data class TripKey(val from: String, val to: String)
-
-data class RideLeg(val from: String, val to: String, val line: Line, val dest: String, val stops: List<Stop>)
-
-data class Ride(val dep: Long, val arr: Long, val legs: List<RideLeg>) {
-    val to: String get() = legs.last().to
+/** A saved daily route: board at [from], get off at [to], usually reach [from] in [arrive] minutes. */
+data class SavedRoute(val from: String, val to: String, val arrive: Int = 0) {
+    val id: String get() = "$from>$to"
 }
 
+data class Reminder(val routeId: String, val dep: Long)
+
 data class Prefs(
-    val from: String? = null,
-    val to: String? = null,
-    val walk: Int = 4,
+    val routes: List<SavedRoute> = emptyList(),
+    val expanded: String? = null,
     val remindLead: Int = 2,
     val lastWarn: Boolean = true,
     val theme: ThemeMode = ThemeMode.AUTO,
     val override: DayOverride? = null,
-    val saved: List<TripKey> = emptyList(),
-    val recents: List<TripKey> = emptyList(),
-    val ride: Ride? = null,
-    val rideAlert: Boolean = true,
-    val reminderDep: Long? = null,
+    val reminder: Reminder? = null,
 )
+
+val ARRIVE_CHOICES = listOf(0, 5, 10, 15, 20, 30)
 
 class PrefsStore(private val context: Context) {
     private object Keys {
-        val from = stringPreferencesKey("from")
-        val to = stringPreferencesKey("to")
-        val walk = intPreferencesKey("walk")
+        val routes = stringPreferencesKey("routes")
+        val expanded = stringPreferencesKey("expanded")
         val remindLead = intPreferencesKey("remind_lead")
         val lastWarn = booleanPreferencesKey("last_warn")
         val theme = stringPreferencesKey("theme")
         val override = stringPreferencesKey("override")
-        val saved = stringPreferencesKey("saved")
-        val recents = stringPreferencesKey("recents")
-        val ride = stringPreferencesKey("ride")
-        val rideAlert = booleanPreferencesKey("ride_alert")
+        val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
+
+        // From the trip-planner version, read once to seed the first route.
+        val legacyFrom = stringPreferencesKey("from")
+        val legacyTo = stringPreferencesKey("to")
     }
 
     val prefs: Flow<Prefs> = context.dataStore.data.map(::decode)
@@ -68,79 +62,62 @@ class PrefsStore(private val context: Context) {
         context.dataStore.edit { p -> write(p, transform(decode(p))) }
     }
 
-    private fun decode(p: Preferences): Prefs =
-        Prefs(
-            from = p[Keys.from]?.takeIf { it in Network.stations },
-            to = p[Keys.to]?.takeIf { it in Network.stations },
-            walk = p[Keys.walk] ?: 4,
+    private fun decode(p: Preferences): Prefs {
+        val routes = p[Keys.routes]?.let(::decodeRoutes) ?: legacyRoute(p)
+        val reminderRoute = p[Keys.reminder]
+        val reminderDep = p[Keys.reminderDep]
+        return Prefs(
+            routes = routes,
+            expanded = p[Keys.expanded],
             remindLead = p[Keys.remindLead] ?: 2,
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
-            saved = decodeTrips(p[Keys.saved]),
-            recents = decodeTrips(p[Keys.recents]),
-            ride = p[Keys.ride]?.let(::decodeRide),
-            rideAlert = p[Keys.rideAlert] ?: true,
-            reminderDep = p[Keys.reminderDep],
+            reminder = if (reminderRoute != null && reminderDep != null) Reminder(reminderRoute, reminderDep) else null,
         )
+    }
+
+    private fun legacyRoute(p: Preferences): List<SavedRoute> {
+        val from = p[Keys.legacyFrom]?.takeIf { it in Network.stations } ?: return emptyList()
+        val to = p[Keys.legacyTo]?.takeIf { it in Network.stations } ?: return emptyList()
+        return listOf(SavedRoute(from, to))
+    }
 
     private fun write(p: MutablePreferences, next: Prefs) {
-        p.put(Keys.from, next.from)
-        p.put(Keys.to, next.to)
-        p[Keys.walk] = next.walk
+        p[Keys.routes] = next.routes.joinToString(";") { "${it.from}>${it.to}>${it.arrive}" }
+        p.put(Keys.expanded, next.expanded)
         p[Keys.remindLead] = next.remindLead
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
         p.put(Keys.override, next.override?.let { "${it.date}|${it.type.name}" })
-        p[Keys.saved] = encodeTrips(next.saved)
-        p[Keys.recents] = encodeTrips(next.recents)
-        p.put(Keys.ride, next.ride?.let(::encodeRide))
-        p[Keys.rideAlert] = next.rideAlert
-        if (next.reminderDep == null) p.remove(Keys.reminderDep) else p[Keys.reminderDep] = next.reminderDep
+        val reminder = next.reminder
+        if (reminder == null) {
+            p.remove(Keys.reminder)
+            p.remove(Keys.reminderDep)
+        } else {
+            p[Keys.reminder] = reminder.routeId
+            p[Keys.reminderDep] = reminder.dep
+        }
+        p.remove(Keys.legacyFrom)
+        p.remove(Keys.legacyTo)
     }
 
     private fun MutablePreferences.put(key: Preferences.Key<String>, value: String?) {
         if (value == null) remove(key) else this[key] = value
     }
 
-    // Compact text encodings keep DataStore free of a serialization dependency.
-
-    private fun encodeTrips(trips: List<TripKey>) = trips.joinToString(";") { "${it.from}>${it.to}" }
-
-    private fun decodeTrips(raw: String?): List<TripKey> =
-        raw.orEmpty().split(';').mapNotNull { part ->
+    private fun decodeRoutes(raw: String): List<SavedRoute> =
+        raw.split(';').mapNotNull { part ->
             val bits = part.split('>')
-            if (bits.size == 2 && bits[0] in Network.stations && bits[1] in Network.stations) TripKey(bits[0], bits[1]) else null
+            if (bits.size >= 2 && bits[0] in Network.stations && bits[1] in Network.stations) {
+                SavedRoute(bits[0], bits[1], bits.getOrNull(2)?.toIntOrNull() ?: 0)
+            } else {
+                null
+            }
         }
 
     private fun decodeOverride(raw: String): DayOverride? = runCatching {
         val (d, t) = raw.split('|')
         DayOverride(LocalDate.parse(d), DayType.valueOf(t))
-    }.getOrNull()
-
-    private fun encodeRide(r: Ride): String =
-        "${r.dep}#${r.arr}#" + r.legs.joinToString("~") { l ->
-            "${l.from}|${l.to}|${l.line.name}|${l.dest}|" + l.stops.joinToString(",") { "${it.station}@${it.at}" }
-        }
-
-    private fun decodeRide(raw: String): Ride? = runCatching {
-        val (dep, arr, legs) = raw.split('#', limit = 3)
-        Ride(
-            dep.toLong(),
-            arr.toLong(),
-            legs.split('~').map { leg ->
-                val (from, to, line, dest, stops) = leg.split('|')
-                RideLeg(
-                    from,
-                    to,
-                    Line.valueOf(line),
-                    dest,
-                    stops.split(',').map {
-                        val (s, at) = it.split('@')
-                        Stop(s, at.toLong())
-                    },
-                )
-            },
-        )
     }.getOrNull()
 }

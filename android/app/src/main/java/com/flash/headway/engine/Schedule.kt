@@ -77,6 +77,43 @@ data class Journey(val from: String, val to: String, val legs: List<Leg>) {
 
 data class Departure(val trip: Trip, val at: Long)
 
+data class RouteDeparture(val trip: Trip, val dep: Long, val arr: Long)
+
+data class DestinationGroup(val next: String, val line: Line, val terminals: List<String>, val stations: List<Pair<String, Int>>)
+
+/**
+ * Stations reachable from [from] without changing trains, grouped by direction of travel
+ * (the next stop). Stations come in travel order with typical ride minutes.
+ */
+fun directDestinations(from: String): List<DestinationGroup> {
+    class Acc(val line: Line) {
+        val terminals = LinkedHashSet<String>()
+        val stations = LinkedHashMap<String, Int>()
+    }
+    val groups = LinkedHashMap<String, Acc>()
+    for (id in listOf(RouteId.BLUE, RouteId.GREEN, RouteId.INTER, RouteId.YELLOW)) {
+        val route = Network.routes.getValue(id)
+        for (seq in listOf(route.fwd, route.rev)) {
+            val i = seq.indexOfFirst { it.first == from }
+            if (i < 0 || i == seq.lastIndex) continue
+            val acc = groups.getOrPut(seq[i + 1].first) { Acc(route.line) }
+            acc.terminals += seq.last().first
+            for (k in i + 1 until seq.size) {
+                val minutes = Math.round(seq[k].second - seq[i].second).toInt()
+                val (s, _) = seq[k]
+                if ((acc.stations[s] ?: Int.MAX_VALUE) > minutes) acc.stations[s] = minutes
+            }
+        }
+    }
+    return groups.map { (next, acc) ->
+        DestinationGroup(next, acc.line, acc.terminals.toList(), acc.stations.entries.sortedBy { it.value }.map { it.key to it.value })
+    }
+}
+
+/** The group a saved route belongs to, which names its line and direction. */
+fun routeGroup(from: String, to: String): DestinationGroup? =
+    directDestinations(from).firstOrNull { g -> g.stations.any { it.first == to } }
+
 private class Conn(val trip: Trip, val from: String, val to: String, val dep: Long, val arr: Long)
 
 private class Window(val trips: List<Trip>, val conns: Array<Conn>)
@@ -193,6 +230,29 @@ class Schedule(private val override: DayOverride? = null) {
         }
         out.sortBy { it.at }
         return out.take(limit)
+    }
+
+    /** Direct trains from [from] that later stop at [to], departing at or after [nowMs]. */
+    fun routeDepartures(from: String, to: String, nowMs: Long, limit: Int = 16): List<RouteDeparture> {
+        val out = ArrayList<RouteDeparture>()
+        for (trip in window(nowMs).trips) {
+            routeDeparture(trip, from, to)?.takeIf { it.dep >= nowMs }?.let { out += it }
+        }
+        out.sortBy { it.dep }
+        return out.take(limit)
+    }
+
+    /** The last direct train of the current service day from [from] to [to]. */
+    fun lastRouteDeparture(from: String, to: String, nowMs: Long): RouteDeparture? =
+        day(serviceDate(nowMs)).mapNotNull { routeDeparture(it, from, to) }.maxByOrNull { it.dep }
+
+    private fun routeDeparture(trip: Trip, from: String, to: String): RouteDeparture? {
+        val i = trip.indexOf(from)
+        if (i < 0) return null
+        for (k in i + 1 until trip.stops.size) {
+            if (trip.stops[k].station == to) return RouteDeparture(trip, trip.stops[i].at, trip.stops[k].at)
+        }
+        return null
     }
 
     /**

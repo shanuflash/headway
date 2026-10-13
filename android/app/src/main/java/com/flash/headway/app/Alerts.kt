@@ -15,32 +15,42 @@ import androidx.core.content.ContextCompat
 import com.flash.headway.MainActivity
 import com.flash.headway.R
 import com.flash.headway.data.Network
+import com.flash.headway.engine.MINUTE
+import com.flash.headway.engine.Schedule
 import com.flash.headway.ui.clock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-/** Leave reminders and on-board alerts. Alarms fire through [AlertReceiver], even with the app closed. */
+/**
+ * "Catch this train" reminders. Setting one posts a live countdown to departure straight away
+ * and schedules an alert for when it's time to set off. Both work with the app closed.
+ */
 object Alerts {
     private const val CHANNEL_REMINDERS = "reminders"
-    private const val CHANNEL_TRIP = "trip"
-    private const val ID_REMINDER = 1
-    private const val ID_TRIP = 2
-    private const val ID_RIDE_ALERT_BASE = 100
-    private const val MAX_LEGS = 6
+    private const val CHANNEL_COUNTDOWN = "countdown"
+    private const val ID_ALERT = 1
+    private const val ID_COUNTDOWN = 2
 
-    const val EXTRA_TITLE = "title"
-    const val EXTRA_BODY = "body"
-    const val EXTRA_ID = "id"
+    const val ACTION_FIRE = "com.flash.headway.FIRE"
+    const val ACTION_NEXT = "com.flash.headway.NEXT"
+    const val ACTION_STOP = "com.flash.headway.STOP"
+    private const val EXTRA_FROM = "from"
+    private const val EXTRA_TO = "to"
+    private const val EXTRA_ARRIVE = "arrive"
+    private const val EXTRA_DEP = "dep"
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_REMINDERS, "Leave reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "When to leave for your train, and when your stop is next"
+            NotificationChannel(CHANNEL_REMINDERS, "Time to set off", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "When to leave to catch your train"
                 enableVibration(true)
             },
         )
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_TRIP, "Current trip", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "A live countdown while you're on board"
+            NotificationChannel(CHANNEL_COUNTDOWN, "Train countdown", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "A live countdown to the train you're catching"
             },
         )
     }
@@ -52,60 +62,13 @@ object Alerts {
     fun canScheduleExact(context: Context): Boolean =
         Build.VERSION.SDK_INT < 31 || context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
 
-    // ---------- leave reminder ----------
+    /** Countdown now, alert at [at]. */
+    fun setReminder(context: Context, route: SavedRoute, dep: Long, at: Long) {
+        val following = Schedule().routeDepartures(route.from, route.to, dep + 1, 1).firstOrNull()
+        postCountdown(context, route, dep, following?.dep)
 
-    fun scheduleReminder(context: Context, at: Long, title: String, body: String) {
-        schedule(context, ID_REMINDER, at, title, body)
-    }
-
-    fun cancelReminder(context: Context) = cancel(context, ID_REMINDER)
-
-    // ---------- ride ----------
-
-    /** Posts an ongoing countdown to arrival and schedules an alert before each change and the final stop. */
-    fun startRide(context: Context, ride: Ride, alertBeforeStops: Boolean) {
-        endRide(context)
-        val nm = context.getSystemService(NotificationManager::class.java)
-        if (canNotify(context)) {
-            val notification = Notification.Builder(context, CHANNEL_TRIP)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("To ${Network.name(ride.to)}")
-                .setContentText("Arrives ${clock(ride.arr)}")
-                .setWhen(ride.arr)
-                .setShowWhen(true)
-                .setUsesChronometer(true)
-                .setChronometerCountDown(true)
-                .setOngoing(true)
-                .setCategory(Notification.CATEGORY_NAVIGATION)
-                .setContentIntent(openApp(context))
-                .setTimeoutAfter((ride.arr - System.currentTimeMillis() + 3 * 60_000L).coerceAtLeast(60_000L))
-                .build()
-            nm.notify(ID_TRIP, notification)
-        }
-        if (!alertBeforeStops) return
-        ride.legs.take(MAX_LEGS).forEachIndexed { i, leg ->
-            val arrive = leg.stops.last().at
-            val final = i == ride.legs.lastIndex
-            schedule(
-                context,
-                ID_RIDE_ALERT_BASE + i,
-                arrive - 150_000L,
-                if (final) "Your stop is next" else "Change coming up",
-                "${Network.name(leg.to)} at ${clock(arrive)}",
-            )
-        }
-    }
-
-    fun endRide(context: Context) {
-        context.getSystemService(NotificationManager::class.java).cancel(ID_TRIP)
-        for (i in 0 until MAX_LEGS) cancel(context, ID_RIDE_ALERT_BASE + i)
-    }
-
-    // ---------- plumbing ----------
-
-    private fun schedule(context: Context, id: Int, at: Long, title: String, body: String) {
         val am = context.getSystemService(AlarmManager::class.java)
-        val pi = alarmIntent(context, id, title, body)
+        val pi = broadcast(context, ACTION_FIRE, route, dep)
         val time = at.coerceAtLeast(System.currentTimeMillis() + 1_000L)
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
             am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pi)
@@ -114,23 +77,68 @@ object Alerts {
         }
     }
 
-    private fun cancel(context: Context, id: Int) {
+    fun cancelReminder(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
-        am.cancel(alarmIntent(context, id, "", ""))
-        context.getSystemService(NotificationManager::class.java).cancel(id)
+        am.cancel(broadcast(context, ACTION_FIRE, null, 0))
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.cancel(ID_COUNTDOWN)
+        nm.cancel(ID_ALERT)
     }
 
-    private fun alarmIntent(context: Context, id: Int, title: String, body: String): PendingIntent {
-        val intent = Intent(context, AlertReceiver::class.java)
-            .putExtra(EXTRA_ID, id)
-            .putExtra(EXTRA_TITLE, title)
-            .putExtra(EXTRA_BODY, body)
-        return PendingIntent.getBroadcast(
-            context,
-            id,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+    private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?) {
+        if (!canNotify(context)) return
+        val reach = dep - route.arrive * MINUTE
+        val text = buildString {
+            append("Be on the platform by ${clock(minOf(reach, dep))}.")
+            if (following != null) append(" Next one is ${clock(following)}.")
+        }
+        val builder = Notification.Builder(context, CHANNEL_COUNTDOWN)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Catch the ${clock(dep)} at ${Network.name(route.from)}")
+            .setContentText(text)
+            .setWhen(dep)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setContentIntent(openApp(context))
+            .setTimeoutAfter((dep - System.currentTimeMillis() + 60_000L).coerceAtLeast(60_000L))
+        if (following != null) {
+            builder.addAction(
+                Notification.Action.Builder(null, "I'll take the ${clock(following)}", broadcast(context, ACTION_NEXT, route, dep)).build(),
+            )
+        }
+        builder.addAction(Notification.Action.Builder(null, "Stop", broadcast(context, ACTION_STOP, route, dep)).build())
+        context.getSystemService(NotificationManager::class.java).notify(ID_COUNTDOWN, builder.build())
+    }
+
+    fun showSetOff(context: Context, route: SavedRoute, dep: Long) {
+        if (!canNotify(context)) return
+        val notification = Notification.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Time to go for the ${clock(dep)}")
+            .setContentText("${Network.name(route.from)} to ${Network.name(route.to)}. Head to the platform now.")
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(ID_ALERT, notification)
+    }
+
+    private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long): PendingIntent {
+        val intent = Intent(context, AlertReceiver::class.java).setAction(action)
+        if (route != null) {
+            intent.putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to).putExtra(EXTRA_ARRIVE, route.arrive)
+        }
+        intent.putExtra(EXTRA_DEP, dep)
+        val code = when (action) {
+            ACTION_FIRE -> 1
+            ACTION_NEXT -> 2
+            else -> 3
+        }
+        return PendingIntent.getBroadcast(context, code, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
     private fun openApp(context: Context): PendingIntent =
@@ -141,27 +149,44 @@ object Alerts {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-    fun show(context: Context, id: Int, title: String, body: String) {
-        if (!canNotify(context)) return
-        val notification = Notification.Builder(context, CHANNEL_REMINDERS)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setCategory(Notification.CATEGORY_REMINDER)
-            .setAutoCancel(true)
-            .setContentIntent(openApp(context))
-            .build()
-        context.getSystemService(NotificationManager::class.java).notify(id, notification)
+    internal fun routeFrom(intent: Intent): SavedRoute? {
+        val from = intent.getStringExtra(EXTRA_FROM) ?: return null
+        val to = intent.getStringExtra(EXTRA_TO) ?: return null
+        return SavedRoute(from, to, intent.getIntExtra(EXTRA_ARRIVE, 0))
     }
+
+    internal fun depFrom(intent: Intent): Long = intent.getLongExtra(EXTRA_DEP, 0L)
 }
 
 class AlertReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        Alerts.show(
-            context,
-            intent.getIntExtra(Alerts.EXTRA_ID, 1),
-            intent.getStringExtra(Alerts.EXTRA_TITLE).orEmpty(),
-            intent.getStringExtra(Alerts.EXTRA_BODY).orEmpty(),
-        )
+        val route = Alerts.routeFrom(intent)
+        val dep = Alerts.depFrom(intent)
+        when (intent.action) {
+            Alerts.ACTION_FIRE -> if (route != null) Alerts.showSetOff(context, route, dep)
+            Alerts.ACTION_STOP -> {
+                Alerts.cancelReminder(context)
+                updatePrefs(context) { it.copy(reminder = null) }
+            }
+            Alerts.ACTION_NEXT -> if (route != null) {
+                val following = Schedule().routeDepartures(route.from, route.to, dep + 1, 1).firstOrNull() ?: return
+                updatePrefs(context) { p ->
+                    val at = maxOf(System.currentTimeMillis() + 5_000, following.dep - (route.arrive + p.remindLead) * MINUTE)
+                    Alerts.setReminder(context, route, following.dep, at)
+                    p.copy(reminder = Reminder(route.id, following.dep))
+                }
+            }
+        }
+    }
+
+    private fun updatePrefs(context: Context, transform: (Prefs) -> Prefs) {
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                PrefsStore(context.applicationContext).update(transform)
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }

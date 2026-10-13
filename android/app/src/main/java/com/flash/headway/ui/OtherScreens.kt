@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -35,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.ThemeMode
-import com.flash.headway.app.TripKey
 import com.flash.headway.data.BandKind
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Line
@@ -45,53 +42,10 @@ import com.flash.headway.data.RouteId
 import com.flash.headway.data.Timetable
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.IST
-import com.flash.headway.engine.Journey
 import com.flash.headway.engine.bandAt
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import java.time.Instant
-
-// ---------------- trips ----------------
-
-@Composable
-fun ColumnScope.TripsScreen(prefs: Prefs, nexts: Map<TripKey, Journey?>, now: Long, onUse: (TripKey) -> Unit, onNew: () -> Unit) {
-    val hw = LocalHw.current
-    TopBar(right = { RoundButton(Icons.Rounded.Add, "New trip", onNew) })
-    LargeTitle("Trips")
-
-    fun rows(list: List<TripKey>): List<@Composable () -> Unit> = list.map { t ->
-        @Composable {
-            val j = nexts[t]
-            ListRow(onClick = { onUse(t) }) {
-                LineBar(hw.line(j?.legs?.first()?.trip?.line ?: Line.BLUE))
-                RowText(
-                    Network.name(t.to),
-                    "From ${Network.name(t.from)}" + (j?.let { ", ${changesText(it).lowercase()}" } ?: ""),
-                    modifier = Modifier.weight(1f),
-                )
-                if (j != null) Text("${mins(j.dep - now)} min", style = HwType.headline, color = hw.text)
-            }
-        }
-    }
-
-    SectionTitle("Saved")
-    if (prefs.saved.isEmpty()) {
-        HwCard {
-            Text(
-                "Save a trip from its detail screen and it shows up here with its next train.",
-                style = HwType.subhead,
-                color = hw.sub,
-            )
-        }
-    } else {
-        ListCard(rows(prefs.saved))
-    }
-    val recents = prefs.recents.filter { it !in prefs.saved }.take(6)
-    if (recents.isNotEmpty()) {
-        SectionTitle("Recent")
-        ListCard(rows(recents))
-    }
-}
 
 // ---------------- lines ----------------
 
@@ -171,7 +125,6 @@ private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec
 class SettingsActions(
     val back: () -> Unit,
     val override: (DayType?) -> Unit,
-    val walk: (Int) -> Unit,
     val lead: (Int) -> Unit,
     val lastWarn: (Boolean) -> Unit,
     val theme: (ThemeMode) -> Unit,
@@ -213,20 +166,13 @@ fun ColumnScope.SettingsScreen(
     ListCard(
         listOf<@Composable () -> Unit>(
             {
-                ListRow {
-                    TileIcon(Icons.AutoMirrored.Rounded.DirectionsWalk, Color(0xFFFF9500))
-                    Text("Walk to platform", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-                    Stepper("${prefs.walk} min", onMinus = { actions.walk(prefs.walk - 1) }, onPlus = { actions.walk(prefs.walk + 1) })
-                }
-            },
-            {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         TileIcon(Icons.Rounded.Notifications, Color(0xFFFF3B30))
-                        Text("Leave reminder", style = HwType.body, color = hw.text)
+                        Text("Reminder", style = HwType.body, color = hw.text)
                     }
                     Segmented(
-                        options = listOf(0 to "On time", 1 to "1 min", 2 to "2 min", 5 to "5 min"),
+                        options = listOf(0 to "Set off", 1 to "1 min early", 2 to "2 min", 5 to "5 min"),
                         selected = prefs.remindLead,
                         onSelect = actions.lead,
                     )
@@ -242,7 +188,7 @@ fun ColumnScope.SettingsScreen(
         ),
         inset = 58.dp,
     )
-    Footnote("Trains you can't reach in time are skipped. The warning shows in the last hour before your last train.")
+    Footnote("Reminders count back from the train, minus the time you said you'll take to reach the station. The warning shows in the last hour before your last train.")
 
     if (!notificationsAllowed || !exactAllowed) {
         val rows = ArrayList<@Composable () -> Unit>()

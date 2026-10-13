@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Headway</string>
+    <string name="widget_description">Minutes to the next train you can catch on a saved route</string>
 </resources>

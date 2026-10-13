@@ -1,4 +1,12 @@
 <resources>
     <color name="launcher_background">#0B63CE</color>
     <color name="window_background">#F2F2F7</color>
+    <color name="widget_surface">#FFFFFF</color>
+    <color name="widget_text">#111113</color>
+    <color name="widget_sub">#6C6C70</color>
+    <color name="widget_blue">#0B63CE</color>
+    <color name="widget_green">#248A3D</color>
+    <color name="widget_yellow">#F2C230</color>
+    <color name="widget_amber">#C25E00</color>
+    <color name="widget_ring_neutral">#C7C7CC</color>
 </resources>

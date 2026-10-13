@@ -231,6 +231,35 @@ export class Schedule {
     return out.slice(0, limit);
   }
 
+  /** Direct trains from `from` that later stop at `to`, departing at or after `nowMs`. */
+  routeDepartures(from, to, nowMs, limit = 12) {
+    const { trips } = this.window(nowMs);
+    const out = [];
+    for (const trip of trips) {
+      const i = trip.stops.findIndex((x) => x.s === from);
+      if (i < 0) continue;
+      const k = trip.stops.findIndex((x, n) => n > i && x.s === to);
+      if (k < 0 || trip.stops[i].at < nowMs) continue;
+      out.push({ trip, dep: trip.stops[i].at, arr: trip.stops[k].at });
+    }
+    out.sort((a, b) => a.dep - b.dep);
+    return out.slice(0, limit);
+  }
+
+  /** The last direct train of the current service day from `from` to `to`. */
+  lastRouteDeparture(from, to, nowMs) {
+    const key = serviceDateKey(nowMs);
+    let best = null;
+    for (const trip of this.day(key).trips) {
+      const i = trip.stops.findIndex((x) => x.s === from);
+      if (i < 0) continue;
+      const k = trip.stops.findIndex((x, n) => n > i && x.s === to);
+      if (k < 0) continue;
+      if (!best || trip.stops[i].at > best.dep) best = { trip, dep: trip.stops[i].at, arr: trip.stops[k].at };
+    }
+    return best;
+  }
+
   /** Last departure from a station toward each destination for the current service day. */
   lastTrains(station, nowMs) {
     const key = serviceDateKey(nowMs);

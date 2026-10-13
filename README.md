@@ -4,17 +4,17 @@ A next-train timer for Chennai Metro, built on the official CMRL timetable. It i
 
 ## What it does
 
-The interface follows the iOS-style design chosen on the design canvas: grouped background, 26px cards, and a floating glass tab bar. It supports light and dark mode.
+Headway is for people who ride the same route every day. Save where you board and where you get off, then tell it how soon you'll reach the station. It shows the trains you can actually make.
 
-- **Now:** the next train you can still catch, as a big countdown. Shows when to leave (walk time is in Settings), a one-tap leave reminder, the next three options, departures from your station, and the last train home.
-  - **States:** first run ("Where to?"), last trains (badge, amber times, the next train tomorrow), and closed (no more trains tonight, or the metro is shut).
-- **Trip detail:** each leg and change with walk time and minutes to spare, a bar showing ride vs. waiting time, save to Trips, and Start trip.
-- **On board:** stops to go, progress segments, the next stop, the stops coming up, and an alert one stop before your change or destination.
-- **Trips:** saved and recent trips with their next train.
-- **Lines:** today's official first and last trains and frequency bands, with the current band highlighted.
-- **Station picker:** a sheet showing travel time from your station on every row. Supports search, recents, swipe to dismiss and the back gesture.
-- **Settings:** today's timetable override, walk time, reminder lead, last-train warning, appearance, and an advisory feed URL.
-- **Motion:** screens slide using the View Transitions API, sheets and toggles move with spring easing, and countdowns tick in place without redrawing the screen.
+- **Routes:** one card per saved route. "I'll be at Guindy in Now / 5 / 10 / 15 / 20 / 30 min" picks the arrival time, and the card remembers it.
+  - The first train you can make is shown big with a countdown and how long you'll wait on the platform.
+  - The next two options come with their waits, and the train you'll just miss is faded.
+  - Only direct trains count. Short loops and Green Line trains via CMBT are included when they stop at your destination.
+- **States:** last trains (a badge, plus the first train tomorrow), "No more trains tonight", "Metro is closed", and "You'll miss the last train".
+- **Reminders:** one tap per train. It fires when you need to set off: departure, minus your arrival time, minus the lead time you choose in Settings.
+- **Quick look:** the search button checks any pair of stations without saving them.
+- **Lines:** today's official first and last trains and frequency bands.
+- **Settings:** today's timetable override, reminder lead, last-train warning, and appearance.
 
 ## Run locally
 
@@ -36,14 +36,12 @@ npm test
 
 ## Android app
 
-`android/` is a native Kotlin and Jetpack Compose app with the same design and the same timetable engine.
+`android/` is a native Kotlin and Jetpack Compose app with the same design and timetable engine. `data/` is generated from the web app's `js/network.js` and `js/timetable.js`, so both apps use identical numbers.
 
-- **Data:** `data/Network.kt` and `data/Timetable.kt` are generated from `js/network.js` and `js/timetable.js`, so both apps use identical numbers.
-- **Engine:** `engine/Schedule.kt` ports `js/engine.js`: trip generation, Connection Scan routing, last-train search, and the overnight rules. It always works in IST.
-- **Screens:** Now (normal, first run, last trains and closed states), trip detail, on board, Trips, Lines, Settings, and a station picker sheet. They use light and dark themes and spring-based motion.
-- **Alerts:** leave reminders use `AlarmManager`, so they fire with the app closed. On board, an ongoing notification counts down to arrival, and alerts fire before each change and before the final stop.
+- **Routes and reminders:** the same screens as the web app. A reminder posts a live countdown notification straight away, with "I'll take the next one" and "Stop" buttons, and sends an alarm when it's time to set off, even with the app closed.
+- **1×1 widget:** shows one number, the minutes to the next train you can catch on a route, inside a ring in the line colour. The ring turns amber for the last trains and shows the first train time when the metro is closed. It refreshes every minute while the screen is on, using a non-waking alarm. Long-press the widget to pick its route or to show the destination instead of "min".
 
-GitHub Actions (`.github/workflows/android.yml`) runs the engine unit tests and builds a debug APK on every push that touches `android/`. Download the APK from the run's artifacts. No local Android tooling is needed. To build locally, open `android/` in Android Studio.
+GitHub Actions (`.github/workflows/android.yml`) runs the engine unit tests and builds a debug APK on every push that touches `android/`.
 
 ## Data and accuracy
 

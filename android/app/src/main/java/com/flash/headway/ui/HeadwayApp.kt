@@ -45,21 +45,16 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Commute
 import androidx.compose.material.icons.rounded.Map
-import androidx.compose.material.icons.rounded.Navigation
-import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -76,24 +71,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.flash.headway.app.Alerts
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.Prefs
-import com.flash.headway.app.TripKey
+import com.flash.headway.app.RouteStatus
+import com.flash.headway.data.Network
 import com.flash.headway.data.Timetable
-import com.flash.headway.engine.Journey
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlinx.coroutines.delay
 
-enum class Tab { NOW, TRIPS, LINES }
+enum class Tab { ROUTES, LINES }
 
-enum class Screen { TRIP, RIDE, SETTINGS }
-
-private data class Dest(val key: String, val depth: Int)
+private enum class Picker { ADD, LOOK }
 
 @Composable
-fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs) {
+fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOpened: () -> Unit) {
     val hw = LocalHw.current
     val context = LocalContext.current
-    val state by vm.now.collectAsStateWithLifecycle()
+    val statuses by vm.statuses.collectAsStateWithLifecycle()
+    val previewStatus by vm.previewStatus.collectAsStateWithLifecycle()
 
     // One clock for every countdown, aligned to the second.
     val now by produceState(System.currentTimeMillis()) {
@@ -102,36 +96,24 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs) {
             value = System.currentTimeMillis()
         }
     }
-    val minute = now / 60_000
 
-    var tab by rememberSaveable { mutableStateOf(Tab.NOW) }
-    val stack = remember { mutableStateListOf<Screen>() }
-    var picker by remember { mutableStateOf<PickField?>(null) }
-    var tripDep by remember { mutableStateOf<Long?>(null) }
-    var openedRide by rememberSaveable { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableStateOf(Tab.ROUTES) }
+    var settings by rememberSaveable { mutableStateOf(false) }
+    var picker by remember { mutableStateOf<Picker?>(null) }
+    var menuFor by remember { mutableStateOf<String?>(null) }
 
-    // Reopen the ride screen when the app starts mid-trip.
-    LaunchedEffect(Unit) {
-        if (!openedRide && prefs.ride != null) {
-            stack.add(Screen.RIDE)
-            openedRide = true
+    // A widget tap opens the app on that route.
+    LaunchedEffect(openRoute) {
+        if (openRoute != null) {
+            vm.closePreview()
+            vm.expand(openRoute)
+            settings = false
+            tab = Tab.ROUTES
+            onRouteOpened()
         }
     }
 
-    fun push(screen: Screen) {
-        if (stack.lastOrNull() != screen) stack.add(screen)
-    }
-
-    fun pop() {
-        if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
-    }
-
-    fun goNow() {
-        stack.clear()
-        tab = Tab.NOW
-    }
-
-    BackHandler(enabled = stack.isNotEmpty()) { pop() }
+    BackHandler(enabled = settings) { settings = false }
 
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     fun askNotifications() {
@@ -142,115 +124,68 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs) {
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
 
-    fun remind(j: Journey) {
-        val on = prefs.reminderDep == j.dep
+    fun remind(s: RouteStatus) {
+        val next = s.next ?: return
+        if (previewStatus?.route?.id == s.route.id) {
+            toast("Save the route to set a reminder")
+            return
+        }
+        val on = prefs.reminder?.let { it.routeId == s.route.id && it.dep == next.dep } == true
         if (!on) askNotifications()
-        vm.toggleReminder(j)
-        toast(if (on) "Reminder off" else "We'll remind you at ${clock(vm.reminderTime(j))}")
+        vm.toggleReminder(s)
+        toast(if (on) "Reminder off" else vm.reminderToast(s.route, next.dep))
     }
 
-    // Trip detail and Trips tab data, refreshed each minute.
-    var options by remember { mutableStateOf<List<Journey>?>(null) }
-    val showingTrip = stack.lastOrNull() == Screen.TRIP
-    LaunchedEffect(showingTrip, prefs.from, prefs.to, prefs.walk, minute) {
-        if (showingTrip) options = vm.tripOptions()
-    }
-    var nexts by remember { mutableStateOf<Map<TripKey, Journey?>>(emptyMap()) }
-    LaunchedEffect(tab, prefs.saved, prefs.recents, minute) {
-        if (tab == Tab.TRIPS) nexts = vm.nextFor((prefs.saved + prefs.recents).distinct())
-    }
-
-    val top = stack.lastOrNull()
-    val dest = when (top) {
-        null -> Dest(tab.name, 0)
-        else -> Dest(top.name, stack.size)
-    }
+    val screen = if (settings) "settings" else tab.name
 
     Box(Modifier.fillMaxSize().background(hw.bg)) {
         AnimatedContent(
-            targetState = dest,
+            targetState = screen,
             transitionSpec = {
                 val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
                 when {
-                    targetState.depth > initialState.depth ->
+                    targetState == "settings" ->
                         slideInHorizontally(slide) { it } togetherWith (slideOutHorizontally(slide) { -it / 4 } + fadeOut(targetAlpha = 0.6f))
-                    targetState.depth < initialState.depth ->
+                    initialState == "settings" ->
                         ((slideInHorizontally(slide) { -it / 4 } + fadeIn(initialAlpha = 0.6f)) togetherWith slideOutHorizontally(slide) { it })
                             .apply { targetContentZIndex = -1f }
                     else -> fadeIn(tween(220)) togetherWith fadeOut(tween(140))
                 }
             },
             label = "screens",
-        ) { d ->
+        ) { key ->
             ScreenColumn {
-                when (d.key) {
-                    Tab.NOW.name -> NowScreen(
-                        state,
-                        prefs,
-                        now,
-                        NowActions(
-                            pickFrom = { picker = PickField.FROM },
-                            pickTo = { picker = PickField.TO },
-                            settings = { push(Screen.SETTINGS) },
-                            openTrip = { dep ->
-                                tripDep = dep
-                                push(Screen.TRIP)
-                            },
+                when (key) {
+                    Tab.ROUTES.name -> RoutesScreen(
+                        statuses = statuses,
+                        preview = previewStatus,
+                        prefs = prefs,
+                        now = now,
+                        actions = RouteActions(
+                            add = { picker = Picker.ADD },
+                            look = { picker = Picker.LOOK },
+                            settings = { settings = true },
+                            expand = vm::expand,
+                            arrive = vm::setArrive,
                             remind = ::remind,
-                            quick = { id ->
-                                val from = prefs.from
-                                if (from == null) {
-                                    vm.setTo(id)
-                                    picker = PickField.FROM
-                                } else {
-                                    vm.setTrip(from, id)
-                                }
+                            menu = { menuFor = it },
+                            closePreview = vm::closePreview,
+                            savePreview = {
+                                vm.savePreview()
+                                toast("Route saved")
                             },
-                            openRide = { push(Screen.RIDE) },
                             reminderTime = vm::reminderTime,
                         ),
                     )
-                    Tab.TRIPS.name -> TripsScreen(
-                        prefs,
-                        nexts,
-                        now,
-                        onUse = { t ->
-                            vm.setTrip(t.from, t.to)
-                            goNow()
-                        },
-                        onNew = { picker = PickField.TO },
-                    )
-                    Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, onSettings = { push(Screen.SETTINGS) })
-                    Screen.TRIP.name -> options?.let { o ->
-                        TripScreen(
-                            journey = o.firstOrNull { it.dep == tripDep } ?: o.firstOrNull(),
-                            prefs = prefs,
-                            now = now,
-                            onBack = ::pop,
-                            onToggleSaved = vm::toggleSaved,
-                            onRemind = ::remind,
-                        )
-                    }
-                    Screen.RIDE.name -> prefs.ride?.let { ride ->
-                        RideScreen(
-                            ride,
-                            now,
-                            onMinimise = ::pop,
-                            onEnd = {
-                                vm.endRide()
-                                goNow()
-                            },
-                        )
-                    } ?: LaunchedEffect(Unit) { pop() }
-                    Screen.SETTINGS.name -> SettingsScreen(
+                    Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, onSettings = { settings = true })
+                    else -> SettingsScreen(
                         prefs = prefs,
                         today = vm.todayInfo(),
                         exactAllowed = Alerts.canScheduleExact(context),
                         notificationsAllowed = Alerts.canNotify(context),
                         actions = SettingsActions(
-                            back = ::pop,
+                            back = { settings = false },
                             override = vm::setOverride,
-                            walk = vm::setWalk,
                             lead = vm::setRemindLead,
                             lastWarn = vm::setLastWarn,
                             theme = vm::setTheme,
@@ -275,86 +210,65 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs) {
             }
         }
 
-        // Floating controls: tab bar on the tabs, a primary action on trip and ride screens.
-        val dock: Screen? = top
         AnimatedContent(
-            targetState = dock,
-            transitionSpec = {
-                (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { it } + fadeOut())
-            },
+            targetState = settings,
+            transitionSpec = { (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { it } + fadeOut()) },
             modifier = Modifier.align(Alignment.BottomCenter),
             label = "dock",
-        ) { screen ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(start = 21.dp, end = 21.dp, bottom = 21.dp),
-                contentAlignment = Alignment.BottomCenter,
-            ) {
-                when (screen) {
-                    null -> TabDock(
-                        tab = tab,
-                        onTab = { tab = it },
-                        onSearch = { picker = PickField.TO },
-                    )
-                    Screen.TRIP -> TripDock(
-                        onStart = {
-                            val o = options.orEmpty()
-                            val j = o.firstOrNull { it.dep == tripDep } ?: o.firstOrNull()
-                            if (j != null) {
-                                askNotifications()
-                                vm.startRide(j)
-                                stack[stack.lastIndex] = Screen.RIDE
-                            }
-                        },
-                        onNext = {
-                            val o = options.orEmpty()
-                            if (o.isNotEmpty()) {
-                                val i = o.indexOfFirst { it.dep == tripDep }
-                                tripDep = o[(i + 1).mod(o.size)].dep
-                                toast("Showing the ${clock(tripDep ?: 0L)}")
-                            }
-                        },
-                    )
-                    Screen.RIDE -> RideDock(prefs.rideAlert, vm::setRideAlert)
-                    Screen.SETTINGS -> Spacer(Modifier.height(0.dp))
+        ) { hidden ->
+            if (!hidden) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(start = 21.dp, end = 21.dp, bottom = 21.dp),
+                ) {
+                    TabDock(tab = tab, onTab = { tab = it }, onSearch = { picker = Picker.LOOK })
                 }
             }
         }
 
-        picker?.let { field ->
-            val asking = if (field == PickField.FROM || prefs.from == null) PickField.FROM else PickField.TO
-            val origin = if (asking == PickField.TO) prefs.from else null
-            var plans by remember(asking, origin) { mutableStateOf<Map<String, Journey?>>(emptyMap()) }
-            LaunchedEffect(asking, origin) {
-                if (origin != null) plans = vm.plansFrom(origin)
-            }
-            StationPicker(
-                asking = asking,
-                origin = origin,
-                current = if (asking == PickField.FROM) prefs.from else prefs.to,
-                recents = prefs.recents.map { if (asking == PickField.FROM) it.from else it.to },
-                plans = plans,
-                onPick = { id ->
+        picker?.let { mode ->
+            RoutePicker(
+                title = if (mode == Picker.ADD) "Where do you board?" else "Check a station",
+                onPick = { from, to ->
                     picker = null
-                    if (asking == PickField.FROM) {
-                        val to = if (prefs.to == id) prefs.from else prefs.to
-                        if (to != null && to != id) {
-                            vm.setTrip(id, to)
-                            goNow()
-                        } else {
-                            vm.setFrom(id)
-                            picker = PickField.TO
-                        }
+                    tab = Tab.ROUTES
+                    if (mode == Picker.ADD) {
+                        vm.addRoute(from, to)
+                        toast("Saved ${Network.name(from)} → ${Network.name(to)}")
                     } else {
-                        val from = prefs.from
-                        if (from != null) vm.setTrip(from, id)
-                        goNow()
+                        vm.showPreview(from, to)
                     }
                 },
                 onDismiss = { picker = null },
             )
+        }
+
+        menuFor?.let { id ->
+            val route = prefs.routes.firstOrNull { it.id == id }
+            if (route == null) {
+                menuFor = null
+            } else {
+                RouteMenu(
+                    title = "${Network.name(route.from)} → ${Network.name(route.to)}",
+                    returnTitle = "${Network.name(route.to)} → ${Network.name(route.from)}",
+                    onReturn = {
+                        menuFor = null
+                        vm.addReturn(id)
+                    },
+                    onTop = {
+                        menuFor = null
+                        vm.moveToTop(id)
+                    },
+                    onRemove = {
+                        menuFor = null
+                        vm.removeRoute(id)
+                        toast("Removed ${Network.name(route.from)} → ${Network.name(route.to)}")
+                    },
+                    onDismiss = { menuFor = null },
+                )
+            }
         }
     }
 }
@@ -379,14 +293,14 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun Glass(modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = CircleShape, content: @Composable () -> Unit) {
+private fun Glass(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val hw = LocalHw.current
     Box(
         modifier
-            .shadow(14.dp, shape, ambientColor = Color(0x3314203A), spotColor = Color(0x3314203A))
-            .clip(shape)
+            .shadow(14.dp, CircleShape, ambientColor = Color(0x3314203A), spotColor = Color(0x3314203A))
+            .clip(CircleShape)
             .background(hw.glass)
-            .border(0.5.dp, hw.glassBorder, shape),
+            .border(0.5.dp, hw.glassBorder, CircleShape),
         contentAlignment = Alignment.Center,
     ) { content() }
 }
@@ -397,69 +311,27 @@ private fun TabDock(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         Glass(Modifier.weight(1f).height(62.dp)) {
             BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
-                val w = maxWidth / 3
+                val w = maxWidth / 2
                 val x by animateDpAsState(w * tab.ordinal, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow), label = "tab")
                 Box(Modifier.offset(x = x).width(w).fillMaxHeight().clip(CircleShape).background(hw.selected))
                 Row(Modifier.fillMaxSize()) {
-                    listOf(Tab.NOW to ("Now" to Icons.Rounded.Schedule), Tab.TRIPS to ("Trips" to Icons.Rounded.Commute), Tab.LINES to ("Lines" to Icons.Rounded.Map))
-                        .forEach { (t, labelIcon) ->
-                            val (label, icon) = labelIcon
-                            val on = t == tab
-                            Column(
-                                Modifier.weight(1f).fillMaxHeight().clip(CircleShape).press(scaleTo = 0.92f) { onTab(t) },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                            ) {
-                                Icon(icon, null, tint = if (on) hw.tint else hw.text, modifier = Modifier.size(24.dp))
-                                Text(label, style = HwType.tab, color = if (on) hw.tint else hw.text)
-                            }
+                    listOf(Tab.ROUTES to ("Routes" to Icons.Rounded.Commute), Tab.LINES to ("Lines" to Icons.Rounded.Map)).forEach { (t, labelIcon) ->
+                        val (label, icon) = labelIcon
+                        val on = t == tab
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().clip(CircleShape).press(scaleTo = 0.92f) { onTab(t) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(icon, null, tint = if (on) hw.tint else hw.text, modifier = Modifier.size(24.dp))
+                            Text(label, style = HwType.tab, color = if (on) hw.tint else hw.text)
                         }
+                    }
                 }
             }
         }
         Glass(Modifier.size(62.dp).press(scaleTo = 0.92f, onClick = onSearch)) {
-            Icon(Icons.Rounded.Search, "Search stations", tint = hw.text, modifier = Modifier.size(24.dp))
-        }
-    }
-}
-
-@Composable
-private fun TripDock(onStart: () -> Unit, onNext: () -> Unit) {
-    val hw = LocalHw.current
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(
-            Modifier
-                .weight(1f)
-                .height(62.dp)
-                .shadow(14.dp, CircleShape, ambientColor = hw.tint, spotColor = hw.tint)
-                .clip(CircleShape)
-                .background(hw.tint)
-                .press(scaleTo = 0.97f, onClick = onStart),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Navigation, null, tint = Color.White, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Start trip", style = HwType.headline, color = Color.White)
-        }
-        Glass(Modifier.size(62.dp).press(scaleTo = 0.92f, onClick = onNext)) {
-            Icon(Icons.Rounded.Schedule, "Show the next train", tint = hw.text, modifier = Modifier.size(24.dp))
-        }
-    }
-}
-
-@Composable
-private fun RideDock(alert: Boolean, onAlert: (Boolean) -> Unit) {
-    val hw = LocalHw.current
-    Glass(Modifier.fillMaxWidth().height(62.dp), shape = RoundedCornerShape(31.dp)) {
-        Row(
-            Modifier.fillMaxSize().padding(start = 20.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(Icons.Rounded.NotificationsActive, null, tint = hw.text, modifier = Modifier.size(22.dp))
-            Text("Alert one stop before", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-            HwSwitch(alert, onAlert, "Alert one stop before")
+            Icon(Icons.Rounded.Search, "Check any station", tint = hw.text, modifier = Modifier.size(24.dp))
         }
     }
 }

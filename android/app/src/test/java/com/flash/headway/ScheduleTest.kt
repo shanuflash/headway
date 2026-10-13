@@ -104,6 +104,28 @@ class ScheduleTest {
     }
 
     @Test
+    fun routeDeparturesListOnlyDirectTrainsThatStopAtTheDestination() {
+        val s = Schedule()
+        val deps = s.routeDepartures("guindy", "central", at(2026, 10, 12, 8, 38), 6)
+        assertEquals(6, deps.size)
+        for (d in deps) {
+            assertTrue(d.arr > d.dep)
+            assertTrue(d.trip.route == RouteId.BLUE || d.trip.route == RouteId.LOOP)
+        }
+        // Short loops end at Washermenpet, so they never serve stations beyond it.
+        val far = s.routeDepartures("guindy", "tollgate", at(2026, 10, 12, 8, 38), 6)
+        assertTrue(far.all { it.trip.route == RouteId.BLUE })
+        assertEquals("23:10", hhmm(s.lastRouteDeparture("guindy", "central", at(2026, 10, 12, 8, 38))!!.dep))
+    }
+
+    @Test
+    fun directDestinationsGroupStationsByDirection() {
+        val groups = com.flash.headway.engine.directDestinations("alandur")
+        assertTrue(groups.first { it.next == "ekkattuthangal" }.stations.any { it.first == "koyambedu" })
+        assertEquals(listOf("airport"), groups.first { it.next == "nanganallur-road" }.terminals)
+    }
+
+    @Test
     fun lastJourneyIsTheFinalTrainOfTheServiceDay() {
         val last = Schedule().lastJourney("guindy", "central", at(2026, 10, 12, 20, 0))
         assertNotNull(last)
