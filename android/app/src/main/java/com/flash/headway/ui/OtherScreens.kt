@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -126,6 +127,7 @@ class SettingsActions(
     val back: () -> Unit,
     val override: (DayType?) -> Unit,
     val lead: (Int) -> Unit,
+    val count: (Int) -> Unit,
     val lastWarn: (Boolean) -> Unit,
     val theme: (ThemeMode) -> Unit,
     val allowExact: () -> Unit,
@@ -169,12 +171,25 @@ fun ColumnScope.SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         TileIcon(Icons.Rounded.Notifications, Color(0xFFFF3B30))
-                        Text("Reminder", style = HwType.body, color = hw.text)
+                        Text("Remind me before a train", style = HwType.body, color = hw.text)
                     }
                     Segmented(
-                        options = listOf(0 to "Set off", 1 to "1 min early", 2 to "2 min", 5 to "5 min"),
+                        options = com.flash.headway.app.LEAD_CHOICES.map { it to "$it min" },
                         selected = prefs.remindLead,
                         onSelect = actions.lead,
+                    )
+                }
+            },
+            {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TileIcon(Icons.Rounded.Schedule, Color(0xFF34C759))
+                        Text("Departures shown", style = HwType.body, color = hw.text)
+                    }
+                    Segmented(
+                        options = com.flash.headway.app.COUNT_CHOICES.map { it to "$it" },
+                        selected = prefs.count,
+                        onSelect = actions.count,
                     )
                 }
             },
@@ -188,7 +203,7 @@ fun ColumnScope.SettingsScreen(
         ),
         inset = 58.dp,
     )
-    Footnote("Reminders count back from the train, minus the time you said you'll take to reach the station. The warning shows in the last hour before your last train.")
+    Footnote("Reminders go off this long before the train leaves. The last-train warning shows in the final hour of service.")
 
     if (!notificationsAllowed || !exactAllowed) {
         val rows = ArrayList<@Composable () -> Unit>()

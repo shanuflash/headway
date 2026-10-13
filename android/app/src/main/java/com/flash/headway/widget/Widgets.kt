@@ -40,7 +40,7 @@ object Widgets {
     /** Called by the app whenever preferences change. */
     fun mirror(context: Context, p: Prefs) {
         store(context).edit()
-            .putString("routes", p.routes.joinToString(";") { "${it.from}>${it.to}>${it.arrive}" })
+            .putString("routes", p.routes.joinToString(";") { "${it.from}>${it.to}" })
             .putBoolean("lastWarn", p.lastWarn)
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
             .apply()
@@ -50,7 +50,7 @@ object Widgets {
         store(context).getString("routes", "").orEmpty().split(';').mapNotNull { part ->
             val bits = part.split('>')
             if (bits.size >= 2 && bits[0] in Network.stations && bits[1] in Network.stations) {
-                SavedRoute(bits[0], bits[1], bits.getOrNull(2)?.toIntOrNull() ?: 0)
+                SavedRoute(bits[0], bits[1])
             } else {
                 null
             }
@@ -104,7 +104,7 @@ object Widgets {
         }
 
         val lastWarn = store(context).getBoolean("lastWarn", true)
-        val status = routeStatus(schedule, route, System.currentTimeMillis(), lastWarn)
+        val status = routeStatus(schedule, route, System.currentTimeMillis(), lastWarn, 1)
         val next = status.next
         val line = routeGroup(route.from, route.to)?.line ?: Line.BLUE
         val ring = when (line) {

@@ -106,7 +106,6 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     LaunchedEffect(openRoute) {
         if (openRoute != null) {
             vm.closePreview()
-            vm.expand(openRoute)
             settings = false
             tab = Tab.ROUTES
             onRouteOpened()
@@ -165,8 +164,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             add = { picker = Picker.ADD },
                             look = { picker = Picker.LOOK },
                             settings = { settings = true },
-                            expand = vm::expand,
-                            arrive = vm::setArrive,
+                            swap = vm::swapRoute,
                             remind = ::remind,
                             menu = { menuFor = it },
                             closePreview = vm::closePreview,
@@ -174,7 +172,6 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 vm.savePreview()
                                 toast("Route saved")
                             },
-                            reminderTime = vm::reminderTime,
                         ),
                     )
                     Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, onSettings = { settings = true })
@@ -187,6 +184,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             back = { settings = false },
                             override = vm::setOverride,
                             lead = vm::setRemindLead,
+                            count = vm::setCount,
                             lastWarn = vm::setLastWarn,
                             theme = vm::setTheme,
                             allowExact = {

@@ -20,8 +20,8 @@ private val Context.dataStore by preferencesDataStore("headway")
 
 enum class ThemeMode { LIGHT, DARK, AUTO }
 
-/** A saved daily route: board at [from], get off at [to], usually reach [from] in [arrive] minutes. */
-data class SavedRoute(val from: String, val to: String, val arrive: Int = 0) {
+/** A saved daily route: board at [from], get off at [to]. */
+data class SavedRoute(val from: String, val to: String) {
     val id: String get() = "$from>$to"
 }
 
@@ -29,20 +29,22 @@ data class Reminder(val routeId: String, val dep: Long)
 
 data class Prefs(
     val routes: List<SavedRoute> = emptyList(),
-    val expanded: String? = null,
-    val remindLead: Int = 2,
+    /** How many departures each route card lists. */
+    val count: Int = 5,
+    val remindLead: Int = 5,
     val lastWarn: Boolean = true,
     val theme: ThemeMode = ThemeMode.AUTO,
     val override: DayOverride? = null,
     val reminder: Reminder? = null,
 )
 
-val ARRIVE_CHOICES = listOf(0, 5, 10, 15, 20, 30)
+val COUNT_CHOICES = listOf(3, 5, 8)
+val LEAD_CHOICES = listOf(2, 5, 10, 15)
 
 class PrefsStore(private val context: Context) {
     private object Keys {
         val routes = stringPreferencesKey("routes")
-        val expanded = stringPreferencesKey("expanded")
+        val count = intPreferencesKey("count")
         val remindLead = intPreferencesKey("remind_lead")
         val lastWarn = booleanPreferencesKey("last_warn")
         val theme = stringPreferencesKey("theme")
@@ -68,8 +70,8 @@ class PrefsStore(private val context: Context) {
         val reminderDep = p[Keys.reminderDep]
         return Prefs(
             routes = routes,
-            expanded = p[Keys.expanded],
-            remindLead = p[Keys.remindLead] ?: 2,
+            count = (p[Keys.count] ?: 5).takeIf { it in COUNT_CHOICES } ?: 5,
+            remindLead = (p[Keys.remindLead] ?: 5).takeIf { it in LEAD_CHOICES } ?: 5,
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -84,8 +86,8 @@ class PrefsStore(private val context: Context) {
     }
 
     private fun write(p: MutablePreferences, next: Prefs) {
-        p[Keys.routes] = next.routes.joinToString(";") { "${it.from}>${it.to}>${it.arrive}" }
-        p.put(Keys.expanded, next.expanded)
+        p[Keys.routes] = next.routes.joinToString(";") { "${it.from}>${it.to}" }
+        p[Keys.count] = next.count
         p[Keys.remindLead] = next.remindLead
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
@@ -110,7 +112,7 @@ class PrefsStore(private val context: Context) {
         raw.split(';').mapNotNull { part ->
             val bits = part.split('>')
             if (bits.size >= 2 && bits[0] in Network.stations && bits[1] in Network.stations) {
-                SavedRoute(bits[0], bits[1], bits.getOrNull(2)?.toIntOrNull() ?: 0)
+                SavedRoute(bits[0], bits[1])
             } else {
                 null
             }

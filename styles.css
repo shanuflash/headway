@@ -731,22 +731,9 @@ button.hero:active { transform: scale(0.985); }
 .mini .ms { font-size: 20px; }
 .mini:active { transform: scale(0.9); }
 
-.arrive { display: flex; flex-direction: column; gap: 8px; }
 .label { font-size: 13px; line-height: 18px; color: var(--sub); }
 .label.tint { color: var(--tint); font-weight: 600; }
-.arrive-chips { display: flex; gap: 6px; }
-.arrive-chips button {
-  flex: 1;
-  height: 36px;
-  border-radius: 18px;
-  background: var(--fill);
-  font-size: 15px;
-  font-weight: 500;
-  text-align: center;
-  transition: background 0.25s var(--ease), color 0.25s, transform 0.25s var(--spring);
-}
-.arrive-chips button:active { transform: scale(0.94); }
-.arrive-chips button[aria-checked='true'] { background: var(--tint); color: var(--card); font-weight: 600; }
+.label.warn { color: var(--warn); font-weight: 600; }
 
 .catch { display: flex; flex-direction: column; gap: 2px; }
 .strip.info-strip { background: var(--info-bg); color: var(--info); }
@@ -760,7 +747,26 @@ button.hero:active { transform: scale(0.985); }
 .train-row .note { flex: 1; min-width: 0; font-size: 13px; line-height: 18px; color: var(--sub); }
 .train-row .right { font-size: 15px; line-height: 20px; font-weight: 500; color: var(--sub); white-space: nowrap; }
 .train-row .right.warn { color: var(--warn); }
-.train-row.missed { opacity: 0.55; }
+.train-row .note.warn { color: var(--warn); }
+.day-break { padding: 10px 12px 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--sub); }
+.big-row .big-side { flex: 1; align-items: flex-end; }
+.big-side .t { white-space: nowrap; }
+.big.clock .n { font-size: 44px; line-height: 52px; letter-spacing: -1px; }
+.bell {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: var(--fill);
+  color: var(--tint);
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: transform 0.25s var(--spring), background 0.25s var(--ease);
+}
+.bell .ms { font-size: 20px; }
+.bell:active { transform: scale(0.9); }
+.bell.on { background: var(--tint); color: #fff; }
 
 .closed-row { display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--warn); }
 .closed-row .ms { font-size: 20px; }

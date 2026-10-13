@@ -4,14 +4,14 @@ A next-train timer for Chennai Metro, built on the official CMRL timetable. It i
 
 ## What it does
 
-Headway is for people who ride the same route every day. Save where you board and where you get off, then tell it how soon you'll reach the station. It shows the trains you can actually make.
+Headway is for people who ride the same route every day. Save where you board and where you get off, and it lists the next trains on that route.
 
-- **Routes:** one card per saved route. "I'll be at Guindy in Now / 5 / 10 / 15 / 20 / 30 min" picks the arrival time, and the card remembers it.
-  - The first train you can make is shown big with a countdown and how long you'll wait on the platform.
-  - The next two options come with their waits, and the train you'll just miss is faded.
+- **Routes:** one card per saved route, always open.
+  - The next train is shown big with a live countdown, then the next few departures (3, 5 or 8, set in Settings), each with its arrival time.
+  - The swap button on a card flips the route in place, so the morning route becomes the ride home with one tap.
   - Only direct trains count. Short loops and Green Line trains via CMBT are included when they stop at your destination.
-- **States:** last trains (a badge, plus the first train tomorrow), "No more trains tonight", "Metro is closed", and "You'll miss the last train".
-- **Reminders:** one tap per train. It fires when you need to set off: departure, minus your arrival time, minus the lead time you choose in Settings.
+- **States:** last trains (an amber label, plus the first train tomorrow), "No more trains tonight" and "Metro is closed".
+- **Reminders:** one tap per train. It goes off 2, 5, 10 or 15 minutes before the train leaves (set in Settings).
 - **Quick look:** the search button checks any pair of stations without saving them.
 - **Lines:** today's official first and last trains and frequency bands.
 - **Settings:** today's timetable override, reminder lead, last-train warning, and appearance.

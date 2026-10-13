@@ -64,11 +64,11 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     val now = System.currentTimeMillis()
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
-                        p.routes.map { routeStatus(s, it, now, p.lastWarn) } to pv?.let { routeStatus(s, it, now, p.lastWarn) }
+                        p.routes.map { routeStatus(s, it, now, p.lastWarn, p.count) } to pv?.let { routeStatus(s, it, now, p.lastWarn, p.count) }
                     }
                     _statuses.value = list
                     _previewStatus.value = previewNow
-                    // Recompute the moment a shown train leaves or stops being catchable, else every 15 s.
+                    // Recompute the moment a shown train leaves, else every 15 s.
                     val boundary = (list + listOfNotNull(previewNow)).mapNotNull { it.nextChange }.minOrNull()
                     val wait = boundary?.let { (it - System.currentTimeMillis() + 300).coerceIn(300L, 15_000L) } ?: 15_000L
                     delay(wait)
@@ -92,10 +92,27 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.update(transform) }
     }
 
-    fun addRoute(from: String, to: String, arrive: Int = 0) = update { p ->
-        val route = SavedRoute(from, to, arrive)
-        val routes = if (p.routes.any { it.id == route.id }) p.routes else listOf(route) + p.routes
-        p.copy(routes = routes, expanded = route.id)
+    fun addRoute(from: String, to: String) = update { p ->
+        val route = SavedRoute(from, to)
+        p.copy(routes = if (p.routes.any { it.id == route.id }) p.routes else listOf(route) + p.routes)
+    }
+
+    /** Flips a route to the other direction in place, keeping its spot in the list. */
+    fun swapRoute(id: String) {
+        val pv = _preview.value
+        if (pv != null && pv.id == id) {
+            _preview.value = SavedRoute(pv.to, pv.from)
+            return
+        }
+        if (prefs.value?.reminder?.routeId == id) Alerts.cancelReminder(getApplication())
+        update { p ->
+            val r = p.routes.firstOrNull { it.id == id } ?: return@update p
+            val flipped = SavedRoute(r.to, r.from)
+            p.copy(
+                routes = p.routes.filterNot { it.id == flipped.id }.map { if (it.id == id) flipped else it },
+                reminder = p.reminder?.takeIf { it.routeId != id },
+            )
+        }
     }
 
     fun addReturn(id: String) {
@@ -115,19 +132,10 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     fun moveToTop(id: String) = update { p ->
         val r = p.routes.firstOrNull { it.id == id } ?: return@update p
-        p.copy(routes = listOf(r) + p.routes.filterNot { it.id == id }, expanded = id)
+        p.copy(routes = listOf(r) + p.routes.filterNot { it.id == id })
     }
 
-    fun expand(id: String) = update { it.copy(expanded = id) }
-
-    fun setArrive(id: String, minutes: Int) {
-        val pv = _preview.value
-        if (pv != null && pv.id == id) {
-            _preview.value = pv.copy(arrive = minutes)
-            return
-        }
-        update { p -> p.copy(routes = p.routes.map { if (it.id == id) it.copy(arrive = minutes) else it }) }
-    }
+    fun setCount(n: Int) = update { it.copy(count = n) }
 
     fun showPreview(from: String, to: String) {
         _preview.value = SavedRoute(from, to)
@@ -140,7 +148,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     fun savePreview() {
         val pv = _preview.value ?: return
         _preview.value = null
-        addRoute(pv.from, pv.to, pv.arrive)
+        addRoute(pv.from, pv.to)
     }
 
     fun toggleReminder(status: RouteStatus) {
@@ -153,17 +161,17 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             update { it.copy(reminder = null) }
             return
         }
-        Alerts.setReminder(ctx, status.route, next.dep, reminderTime(status.route, next.dep))
+        Alerts.setReminder(ctx, status.route, next.dep, reminderTime(next.dep))
         update { it.copy(reminder = Reminder(status.route.id, next.dep)) }
     }
 
-    fun reminderTime(route: SavedRoute, dep: Long): Long {
-        val lead = prefs.value?.remindLead ?: 2
-        return maxOf(System.currentTimeMillis() + 5_000, dep - (route.arrive + lead) * MINUTE)
+    fun reminderTime(dep: Long): Long {
+        val lead = prefs.value?.remindLead ?: 5
+        return maxOf(System.currentTimeMillis() + 5_000, dep - lead * MINUTE)
     }
 
     fun reminderToast(route: SavedRoute, dep: Long): String =
-        "We'll remind you at ${clock(reminderTime(route, dep))} for the ${clock(dep)} from ${Network.name(route.from)}"
+        "We'll remind you at ${clock(reminderTime(dep))} for the ${clock(dep)} from ${Network.name(route.from)}"
 
     fun setRemindLead(minutes: Int) = update { it.copy(remindLead = minutes) }
 

@@ -37,7 +37,6 @@ object Alerts {
     const val ACTION_STOP = "com.flash.headway.STOP"
     private const val EXTRA_FROM = "from"
     private const val EXTRA_TO = "to"
-    private const val EXTRA_ARRIVE = "arrive"
     private const val EXTRA_DEP = "dep"
 
     fun createChannels(context: Context) {
@@ -87,9 +86,8 @@ object Alerts {
 
     private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?) {
         if (!canNotify(context)) return
-        val reach = dep - route.arrive * MINUTE
         val text = buildString {
-            append("Be on the platform by ${clock(minOf(reach, dep))}.")
+            append("${Network.name(route.from)} to ${Network.name(route.to)}.")
             if (following != null) append(" Next one is ${clock(following)}.")
         }
         val builder = Notification.Builder(context, CHANNEL_COUNTDOWN)
@@ -118,7 +116,7 @@ object Alerts {
         if (!canNotify(context)) return
         val notification = Notification.Builder(context, CHANNEL_REMINDERS)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Time to go for the ${clock(dep)}")
+            .setContentTitle("The ${clock(dep)} leaves soon")
             .setContentText("${Network.name(route.from)} to ${Network.name(route.to)}. Head to the platform now.")
             .setCategory(Notification.CATEGORY_ALARM)
             .setAutoCancel(true)
@@ -129,9 +127,7 @@ object Alerts {
 
     private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long): PendingIntent {
         val intent = Intent(context, AlertReceiver::class.java).setAction(action)
-        if (route != null) {
-            intent.putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to).putExtra(EXTRA_ARRIVE, route.arrive)
-        }
+        if (route != null) intent.putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to)
         intent.putExtra(EXTRA_DEP, dep)
         val code = when (action) {
             ACTION_FIRE -> 1
@@ -152,7 +148,7 @@ object Alerts {
     internal fun routeFrom(intent: Intent): SavedRoute? {
         val from = intent.getStringExtra(EXTRA_FROM) ?: return null
         val to = intent.getStringExtra(EXTRA_TO) ?: return null
-        return SavedRoute(from, to, intent.getIntExtra(EXTRA_ARRIVE, 0))
+        return SavedRoute(from, to)
     }
 
     internal fun depFrom(intent: Intent): Long = intent.getLongExtra(EXTRA_DEP, 0L)
@@ -171,7 +167,7 @@ class AlertReceiver : BroadcastReceiver() {
             Alerts.ACTION_NEXT -> if (route != null) {
                 val following = Schedule().routeDepartures(route.from, route.to, dep + 1, 1).firstOrNull() ?: return
                 updatePrefs(context) { p ->
-                    val at = maxOf(System.currentTimeMillis() + 5_000, following.dep - (route.arrive + p.remindLead) * MINUTE)
+                    val at = maxOf(System.currentTimeMillis() + 5_000, following.dep - p.remindLead * MINUTE)
                     Alerts.setReminder(context, route, following.dep, at)
                     p.copy(reminder = Reminder(route.id, following.dep))
                 }

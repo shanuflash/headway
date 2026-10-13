@@ -5,7 +5,8 @@ import { createFeed, activeNotices } from './live.js';
 
 const MIN = 60_000;
 const STORE = 'headway:v3';
-const ARRIVE_CHOICES = [0, 5, 10, 15, 20, 30];
+const COUNT_CHOICES = [3, 5, 8];
+const LEAD_CHOICES = [2, 5, 10, 15];
 const view = document.getElementById('view');
 const dock = document.getElementById('dock');
 const sheetRoot = document.getElementById('sheet-root');
@@ -16,8 +17,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 const DEFAULTS = {
   routes: [],
-  expanded: null,
-  remindLead: 2,
+  count: 5,
+  remindLead: 5,
   lastWarn: true,
   theme: 'auto',
   override: null,
@@ -30,11 +31,16 @@ const routeId = (from, to) => `${from}>${to}`;
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-    if (saved) return { ...DEFAULTS, ...saved };
+    if (saved) {
+      const p = { ...DEFAULTS, ...saved };
+      if (!COUNT_CHOICES.includes(p.count)) p.count = DEFAULTS.count;
+      if (!LEAD_CHOICES.includes(p.remindLead)) p.remindLead = DEFAULTS.remindLead;
+      return p;
+    }
     // Carry the last trip from the trip-planner versions over as a first route.
     const old = JSON.parse(localStorage.getItem('headway:v2') || localStorage.getItem('headway:v1') || 'null');
     if (old?.from && old?.to && STATIONS[old.from] && STATIONS[old.to]) {
-      return { ...DEFAULTS, theme: old.theme ?? 'auto', routes: [{ id: routeId(old.from, old.to), from: old.from, to: old.to, arrive: 0 }] };
+      return { ...DEFAULTS, theme: old.theme ?? 'auto', routes: [{ id: routeId(old.from, old.to), from: old.from, to: old.to }] };
     }
   } catch {}
   return { ...DEFAULTS };
@@ -48,10 +54,6 @@ function save(patch) {
   try {
     localStorage.setItem(STORE, JSON.stringify(prefs));
   } catch {}
-}
-
-function updateRoute(id, patch) {
-  save({ routes: prefs.routes.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 }
 
 /* ---------- data ---------- */
@@ -140,31 +142,22 @@ function routeLine(r) {
 
 function routeModel(r, now) {
   const today = schedule.today(now).key;
-  const reach = now + r.arrive * MIN;
-  const deps = schedule.routeDepartures(r.from, r.to, now, 16);
-  const catchable = deps.filter((d) => d.dep >= reach);
-  const missed = deps.filter((d) => d.dep < reach);
-  const next = catchable[0] ?? null;
+  const deps = schedule.routeDepartures(r.from, r.to, now, prefs.count);
+  const next = deps[0] ?? null;
   if (!next) return { r, kind: 'none' };
   const last = schedule.lastRouteDeparture(r.from, r.to, now);
   const closed = next.trip.serviceDate !== today;
-  const todays = catchable.filter((d) => d.trip.serviceDate === today);
-  const late = !closed && !!last && prefs.lastWarn && last.dep - now < 60 * MIN;
-  const tomorrow = catchable.find((d) => d.trip.serviceDate !== today) ?? null;
   return {
     r,
     kind: closed ? 'closed' : 'open',
     now,
-    reach,
+    deps,
     next,
-    more: catchable.slice(1, 3),
-    missed: missed.at(-1) ?? null,
     last,
-    late,
-    remaining: todays.length,
-    tomorrow,
-    // Still running tonight, but the arrival time is too late for the last train.
-    missedLast: closed && !!last && last.dep >= now,
+    late: !closed && !!last && prefs.lastWarn && last.dep - now < 60 * MIN,
+    remaining: deps.filter((d) => d.trip.serviceDate === today).length,
+    // Index of the first departure on the next service day, or -1.
+    tomorrowFrom: closed ? 0 : deps.findIndex((d) => d.trip.serviceDate !== today),
     running: !!last && last.dep >= now,
   };
 }
@@ -185,10 +178,9 @@ function routesScreen(now) {
     ${notices}`;
 
   const cards = [];
-  if (preview) cards.push(routeCard(routeModel(preview, now), true, true));
+  if (preview) cards.push(routeCard(routeModel(preview, now), true));
   if (!prefs.routes.length && !preview) return head + emptyState();
-  const expanded = prefs.routes.find((r) => r.id === prefs.expanded) ?? prefs.routes[0];
-  for (const r of prefs.routes) cards.push(routeCard(routeModel(r, now), r === expanded && !preview, false));
+  for (const r of prefs.routes) cards.push(routeCard(routeModel(r, now), false));
   return head + cards.join('');
 }
 
@@ -197,16 +189,10 @@ function noticeCard(n) {
 }
 
 function emptyState() {
-  const step = (n, text) => `<div class="step"><span class="num-badge">${n}</span><span>${text}</span></div>`;
   return `
     <div class="card hero" style="padding-top: 20px; gap: 16px">
       <span style="font-size: 28px; line-height: 34px; font-weight: 700">Add your daily route</span>
-      <span class="sub" style="font-size: 15px; line-height: 20px">Save where you board and where you get off. Headway shows every train you can still make, even when you're coming off a bus.</span>
-      <div class="steps">
-        ${step(1, 'Pick the station you board at')}
-        ${step(2, 'Pick where you get off')}
-        ${step(3, "Tap how soon you'll be there")}
-      </div>
+      <span class="sub" style="font-size: 15px; line-height: 20px">Save where you board and where you get off. Headway lists the next trains on it, and one tap flips it for the ride home.</span>
       <button class="cta" data-act="add-route">${ic('add')}Add a route</button>
     </div>
     <span class="section-title">Or check any station</span>
@@ -215,118 +201,69 @@ function emptyState() {
 
 const reminderOn = (r, dep) => !!(prefs.reminder && prefs.reminder.routeId === r.id && prefs.reminder.dep === dep && !prefs.reminder.fired);
 
-function arriveChips(r) {
-  return `
-    <div class="arrive">
-      <span class="label">I'll be at ${esc(name(r.from))} in</span>
-      <div class="arrive-chips" role="radiogroup" aria-label="When you reach ${esc(name(r.from))}">
-        ${ARRIVE_CHOICES.map(
-          (m) =>
-            `<button role="radio" aria-checked="${r.arrive === m}" data-act="arrive" data-route="${r.id}" data-min="${m}">${m === 0 ? 'Now' : `${m}m`}</button>`,
-        ).join('')}
-      </div>
-    </div>`;
-}
-
-function routeCard(m, expanded, isPreview) {
+function routeCard(m, isPreview) {
   const { r } = m;
   const line = routeLine(r);
-  if (!expanded) {
-    const right =
-      m.kind === 'none'
-        ? '<span class="v light">No trains</span>'
-        : `<span class="col-end"><span class="v">${clock(m.next.dep)}</span><span class="s">${
-            m.kind === 'closed' ? 'tomorrow' : live(m.next.dep, 'in')
-          }</span></span>`;
-    return `
-      <div class="card route compact">
-        <div class="route-head">
-          <span class="bar ${line}"></span>
-          <button class="grow" data-act="expand" data-route="${r.id}">
-            <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
-            <span class="s">${esc(routeLabel(r))}</span>
-          </button>
-          ${right}
-        </div>
-      </div>`;
-  }
-
   const head = `
     <div class="route-head">
       <span class="bar ${line}"></span>
-      <button class="grow" data-act="expand" data-route="${r.id}">
+      <span class="grow">
         <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
         <span class="s">${esc(routeLabel(r))}</span>
-      </button>
+      </span>
+      <button class="mini" data-act="swap" data-route="${r.id}" aria-label="Switch direction">${ic('swap_vert')}</button>
       ${
         isPreview
           ? `<button class="mini" data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
-          : m.late
-            ? `<span class="tag">${m.remaining <= 2 ? `Last ${plural(m.remaining, 'train')}` : 'Last hour'}</span>`
-            : `<button class="mini" data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_horiz')}</button>`
+          : `<button class="mini" data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_horiz')}</button>`
       }
     </div>`;
 
   let body = '';
   if (m.kind === 'none') {
     body = `<div class="sub" style="font-size: 15px">No direct trains between these stations.</div>`;
-  } else if (m.kind === 'closed') {
-    const title = m.missedLast
-      ? `You'll miss the last train at ${clock(m.last.dep)}`
-      : m.running
-        ? 'No more trains tonight'
-        : 'Metro is closed';
-    const on = reminderOn(r, m.next.dep);
-    const remindAt = m.next.dep - (r.arrive + prefs.remindLead) * MIN;
-    body = `
-      ${arriveChips(r)}
-      <div class="closed-row">${ic('bedtime', 'fill')}<span>${esc(title)}</span></div>
-      <div class="big-row">
-        <div class="big"><span class="n">${clock(m.next.dep)}</span></div>
-        <div class="big-side"><span class="t">${live(m.next.dep, 'in')}</span><span class="s">first train, arrives ${clock(m.next.arr)}</span></div>
-      </div>
-      <button class="wide-btn ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${m.next.dep}">${ic('alarm')}${
-        on ? `Reminder set for ${clock(remindAt)}` : `Remind me at ${clock(remindAt)}`
-      }</button>`;
   } else {
+    const closed = m.kind === 'closed';
+    const label = closed
+      ? m.running
+        ? 'No more trains tonight'
+        : 'Metro is closed'
+      : m.late && m.remaining <= 2
+        ? m.remaining === 1
+          ? 'Last train'
+          : 'Last 2 trains'
+        : 'Next train';
     const [n, u] = bigParts(m.next.dep - m.now);
-    const wait = Math.round((m.next.dep - m.reach) / MIN);
     const on = reminderOn(r, m.next.dep);
+    const big = closed
+      ? `<div class="big clock"><span class="n">${clock(m.next.dep)}</span></div>`
+      : `<div class="big"><span class="n" data-at="${m.next.dep}" data-fmt="big">${n}</span><span class="u" data-at="${m.next.dep}" data-fmt="bigUnit">${u}</span></div>`;
     const note = trainNote(m.next.trip);
-    const waitTitle = r.arrive === 0 ? `Leaves ${live(m.next.dep, 'in')}` : wait < 1 ? 'It leaves as you get there' : `You'll wait ${wait} min`;
-    const waitSub =
-      r.arrive === 0
-        ? `Tap when you'll get there to skip trains you can't make.${note ? ` This one is a ${note}.` : ''}`
-        : `Reach the platform by ${clock(m.reach)}.${note ? ` ${note[0].toUpperCase()}${note.slice(1)}.` : ''}`;
-    const rows = m.more.map((d) => {
-      const w = Math.round((d.dep - m.reach) / MIN);
+    const rows = m.deps.slice(1).map((d, i) => {
+      const index = i + 1;
       const extra = trainNote(d.trip);
       const isLast = m.last && d.dep === m.last.dep;
-      return `<div class="train-row"><span class="time">${clock(d.dep)}</span><span class="note">${
+      const isTomorrow = m.tomorrowFrom >= 0 && index >= m.tomorrowFrom;
+      const divider = !closed && index === m.tomorrowFrom ? '<div class="day-break">Tomorrow</div>' : '';
+      return `${divider}<div class="train-row"><span class="time">${clock(d.dep)}</span><span class="note ${isLast ? 'warn' : ''}">${
         isLast ? 'last train, ' : extra ? `${extra}, ` : ''
-      }arrives ${clock(d.arr)}</span><span class="right ${isLast ? 'warn' : ''}">${r.arrive ? `wait ${w} min` : live(d.dep, 'in')}</span></div>`;
+      }arrives ${clock(d.arr)}</span><span class="right">${isTomorrow ? '' : live(d.dep, 'in')}</span></div>`;
     });
-    if (m.missed && r.arrive) {
-      const by = Math.max(1, Math.round((m.reach - m.missed.dep) / MIN));
-      rows.push(`<div class="train-row missed"><span class="time">${clock(m.missed.dep)}</span><span class="note">leaves ${by} min before you get there</span><span class="right">missed</span></div>`);
-    }
+    const tomorrow = m.tomorrowFrom > 0 ? m.deps[m.tomorrowFrom] : null;
     const footnote =
-      m.late && m.tomorrow
-        ? `<div class="note">${ic('bedtime')}<span>After ${clock(m.last.dep)}, the next train to ${esc(name(r.to))} is at ${clock(m.tomorrow.dep)} tomorrow.</span></div>`
+      m.late && m.last && tomorrow
+        ? `<div class="note">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight. The first one tomorrow is at ${clock(tomorrow.dep)}.</span></div>`
         : '';
     body = `
-      ${arriveChips(r)}
       <div class="big-row">
         <div class="catch">
-          <span class="label tint">Catch the ${clock(m.next.dep)}</span>
-          <div class="big"><span class="n" data-at="${m.next.dep}" data-fmt="big">${n}</span><span class="u" data-at="${m.next.dep}" data-fmt="bigUnit">${u}</span></div>
+          <span class="label ${closed || m.late ? 'warn' : 'tint'}">${label}</span>
+          ${big}
         </div>
-        <div class="big-side"><span class="t">${clock(m.next.dep)}</span><span class="s">arrives ${clock(m.next.arr)}</span></div>
-      </div>
-      <div class="strip info-strip">
-        ${ic('hourglass_top')}
-        <span class="grow"><span class="t">${waitTitle}</span><span class="s">${esc(waitSub)}</span></span>
-        <button class="strip-btn ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${m.next.dep}" aria-pressed="${on}" aria-label="Remind me before this train">${ic(
+        <div class="big-side"><span class="t">${closed ? 'first train' : clock(m.next.dep)}</span><span class="s">${
+          note ? `${note}, ` : ''
+        }arrives ${clock(m.next.arr)}</span></div>
+        <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${m.next.dep}" aria-pressed="${on}" aria-label="Remind me before this train">${ic(
           'notifications',
           on ? 'fill' : '',
         )}</button>
@@ -425,13 +362,13 @@ function settingsScreen() {
     <div class="card list">
       <div class="row icon">
         <span class="icon-tile" style="background: #ff3b30">${ic('notifications')}</span>
-        <span class="grow"><span class="t">Reminder</span></span>
-        ${select('lead', 'Reminder', String(prefs.remindLead), [
-          ['0', 'When to set off'],
-          ['1', '1 min early'],
-          ['2', '2 min early'],
-          ['5', '5 min early'],
-        ])}
+        <span class="grow"><span class="t">Remind me before a train</span></span>
+        ${select('lead', 'Remind me before a train', String(prefs.remindLead), LEAD_CHOICES.map((m) => [String(m), `${m} min`]))}
+      </div>
+      <div class="row icon">
+        <span class="icon-tile" style="background: #34c759">${ic('schedule')}</span>
+        <span class="grow"><span class="t">Departures shown</span></span>
+        ${select('count', 'Departures shown', String(prefs.count), COUNT_CHOICES.map((n) => [String(n), String(n)]))}
       </div>
       <div class="row icon" style="padding-right: 4px">
         <span class="icon-tile" style="background: #5856d6">${ic('bedtime')}</span>
@@ -439,7 +376,7 @@ function settingsScreen() {
         <button class="switch" role="switch" aria-checked="${prefs.lastWarn}" data-act="last-warn" aria-label="Last train warning"><i></i></button>
       </div>
     </div>
-    <p class="footnote">Reminders count back from the train, minus the time you said you'll take to get to the station. The warning shows in the last hour before your last train.</p>
+    <p class="footnote">Reminders go off this long before the train leaves. The last-train warning shows in the final hour of service.</p>
 
     <div class="card hero" style="gap: 12px">
       <span>Appearance</span>
@@ -512,7 +449,7 @@ function build(now) {
     nextChange = Infinity;
     for (const r of [...prefs.routes, ...(preview ? [preview] : [])]) {
       const m = routeModel(r, now);
-      if (m.next) nextChange = Math.min(nextChange, m.next.dep - r.arrive * MIN, m.next.dep);
+      if (m.next) nextChange = Math.min(nextChange, m.next.dep);
     }
     return routesScreen(now);
   }
@@ -655,7 +592,7 @@ async function toggleReminder(r, dep) {
       await Notification.requestPermission();
     } catch {}
   }
-  const at = Math.max(Date.now() + 5000, dep - (r.arrive + prefs.remindLead) * MIN);
+  const at = Math.max(Date.now() + 5000, dep - prefs.remindLead * MIN);
   save({ reminder: { routeId: r.id, dep, at, fired: false } });
   toast(`Reminder set for ${clock(at)}. Keep Headway open.`);
   render({ force: true });
@@ -790,7 +727,7 @@ sheetRoot.addEventListener('click', (e) => {
     const to = dest.dataset.dest;
     history.back();
     if (pickMode === 'look') {
-      preview = { id: 'preview', from, to, arrive: 0 };
+      preview = { id: 'preview', from, to };
       toast(`${name(from)} to ${name(to)}`);
     } else addRoute(from, to);
     if (nav.tab !== 'routes' || nav.stack.length) switchTab('routes');
@@ -800,8 +737,7 @@ sheetRoot.addEventListener('click', (e) => {
 
 function addRoute(from, to) {
   const id = routeId(from, to);
-  if (!prefs.routes.some((r) => r.id === id)) save({ routes: [{ id, from, to, arrive: 0 }, ...prefs.routes] });
-  save({ expanded: id });
+  if (!prefs.routes.some((r) => r.id === id)) save({ routes: [{ id, from, to }, ...prefs.routes] });
   toast(`Saved ${name(from)} → ${name(to)}`);
 }
 
@@ -874,18 +810,20 @@ const ACTIONS = {
   'close-sheet': () => history.back(),
   settings: () => push('settings'),
   back: () => back(),
-  expand: (el) => {
-    if (el.dataset.route === 'preview') return;
+  swap: (el) => {
     buzz();
-    save({ expanded: el.dataset.route });
+    if (el.dataset.route === 'preview') {
+      preview = { ...preview, from: preview.to, to: preview.from };
+    } else {
+      const r = prefs.routes.find((x) => x.id === el.dataset.route);
+      if (!r) return;
+      const id = routeId(r.to, r.from);
+      // Flip in place; drop a saved copy of the other direction so the list has no duplicates.
+      const routes = prefs.routes.filter((x) => x.id !== id).map((x) => (x.id === r.id ? { id, from: r.to, to: r.from } : x));
+      const stale = prefs.reminder?.routeId === r.id || prefs.reminder?.routeId === id;
+      save({ routes, reminder: stale ? null : prefs.reminder });
+    }
     render({ force: true, animate: true });
-  },
-  arrive: (el) => {
-    buzz();
-    const m = Number(el.dataset.min);
-    if (el.dataset.route === 'preview') preview = { ...preview, arrive: m };
-    else updateRoute(el.dataset.route, { arrive: m });
-    render({ force: true });
   },
   remind: (el) => {
     buzz(14);
@@ -903,7 +841,7 @@ const ACTIONS = {
   'top-route': (el) => {
     const r = routeOf(el);
     history.back();
-    if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)], expanded: r.id });
+    if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)] });
     render({ force: true, animate: true });
   },
   'remove-route': (el) => {
@@ -920,10 +858,9 @@ const ACTIONS = {
   },
   'save-preview': () => {
     if (!preview) return;
-    const { from, to, arrive } = preview;
+    const { from, to } = preview;
     preview = null;
     addRoute(from, to);
-    updateRoute(routeId(from, to), { arrive });
     render({ force: true, animate: true });
   },
   'last-warn': (el) => {
@@ -959,6 +896,9 @@ document.addEventListener('change', (e) => {
     refreshSchedule();
   } else if (el.dataset.act === 'lead') {
     save({ remindLead: Number(el.value) });
+  } else if (el.dataset.act === 'count') {
+    save({ count: Number(el.value) });
+    render({ force: true });
   } else if (el.id === 'feed-url') {
     const url = el.value.trim();
     save({ feedUrl: url });
