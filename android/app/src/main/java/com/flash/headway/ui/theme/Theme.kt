@@ -35,6 +35,11 @@ data class HwColors(
     val info: Color,
     val glass: Color,
     val glassBorder: Color,
+    val glassTop: Color,
+    val glassBottom: Color,
+    val rimTop: Color,
+    val rimBottom: Color,
+    val tintSoft: Color,
     val tint: Color,
     val selected: Color,
     val ok: Color,
@@ -53,21 +58,26 @@ val LightColors = HwColors(
     dark = false,
     bg = Color(0xFFF2F2F7),
     card = Color(0xFFFFFFFF),
-    fill = Color(0xFFF2F2F7),
+    fill = Color(0x1F767680),
     fill2 = Color(0x1F767680),
-    text = Color(0xFF111113),
+    text = Color(0xFF000000),
     sub = Color(0xFF6C6C70),
     sep = Color(0xFFD1D1D6),
     chev = Color(0xFFAEAEB2),
     hair = Color(0x0F000000),
     button = Color(0xCCFFFFFF),
     warnBg = Color(0xFFFFF4E5),
-    warn = Color(0xFFA34E00),
+    warn = Color(0xFFB25000),
     warnButton = Color(0x1AA34E00),
     infoBg = Color(0xFFEAF1FB),
     info = Color(0xFF0B4FA6),
     glass = Color(0xEBFFFFFF),
     glassBorder = Color(0x14000000),
+    glassTop = Color(0xF7FFFFFF),
+    glassBottom = Color(0xF0F7F7FA),
+    rimTop = Color(0xFFFFFFFF),
+    rimBottom = Color(0x12000000),
+    tintSoft = Color(0x1A0B63CE),
     tint = Color(0xFF0B63CE),
     selected = Color(0x1F0B63CE),
     ok = Color(0xFF34C759),
@@ -78,27 +88,32 @@ val LightColors = HwColors(
 
 val DarkColors = HwColors(
     dark = true,
-    bg = Color(0xFF0B0B0D),
+    bg = Color(0xFF000000),
     card = Color(0xFF1C1C1E),
-    fill = Color(0xFF2C2C2E),
+    fill = Color(0x3D767680),
     fill2 = Color(0x3D767680),
-    text = Color(0xFFF5F5F7),
+    text = Color(0xFFFFFFFF),
     sub = Color(0xFF98989F),
     sep = Color(0xFF38383A),
     chev = Color(0xFF636366),
     hair = Color(0x1AFFFFFF),
     button = Color(0xD92C2C2E),
     warnBg = Color(0x29FF9F0A),
-    warn = Color(0xFFFFB340),
+    warn = Color(0xFFFF9F0A),
     warnButton = Color(0x2EFF9F0A),
     infoBg = Color(0x294C9BFF),
     info = Color(0xFF8AB8FF),
     glass = Color(0xEB242426),
     glassBorder = Color(0x1AFFFFFF),
-    tint = Color(0xFF4C9BFF),
-    selected = Color(0x2E4C9BFF),
+    glassTop = Color(0xF23E3E42),
+    glassBottom = Color(0xF22A2A2D),
+    rimTop = Color(0x5CFFFFFF),
+    rimBottom = Color(0x14FFFFFF),
+    tintSoft = Color(0x333D8BFF),
+    tint = Color(0xFF3D8BFF),
+    selected = Color(0x333D8BFF),
     ok = Color(0xFF30D158),
-    blue = Color(0xFF4C9BFF),
+    blue = Color(0xFF3D8BFF),
     green = Color(0xFF3DD07A),
     yellow = Color(0xFFF2C230),
 )
@@ -108,7 +123,8 @@ val LocalHw = staticCompositionLocalOf { LightColors }
 /** iOS-style text scale used across the design. */
 object HwType {
     private val trim = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
-    val largeTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp)
+    val largeTitle = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.2.sp)
+    val cardTitle = TextStyle(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
     val title = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
     val section = TextStyle(fontSize = 20.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold)
     val headline = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
@@ -118,8 +134,9 @@ object HwType {
     val footnote = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
     val caption = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
     val tab = TextStyle(fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
-    val big = TextStyle(fontSize = 64.sp, lineHeight = 64.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-2).sp, lineHeightStyle = trim)
-    val bigUnit = TextStyle(fontSize = 22.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+    val big = TextStyle(fontSize = 72.sp, lineHeight = 72.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-2.5).sp, lineHeightStyle = trim)
+    val bigClock = TextStyle(fontSize = 56.sp, lineHeight = 60.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1.5).sp, lineHeightStyle = trim)
+    val bigUnit = TextStyle(fontSize = 24.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable

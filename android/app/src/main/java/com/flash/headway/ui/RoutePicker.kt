@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -64,22 +65,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDismiss: () -> Unit) {
     val hw = LocalHw.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
     var from by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
 
-    fun close(then: () -> Unit) {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { then() }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = hw.bg,
-        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
-        dragHandle = { BottomSheetDefaults.DragHandle(color = hw.chev) },
-    ) {
+    HwSheet(onDismiss = onDismiss, heightFraction = 0.92f) { close ->
         AnimatedContent(
             targetState = from,
             transitionSpec = {
@@ -92,7 +81,7 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
             },
             label = "pickerStep",
         ) { station ->
-            Column(Modifier.fillMaxHeight(0.92f).background(hw.bg)) {
+            Column(Modifier.fillMaxSize().background(hw.bg)) {
                 if (station == null) {
                     SheetHeader(title, null, Icons.Rounded.Close, "Close") { close(onDismiss) }
                     SearchField(query) { query = it }
@@ -236,18 +225,7 @@ fun RouteMenu(
     onDismiss: () -> Unit,
 ) {
     val hw = LocalHw.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    fun close(then: () -> Unit) {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { then() }
-    }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = hw.bg,
-        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
-        dragHandle = { BottomSheetDefaults.DragHandle(color = hw.chev) },
-    ) {
+    HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(title, style = HwType.headline, color = hw.text, modifier = Modifier.align(Alignment.CenterHorizontally))
             val danger = Color(0xFFD70015)

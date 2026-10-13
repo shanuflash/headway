@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -28,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -148,70 +151,46 @@ fun ColumnScope.SettingsScreen(
     LargeTitle("Settings")
 
     val overrideType = prefs.override?.takeIf { it.date == today.date }?.type
-    ListCard(
-        listOf<@Composable () -> Unit>({
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TileIcon(Icons.Rounded.CalendarMonth, hw.tint)
-                    Text("Today's timetable", style = HwType.body, color = hw.text)
-                }
-                Segmented(
-                    options = listOf(null to "Auto", DayType.WEEKDAY to "Weekday", DayType.SATURDAY to "Saturday", DayType.SUNDAY to "Holiday"),
-                    selected = overrideType,
-                    onSelect = actions.override,
-                )
-            }
-        }),
-    )
+    SettingsCard {
+        Text("Today's timetable", style = HwType.body, color = hw.text)
+        Segmented(
+            options = listOf(null to "Auto", DayType.WEEKDAY to "Weekday", DayType.SATURDAY to "Saturday", DayType.SUNDAY to "Holiday"),
+            selected = overrideType,
+            onSelect = actions.override,
+        )
+    }
     Footnote("Auto follows the calendar and public holidays (${today.reason}). Pick Holiday if CMRL announces a Sunday timetable for today.")
 
-    ListCard(
-        listOf<@Composable () -> Unit>(
-            {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TileIcon(Icons.Rounded.Notifications, Color(0xFFFF3B30))
-                        Text("Remind me before a train", style = HwType.body, color = hw.text)
-                    }
-                    Segmented(
-                        options = com.flash.headway.app.LEAD_CHOICES.map { it to "$it min" },
-                        selected = prefs.remindLead,
-                        onSelect = actions.lead,
-                    )
-                }
-            },
-            {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TileIcon(Icons.Rounded.Schedule, Color(0xFF34C759))
-                        Text("Departures shown", style = HwType.body, color = hw.text)
-                    }
-                    Segmented(
-                        options = com.flash.headway.app.COUNT_CHOICES.map { it to "$it" },
-                        selected = prefs.count,
-                        onSelect = actions.count,
-                    )
-                }
-            },
-            {
-                ListRow {
-                    TileIcon(Icons.Rounded.Bedtime, Color(0xFF5856D6))
-                    Text("Last train warning", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-                    HwSwitch(prefs.lastWarn, actions.lastWarn, "Last train warning")
-                }
-            },
-        ),
-        inset = 58.dp,
-    )
-    Footnote("Reminders go off this long before the train leaves. The last-train warning shows in the final hour of service.")
+    SettingsCard {
+        Text("Trains shown per route", style = HwType.body, color = hw.text)
+        Segmented(
+            options = com.flash.headway.app.COUNT_CHOICES.map { it to "$it" },
+            selected = prefs.count,
+            onSelect = actions.count,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text("Remind me before a train", style = HwType.body, color = hw.text)
+        Segmented(
+            options = com.flash.headway.app.LEAD_CHOICES.map { it to "$it min" },
+            selected = prefs.remindLead,
+            onSelect = actions.lead,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Last train warning", style = HwType.body, color = hw.text)
+                Text("In the final hour of service", style = HwType.footnote, color = hw.sub)
+            }
+            HwSwitch(prefs.lastWarn, actions.lastWarn, "Last train warning")
+        }
+    }
 
     if (!notificationsAllowed || !exactAllowed) {
         val rows = ArrayList<@Composable () -> Unit>()
         if (!notificationsAllowed) {
             rows.add {
                 ListRow(onClick = actions.allowNotifications) {
-                    TileIcon(Icons.Rounded.Notifications, Color(0xFFFF3B30))
-                    RowText("Allow notifications", "Needed for reminders and on-board alerts", modifier = Modifier.weight(1f))
+                    RowText("Allow notifications", "Needed for reminders", modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
                 }
             }
@@ -219,40 +198,42 @@ fun ColumnScope.SettingsScreen(
         if (!exactAllowed) {
             rows.add {
                 ListRow(onClick = actions.allowExact) {
-                    TileIcon(Icons.Rounded.Alarm, Color(0xFF34C759))
                     RowText("Allow exact reminders", "Without it, Android may deliver reminders a few minutes late", modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
                 }
             }
         }
-        ListCard(rows, inset = 58.dp)
+        ListCard(rows, inset = 16.dp)
     }
 
-    HwCard(gap = 12.dp) {
+    SettingsCard {
         Text("Appearance", style = HwType.body, color = hw.text)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ThemeOption("Light", prefs.theme == ThemeMode.LIGHT, Brush.linearGradient(listOf(Color(0xFFF2F2F7), Color(0xFFF2F2F7))), Color.White) { actions.theme(ThemeMode.LIGHT) }
-            ThemeOption("Dark", prefs.theme == ThemeMode.DARK, Brush.linearGradient(listOf(Color(0xFF0B0B0D), Color(0xFF0B0B0D))), Color(0xFF2C2C2E)) { actions.theme(ThemeMode.DARK) }
-            ThemeOption(
-                "Automatic",
-                prefs.theme == ThemeMode.AUTO,
-                Brush.horizontalGradient(0.5f to Color(0xFFF2F2F7), 0.5f to Color(0xFF0B0B0D)),
-                Color(0xFF8E8E93),
-            ) { actions.theme(ThemeMode.AUTO) }
-        }
+        Segmented(
+            options = listOf(ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.AUTO to "Automatic"),
+            selected = prefs.theme,
+            onSelect = actions.theme,
+        )
     }
 
     ListCard(
         listOf<@Composable () -> Unit>({
             ListRow(onClick = actions.openTimetable) {
-                TileIcon(Icons.Rounded.Description, Color(0xFF8E8E93))
                 Text("Official timetable", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-                Text(Timetable.PUBLISHED, style = HwType.body, color = hw.sub)
+                Text(Timetable.PUBLISHED, style = HwType.subhead, color = hw.sub)
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
             }
         }),
     )
     Footnote("First and last trains match CMRL's timetable. Times at stations in between are estimated, so allow a minute or two either way.")
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(CardShape).background(LocalHw.current.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        content = content,
+    )
 }
 
 @Composable
@@ -262,25 +243,27 @@ private fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect:
         Modifier
             .fillMaxWidth()
             .height(36.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(CircleShape)
             .background(hw.fill)
             .padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         options.forEach { (value, label) ->
             val on = value == selected
+            val thumb = if (hw.dark) Brush.verticalGradient(listOf(Color(0xFF7A7A80), Color(0xFF5E5E63))) else Brush.verticalGradient(listOf(Color.White, Color.White))
             Box(
                 Modifier
                     .weight(1f)
                     .height(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (on) hw.card else Color.Transparent)
+                    .then(if (on) Modifier.shadow(if (hw.dark) 4.dp else 3.dp, CircleShape) else Modifier)
+                    .clip(CircleShape)
+                    .then(if (on) Modifier.background(thumb).edge(CircleShape) else Modifier)
                     .press(scaleTo = 0.97f) { onSelect(value) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     label,
-                    style = HwType.footnote.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium),
+                    style = HwType.subhead.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium),
                     color = hw.text,
                 )
             }

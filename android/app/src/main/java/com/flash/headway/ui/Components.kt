@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -40,7 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -55,6 +58,7 @@ import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 
 val CardShape = RoundedCornerShape(26.dp)
+val RouteCardShape = RoundedCornerShape(30.dp)
 
 /** Clickable with a springy press-down and a light haptic, the way the design's controls feel. */
 @Composable
@@ -78,20 +82,54 @@ fun Modifier.press(enabled: Boolean = true, scaleTo: Float = 0.96f, role: Role =
         }
 }
 
+/** Liquid-glass surface: soft fill, a lit top rim, and a shadow. The rim carries it in dark mode. */
+@Composable
+fun Glass(modifier: Modifier = Modifier, shape: Shape = CircleShape, tinted: Color? = null, content: @Composable BoxScope.() -> Unit) {
+    val hw = LocalHw.current
+    val fill = if (tinted != null) Brush.verticalGradient(listOf(tinted, tinted)) else Brush.verticalGradient(listOf(hw.glassTop, hw.glassBottom))
+    Box(
+        modifier
+            .shadow(
+                if (hw.dark) 18.dp else 12.dp,
+                shape,
+                ambientColor = if (tinted != null) tinted else Color(0x3314203A),
+                spotColor = if (tinted != null) tinted else Color(0x3314203A),
+            )
+            .clip(shape)
+            .background(fill)
+            .border(if (hw.dark) 1.dp else 0.5.dp, Brush.verticalGradient(listOf(hw.rimTop, hw.rimBottom)), shape),
+        contentAlignment = Alignment.Center,
+        content = content,
+    )
+}
+
+/** A faint lit edge for pills inside cards; only needed on black, where shadows vanish. */
+@Composable
+fun Modifier.edge(shape: Shape): Modifier {
+    val hw = LocalHw.current
+    return if (hw.dark) this.border(0.75.dp, Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x05FFFFFF))), shape) else this
+}
+
 @Composable
 fun RoundButton(icon: ImageVector, description: String, onClick: () -> Unit, tint: Color? = null, background: Color? = null) {
     val hw = LocalHw.current
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .shadow(if (hw.dark) 0.dp else 2.dp, CircleShape, ambientColor = Color(0x1A14203A), spotColor = Color(0x1A14203A))
-            .clip(CircleShape)
-            .background(background ?: hw.button)
-            .border(0.5.dp, hw.hair, CircleShape)
-            .press(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    Glass(Modifier.size(44.dp).press(onClick = onClick), tinted = background?.takeIf { it == hw.tint }) {
         Icon(icon, contentDescription = description, tint = tint ?: hw.text, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** Several bar buttons sharing one glass capsule, as in the iOS 26+ toolbars. */
+@Composable
+fun GlassGroup(buttons: List<Triple<ImageVector, String, () -> Unit>>) {
+    val hw = LocalHw.current
+    Glass(Modifier.height(44.dp)) {
+        Row {
+            buttons.forEach { (icon, description, onClick) ->
+                Box(Modifier.size(50.dp, 44.dp).clip(CircleShape).press(scaleTo = 0.9f, onClick = onClick), contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = description, tint = hw.text, modifier = Modifier.size(24.dp))
+                }
+            }
+        }
     }
 }
 

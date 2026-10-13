@@ -123,16 +123,15 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
 
-    fun remind(s: RouteStatus) {
-        val next = s.next ?: return
+    fun remind(s: RouteStatus, dep: Long) {
         if (previewStatus?.route?.id == s.route.id) {
             toast("Save the route to set a reminder")
             return
         }
-        val on = prefs.reminder?.let { it.routeId == s.route.id && it.dep == next.dep } == true
+        val on = prefs.reminder?.let { it.routeId == s.route.id && it.dep == dep } == true
         if (!on) askNotifications()
-        vm.toggleReminder(s)
-        toast(if (on) "Reminder off" else vm.reminderToast(s.route, next.dep))
+        vm.toggleReminder(s.route, dep)
+        toast(if (on) "Reminder off" else vm.reminderToast(s.route, dep))
     }
 
     val screen = if (settings) "settings" else tab.name
@@ -289,19 +288,6 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
             content = content,
         )
     }
-}
-
-@Composable
-private fun Glass(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    val hw = LocalHw.current
-    Box(
-        modifier
-            .shadow(14.dp, CircleShape, ambientColor = Color(0x3314203A), spotColor = Color(0x3314203A))
-            .clip(CircleShape)
-            .background(hw.glass)
-            .border(0.5.dp, hw.glassBorder, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) { content() }
 }
 
 @Composable

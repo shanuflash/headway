@@ -151,18 +151,17 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         addRoute(pv.from, pv.to)
     }
 
-    fun toggleReminder(status: RouteStatus) {
+    fun toggleReminder(route: SavedRoute, dep: Long) {
         val p = prefs.value ?: return
-        val next = status.next ?: return
         val ctx = getApplication<Application>()
         val current = p.reminder
-        if (current != null && current.routeId == status.route.id && current.dep == next.dep) {
+        if (current != null && current.routeId == route.id && current.dep == dep) {
             Alerts.cancelReminder(ctx)
             update { it.copy(reminder = null) }
             return
         }
-        Alerts.setReminder(ctx, status.route, next.dep, reminderTime(next.dep))
-        update { it.copy(reminder = Reminder(status.route.id, next.dep)) }
+        Alerts.setReminder(ctx, route, dep, reminderTime(dep))
+        update { it.copy(reminder = Reminder(route.id, dep)) }
     }
 
     fun reminderTime(dep: Long): Long {
