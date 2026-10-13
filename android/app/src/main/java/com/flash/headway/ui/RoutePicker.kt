@@ -83,7 +83,7 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
         AnimatedContent(
             targetState = from,
             transitionSpec = {
-                val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
+                val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
                 if (targetState != null) {
                     (slideInHorizontally(slide) { it } + fadeIn()) togetherWith (slideOutHorizontally(slide) { -it / 3 } + fadeOut())
                 } else {
@@ -92,7 +92,7 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
             },
             label = "pickerStep",
         ) { station ->
-            Column(Modifier.fillMaxHeight(0.92f)) {
+            Column(Modifier.fillMaxHeight(0.92f).background(hw.bg)) {
                 if (station == null) {
                     SheetHeader(title, null, Icons.Rounded.Close, "Close") { close(onDismiss) }
                     SearchField(query) { query = it }

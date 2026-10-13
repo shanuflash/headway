@@ -142,7 +142,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
         AnimatedContent(
             targetState = screen,
             transitionSpec = {
-                val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
+                val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
                 when {
                     targetState == "settings" ->
                         slideInHorizontally(slide) { it } togetherWith (slideOutHorizontally(slide) { -it / 4 } + fadeOut(targetAlpha = 0.6f))
@@ -275,7 +275,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
 @Composable
 private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    // Opaque, so a screen sliding in covers the one underneath instead of showing through it.
+    Box(Modifier.fillMaxSize().background(LocalHw.current.bg), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
                 .widthIn(max = 560.dp)
