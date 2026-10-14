@@ -2,16 +2,6 @@
   "updated": "2026-10-12T00:00:00+05:30",
   "source": "Headway bundled advisories",
   "holidays": {},
-  "notices": [
-    {
-      "id": "yellow-line-opening",
-      "level": "info",
-      "title": "Yellow Line now open",
-      "body": "Poonamallee Bypass – Vadapalani runs 07:00–21:00. Trains run non-stop between Porur Junction and Vadapalani.",
-      "lines": ["yellow"],
-      "from": "2026-10-11T00:00:00+05:30",
-      "to": "2026-10-25T23:59:00+05:30"
-    }
-  ],
+  "notices": [],
   "adjustments": []
 }
