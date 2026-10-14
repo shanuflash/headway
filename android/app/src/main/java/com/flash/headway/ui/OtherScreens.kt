@@ -66,7 +66,7 @@ fun ColumnScope.LinesScreen(today: DayInfo, now: Long, onSettings: () -> Unit) {
     }
     LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin)
     LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin)
-    LineCard("Green Line via CMBT", RouteId.INTER, hw.green, spec.inter, nowMin, ", then on to the Airport")
+    LineCard("Green Line to Airport", RouteId.INTER, hw.green, spec.inter, nowMin, " via CMBT, no change at Alandur")
     LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin)
     Footnote(
         (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
