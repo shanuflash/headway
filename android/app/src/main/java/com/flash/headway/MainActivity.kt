@@ -17,7 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.flash.headway.app.Alerts
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.ThemeMode
 import com.flash.headway.ui.HeadwayApp
@@ -30,7 +29,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Alerts.createChannels(this)
+        // Reminders were removed: clear any countdown left over from an older version.
+        getSystemService(android.app.NotificationManager::class.java)?.run {
+            cancelAll()
+            deleteNotificationChannel("reminders")
+            deleteNotificationChannel("countdown")
+        }
         openRoute.value = intent?.getStringExtra(EXTRA_ROUTE)
         enableEdgeToEdge()
         setContent {

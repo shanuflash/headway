@@ -65,7 +65,6 @@ class RouteActions(
     val look: () -> Unit,
     val settings: () -> Unit,
     val swap: (String) -> Unit,
-    val remind: (RouteStatus, Long) -> Unit,
     val menu: (String) -> Unit,
     val closePreview: () -> Unit,
     val savePreview: () -> Unit,
@@ -273,8 +272,6 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
         tomorrow -> "Arrives ${clock(d.arr)}$note"
         else -> "Leaves ${clock(d.dep)} · arrives ${clock(d.arr)}$note"
     }
-    val reminderOn = prefs.reminder?.let { it.routeId == s.route.id && it.dep == d.dep } == true
-    val bellBg by animateColorAsState(if (reminderOn) hw.tint else hw.fill, label = "bell")
 
     Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -285,22 +282,6 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
                 BigCountdown(d.dep - now)
             }
             Text(line, style = HwType.subhead, color = hw.sub)
-        }
-        Box(
-            Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(bellBg)
-                .edge(CircleShape)
-                .press(scaleTo = 0.9f) { actions.remind(s, d.dep) },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                if (reminderOn) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
-                contentDescription = if (reminderOn) "Turn off the reminder" else "Remind me before this train",
-                tint = if (reminderOn) Color.White else hw.tint,
-                modifier = Modifier.size(24.dp),
-            )
         }
     }
 }

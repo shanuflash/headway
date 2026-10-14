@@ -11,10 +11,9 @@ Headway is for people who ride the same route every day. Save where you board an
   - The swap button on a card flips the route in place, so the morning route becomes the ride home with one tap.
   - Only direct trains count. Short loops and Green Line trains via CMBT are included when they stop at your destination.
 - **States:** last trains (an amber label, plus the first train tomorrow), "No more trains tonight" and "Metro is closed".
-- **Reminders:** one tap per train. It goes off 2, 5, 10 or 15 minutes before the train leaves (set in Settings).
 - **Quick look:** the search button checks any pair of stations without saving them.
 - **Lines:** today's official first and last trains and frequency bands.
-- **Settings:** today's timetable override, reminder lead, last-train warning, and appearance.
+- **Settings:** today's timetable override, trains shown per route, last-train warning, and appearance.
 
 ## Run locally
 
@@ -38,7 +37,7 @@ npm test
 
 `android/` is a native Kotlin and Jetpack Compose app with the same design and timetable engine. `data/` is generated from the web app's `js/network.js` and `js/timetable.js`, so both apps use identical numbers.
 
-- **Routes and reminders:** the same screens as the web app. A reminder posts a live countdown notification straight away, with "I'll take the next one" and "Stop" buttons, and sends an alarm when it's time to set off, even with the app closed.
+- **Routes:** the same screens as the web app. Tap a time chip to show that train big; the swap button flips the route in place.
 - **1×1 widget:** shows one number, the minutes to the next train you can catch on a route, inside a ring in the line colour. The ring turns amber for the last trains and shows the first train time when the metro is closed. It refreshes every minute while the screen is on, using a non-waking alarm. Long-press the widget to pick its route or to show the destination instead of "min".
 
 GitHub Actions (`.github/workflows/android.yml`) runs the engine unit tests and builds a debug APK on every push that touches `android/`.

@@ -129,12 +129,9 @@ private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec
 class SettingsActions(
     val back: () -> Unit,
     val override: (DayType?) -> Unit,
-    val lead: (Int) -> Unit,
     val count: (Int) -> Unit,
     val lastWarn: (Boolean) -> Unit,
     val theme: (ThemeMode) -> Unit,
-    val allowExact: () -> Unit,
-    val allowNotifications: () -> Unit,
     val openTimetable: () -> Unit,
 )
 
@@ -142,8 +139,6 @@ class SettingsActions(
 fun ColumnScope.SettingsScreen(
     prefs: Prefs,
     today: DayInfo,
-    exactAllowed: Boolean,
-    notificationsAllowed: Boolean,
     actions: SettingsActions,
 ) {
     val hw = LocalHw.current
@@ -169,13 +164,6 @@ fun ColumnScope.SettingsScreen(
             onSelect = actions.count,
         )
         Spacer(Modifier.height(6.dp))
-        Text("Remind me before a train", style = HwType.body, color = hw.text)
-        Segmented(
-            options = com.flash.headway.app.LEAD_CHOICES.map { it to "$it min" },
-            selected = prefs.remindLead,
-            onSelect = actions.lead,
-        )
-        Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Last train warning", style = HwType.body, color = hw.text)
@@ -183,27 +171,6 @@ fun ColumnScope.SettingsScreen(
             }
             HwSwitch(prefs.lastWarn, actions.lastWarn, "Last train warning")
         }
-    }
-
-    if (!notificationsAllowed || !exactAllowed) {
-        val rows = ArrayList<@Composable () -> Unit>()
-        if (!notificationsAllowed) {
-            rows.add {
-                ListRow(onClick = actions.allowNotifications) {
-                    RowText("Allow notifications", "Needed for reminders", modifier = Modifier.weight(1f))
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-        if (!exactAllowed) {
-            rows.add {
-                ListRow(onClick = actions.allowExact) {
-                    RowText("Allow exact reminders", "Without it, Android may deliver reminders a few minutes late", modifier = Modifier.weight(1f))
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-        ListCard(rows, inset = 16.dp)
     }
 
     SettingsCard {

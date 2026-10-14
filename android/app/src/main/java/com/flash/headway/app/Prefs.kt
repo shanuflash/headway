@@ -25,21 +25,16 @@ data class SavedRoute(val from: String, val to: String) {
     val id: String get() = "$from>$to"
 }
 
-data class Reminder(val routeId: String, val dep: Long)
-
 data class Prefs(
     val routes: List<SavedRoute> = emptyList(),
     /** How many departures each route card lists. */
     val count: Int = 5,
-    val remindLead: Int = 5,
     val lastWarn: Boolean = true,
     val theme: ThemeMode = ThemeMode.AUTO,
     val override: DayOverride? = null,
-    val reminder: Reminder? = null,
 )
 
 val COUNT_CHOICES = listOf(3, 5, 8)
-val LEAD_CHOICES = listOf(2, 5, 10, 15)
 
 class PrefsStore(private val context: Context) {
     private object Keys {
@@ -66,16 +61,12 @@ class PrefsStore(private val context: Context) {
 
     private fun decode(p: Preferences): Prefs {
         val routes = p[Keys.routes]?.let(::decodeRoutes) ?: legacyRoute(p)
-        val reminderRoute = p[Keys.reminder]
-        val reminderDep = p[Keys.reminderDep]
         return Prefs(
             routes = routes,
             count = (p[Keys.count] ?: 5).takeIf { it in COUNT_CHOICES } ?: 5,
-            remindLead = (p[Keys.remindLead] ?: 5).takeIf { it in LEAD_CHOICES } ?: 5,
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
-            reminder = if (reminderRoute != null && reminderDep != null) Reminder(reminderRoute, reminderDep) else null,
         )
     }
 
@@ -88,18 +79,12 @@ class PrefsStore(private val context: Context) {
     private fun write(p: MutablePreferences, next: Prefs) {
         p[Keys.routes] = next.routes.joinToString(";") { "${it.from}>${it.to}" }
         p[Keys.count] = next.count
-        p[Keys.remindLead] = next.remindLead
+        p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
         p.put(Keys.override, next.override?.let { "${it.date}|${it.type.name}" })
-        val reminder = next.reminder
-        if (reminder == null) {
-            p.remove(Keys.reminder)
-            p.remove(Keys.reminderDep)
-        } else {
-            p[Keys.reminder] = reminder.routeId
-            p[Keys.reminderDep] = reminder.dep
-        }
+        p.remove(Keys.reminder)
+        p.remove(Keys.reminderDep)
         p.remove(Keys.legacyFrom)
         p.remove(Keys.legacyTo)
     }

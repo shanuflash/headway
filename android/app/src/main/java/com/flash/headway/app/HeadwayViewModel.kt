@@ -104,14 +104,10 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             _preview.value = SavedRoute(pv.to, pv.from)
             return
         }
-        if (prefs.value?.reminder?.routeId == id) Alerts.cancelReminder(getApplication())
         update { p ->
             val r = p.routes.firstOrNull { it.id == id } ?: return@update p
             val flipped = SavedRoute(r.to, r.from)
-            p.copy(
-                routes = p.routes.filterNot { it.id == flipped.id }.map { if (it.id == id) flipped else it },
-                reminder = p.reminder?.takeIf { it.routeId != id },
-            )
+            p.copy(routes = p.routes.filterNot { it.id == flipped.id }.map { if (it.id == id) flipped else it })
         }
     }
 
@@ -121,12 +117,8 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeRoute(id: String) {
-        if (prefs.value?.reminder?.routeId == id) Alerts.cancelReminder(getApplication())
         update { p ->
-            p.copy(
-                routes = p.routes.filterNot { it.id == id },
-                reminder = p.reminder?.takeIf { it.routeId != id },
-            )
+            p.copy(routes = p.routes.filterNot { it.id == id })
         }
     }
 
@@ -150,29 +142,6 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         _preview.value = null
         addRoute(pv.from, pv.to)
     }
-
-    fun toggleReminder(route: SavedRoute, dep: Long) {
-        val p = prefs.value ?: return
-        val ctx = getApplication<Application>()
-        val current = p.reminder
-        if (current != null && current.routeId == route.id && current.dep == dep) {
-            Alerts.cancelReminder(ctx)
-            update { it.copy(reminder = null) }
-            return
-        }
-        Alerts.setReminder(ctx, route, dep, reminderTime(dep))
-        update { it.copy(reminder = Reminder(route.id, dep)) }
-    }
-
-    fun reminderTime(dep: Long): Long {
-        val lead = prefs.value?.remindLead ?: 5
-        return maxOf(System.currentTimeMillis() + 5_000, dep - lead * MINUTE)
-    }
-
-    fun reminderToast(route: SavedRoute, dep: Long): String =
-        "We'll remind you at ${clock(reminderTime(dep))} for the ${clock(dep)} from ${Network.name(route.from)}"
-
-    fun setRemindLead(minutes: Int) = update { it.copy(remindLead = minutes) }
 
     fun setLastWarn(on: Boolean) = update { it.copy(lastWarn = on) }
 
