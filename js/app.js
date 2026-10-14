@@ -22,9 +22,29 @@ const DEFAULTS = {
   override: null,
   feedUrl: '',
   reminder: null,
+  mock: null,
 };
 
 const routeId = (from, to) => `${from}>${to}`;
+
+/* ---------- clock (mockable for testing) ---------- */
+
+const IST_MS = 5.5 * 3600_000;
+const DAY_MS = 24 * 3600_000;
+const MOCK_CHOICES = [[480, '8 AM'], [1080, '6 PM'], [1410, '11:30 PM']];
+
+/** Now, shifted by the mock offset when mock time is on in Settings. */
+function clockNow() {
+  return Date.now() + (prefs?.mock?.offset ?? 0);
+}
+
+/** Offset that makes now read `minutes` past midnight IST on the current service day (rolls at 03:00). */
+function mockOffsetFor(minutes) {
+  const real = Date.now();
+  const serviceDay = Math.floor((real + IST_MS - 3 * 3600_000) / DAY_MS) * DAY_MS;
+  const target = serviceDay + minutes * MIN + (minutes < 180 ? DAY_MS : 0) - IST_MS;
+  return target - real;
+}
 
 function load() {
   try {
@@ -111,9 +131,11 @@ const FORMATS = {
   bigUnit: (ms) => bigParts(ms)[1],
   // Floors like the hero number, so "in 7 min" and a big "7" always agree.
   chip: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `${mins(ms)} min` : `${Math.floor(mins(ms) / 60)} h ${mins(ms) % 60}`),
+  // Banner clocks: data-at is 0 for the mocked clock, the offset for real time.
+  now: (ms) => clock(-ms),
   in: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `in ${mins(ms)} min` : `in ${span(ms)}`),
 };
-const live = (at, fmt) => `<span data-at="${at}" data-fmt="${fmt}">${FORMATS[fmt](at - Date.now())}</span>`;
+const live = (at, fmt) => `<span data-at="${at}" data-fmt="${fmt}">${FORMATS[fmt](at - clockNow())}</span>`;
 
 const lineName = (line) => LINES[line].name;
 
@@ -175,6 +197,7 @@ function routesScreen(now) {
         <button data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>
       </span>`)}
     <div class="title"><h1>Routes</h1></div>
+    ${prefs.mock ? mockBanner() : ''}
     ${notices}`;
 
   const cards = [];
@@ -182,6 +205,10 @@ function routesScreen(now) {
   if (!prefs.routes.length && !preview) return head + emptyState();
   for (const r of prefs.routes) cards.push(routeCard(routeModel(r, now), false));
   return head + cards.join('');
+}
+
+function mockBanner() {
+  return `<div class="strip mock"><span class="grow"><span class="t">Mock time: <span data-at="0" data-fmt="now">${clock(clockNow())}</span></span><span class="s">Not the real schedule. Real time is <span data-at="${prefs.mock.offset}" data-fmt="now">${clock(Date.now())}</span>.</span></span><button class="strip-btn mock-off" data-act="mock" data-v="off">Turn off</button></div>`;
 }
 
 function noticeCard(n) {
@@ -289,9 +316,9 @@ function routeCard(m, isPreview) {
 /* ----- lines tab ----- */
 
 function linesScreen() {
-  const today = schedule.today(Date.now());
+  const today = schedule.today(clockNow());
   const day = TIMETABLE[today.type];
-  const d = new Date();
+  const d = new Date(clockNow());
   const nowMin = d.getHours() * 60 + d.getMinutes();
   const card = (routeId, title, line, extra = '') => {
     const spec = day[routeId];
@@ -334,7 +361,7 @@ function linesScreen() {
 /* ----- settings ----- */
 
 function settingsScreen() {
-  const now = Date.now();
+  const now = clockNow();
   const key = serviceDateKey(now);
   const auto = schedule.today(now);
   const override = prefs.override?.date === key ? prefs.override.type : 'auto';
@@ -377,6 +404,12 @@ function settingsScreen() {
       <span>Appearance</span>
       ${seg('theme', prefs.theme, [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']])}
     </div>
+
+    <div class="card set">
+      <span>Mock time</span>
+      ${seg('mock', prefs.mock ? String(prefs.mock.at) : 'off', [['off', 'Off'], ...MOCK_CHOICES.map(([m, l]) => [String(m), l])])}
+    </div>
+    <p class="footnote">For testing. The app runs as if it were that time now, and the clock keeps ticking from there.</p>
 
     <div class="card list">
       <a class="row tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
@@ -453,7 +486,7 @@ function build(now) {
 const stableKey = (html) => html.replace(/(data-at="\d+" data-fmt="\w+">)[^<]*/g, '$1');
 
 function render({ force = false, animate = false } = {}) {
-  const now = Date.now();
+  const now = clockNow();
   const html = build(now);
   const key = `${screenNow()}|${stableKey(html)}`;
   lastRender = now;
@@ -511,7 +544,7 @@ function switchTab(tab) {
 /* ---------- clock ---------- */
 
 function tick() {
-  const now = Date.now();
+  const now = clockNow();
   if (now - lastRender > 15_000 || now >= nextChange) render();
   for (const el of view.querySelectorAll('[data-at]')) {
     const text = FORMATS[el.dataset.fmt](Number(el.dataset.at) - now);
@@ -531,7 +564,7 @@ function startClock() {
   setTimeout(() => {
     tick();
     setInterval(tick, 1000);
-  }, 1000 - (Date.now() % 1000));
+  }, 1000 - (clockNow() % 1000));
 }
 
 /* ---------- reminders ---------- */
@@ -822,6 +855,15 @@ const ACTIONS = {
     picked.set(el.dataset.route, Number(el.dataset.dep));
     render({ force: true });
   },
+  mock: (el) => {
+    buzz();
+    const v = el.dataset.v;
+    // A countdown set on the other clock would point at the wrong train.
+    save({ mock: v === 'off' ? null : { at: Number(v), offset: mockOffsetFor(Number(v)) }, reminder: null });
+    document.title = 'Headway';
+    toast(v === 'off' ? 'Back to real time' : `Mock time on`);
+    render({ force: true, animate: true });
+  },
   count: (el) => {
     buzz();
     save({ count: Number(el.dataset.v) });
@@ -893,7 +935,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('change', (e) => {
   const el = e.target;
   if (el.dataset.act === 'override') {
-    const key = serviceDateKey(Date.now());
+    const key = serviceDateKey(clockNow());
     save({ override: el.value === 'auto' ? null : { date: key, type: el.value } });
     refreshSchedule();
   } else if (el.id === 'feed-url') {

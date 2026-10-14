@@ -60,8 +60,9 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             combine(prefs.filterNotNull(), _preview) { p, pv -> p to pv }.collectLatest { (p, pv) ->
+                Clock.offset = p.mockOffset
                 while (true) {
-                    val now = System.currentTimeMillis()
+                    val now = Clock.now()
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
                         p.routes.map { routeStatus(s, it, now, p.lastWarn, p.count) } to pv?.let { routeStatus(s, it, now, p.lastWarn, p.count) }
@@ -70,7 +71,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     _previewStatus.value = previewNow
                     // Recompute the moment a shown train leaves, else every 15 s.
                     val boundary = (list + listOfNotNull(previewNow)).mapNotNull { it.nextChange }.minOrNull()
-                    val wait = boundary?.let { (it - System.currentTimeMillis() + 300).coerceIn(300L, 15_000L) } ?: 15_000L
+                    val wait = boundary?.let { (it - Clock.now() + 300).coerceIn(300L, 15_000L) } ?: 15_000L
                     delay(wait)
                 }
             }
@@ -84,7 +85,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun todayInfo(): DayInfo = dayTypeFor(serviceDate(System.currentTimeMillis()), prefs.value?.override)
+    fun todayInfo(): DayInfo = dayTypeFor(serviceDate(Clock.now()), prefs.value?.override)
 
     // ---------- actions ----------
 
@@ -169,10 +170,19 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setLastWarn(on: Boolean) = update { it.copy(lastWarn = on) }
 
+    /** [minutes] past midnight IST, or null to go back to real time. */
+    fun setMock(minutes: Int?) {
+        val offset = minutes?.let { Clock.offsetFor(it) } ?: 0L
+        Clock.offset = offset
+        // A countdown set on the other clock would point at the wrong train.
+        Alerts.stopCountdown(getApplication())
+        update { it.copy(mockAt = minutes, mockOffset = offset, reminder = null) }
+    }
+
     fun setTheme(mode: ThemeMode) = update { it.copy(theme = mode) }
 
     fun setOverride(type: DayType?) = update { p ->
-        p.copy(override = type?.let { DayOverride(serviceDate(System.currentTimeMillis()), it) })
+        p.copy(override = type?.let { DayOverride(serviceDate(Clock.now()), it) })
     }
 
     override fun onCleared() {

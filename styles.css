@@ -880,3 +880,7 @@ button.hero:active { transform: scale(0.985); }
 .seg button { height: 32px; border-radius: 16px; display: grid; place-items: center; text-align: center; font-size: 15px; font-weight: 500; transition: background 0.2s var(--ease); }
 .seg button[aria-checked='true'] { background: var(--thumb); box-shadow: var(--thumb-shadow); font-weight: 600; }
 .sheet-body { overscroll-behavior: contain; }
+.strip.mock { background: var(--warn-bg); color: var(--warn); padding: 8px 6px 8px 16px; border-radius: 20px; }
+.strip.mock .t { font-weight: 600; }
+.strip.mock .s { opacity: 0.9; }
+.strip-btn.mock-off { width: auto; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 15px; font-weight: 600; }

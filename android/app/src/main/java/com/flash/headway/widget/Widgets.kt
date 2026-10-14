@@ -14,6 +14,7 @@ import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import com.flash.headway.MainActivity
 import com.flash.headway.R
+import com.flash.headway.app.Clock
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.app.routeStatus
@@ -43,6 +44,7 @@ object Widgets {
             .putString("routes", p.routes.joinToString(";") { "${it.from}>${it.to}" })
             .putBoolean("lastWarn", p.lastWarn)
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
+            .putLong("mock", p.mockOffset)
             .apply()
     }
 
@@ -76,6 +78,7 @@ object Widgets {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, HeadwayWidget::class.java))
         if (ids.isEmpty()) return
+        Clock.offset = store(context).getLong("mock", 0L)
         val schedule = Schedule(override(context))
         for (id in ids) manager.updateAppWidget(id, render(context, id, schedule))
         scheduleTick(context)
@@ -104,7 +107,7 @@ object Widgets {
         }
 
         val lastWarn = store(context).getBoolean("lastWarn", true)
-        val status = routeStatus(schedule, route, System.currentTimeMillis(), lastWarn, 1)
+        val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1)
         val next = status.next
         val line = routeGroup(route.from, route.to)?.line ?: Line.BLUE
         val ring = when (line) {
@@ -130,7 +133,7 @@ object Widgets {
                 views.setTextViewText(R.id.widget_label, if (label) destination else "first")
             }
             else -> {
-                val minutes = (next.dep - System.currentTimeMillis()) / MINUTE
+                val minutes = (next.dep - Clock.now()) / MINUTE
                 views.setViewVisibility(R.id.widget_icon, View.GONE)
                 big(if (minutes < 1) "Now" else minutes.toString(), if (minutes < 1 || minutes >= 100) 22f else 30f)
                 if (status.late) {
@@ -161,7 +164,8 @@ object Widgets {
     fun scheduleTick(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
         val pi = tickIntent(context)
-        val next = (System.currentTimeMillis() / MINUTE + 1) * MINUTE + 500
+        // Next minute boundary on the app clock (which may be mocked), as a real alarm time.
+        val next = (Clock.now() / MINUTE + 1) * MINUTE + 500 - Clock.offset
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
             am.setExact(AlarmManager.RTC, next, pi)
         } else {

@@ -73,7 +73,7 @@ object Alerts {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("The ${clock(dep)} from ${Network.name(route.from)}")
             .setContentText(text)
-            .setWhen(dep)
+            .setWhen(dep - Clock.offset)
             .setShowWhen(true)
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
@@ -81,7 +81,7 @@ object Alerts {
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setContentIntent(openApp(context))
-            .setTimeoutAfter((dep - System.currentTimeMillis() + 60_000L).coerceAtLeast(60_000L))
+            .setTimeoutAfter((dep - Clock.now() + 60_000L).coerceAtLeast(60_000L))
         if (following != null) {
             builder.addAction(
                 Notification.Action.Builder(null, "I'll take the ${clock(following)}", broadcast(context, ACTION_NEXT, route, dep)).build(),

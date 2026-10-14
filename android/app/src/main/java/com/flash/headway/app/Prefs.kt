@@ -34,6 +34,9 @@ data class Prefs(
     val lastWarn: Boolean = true,
     val theme: ThemeMode = ThemeMode.AUTO,
     val override: DayOverride? = null,
+    /** Mock time for testing: the preset picked (minutes past midnight) and the clock offset. */
+    val mockAt: Int? = null,
+    val mockOffset: Long = 0L,
     val reminder: Reminder? = null,
 )
 
@@ -47,6 +50,8 @@ class PrefsStore(private val context: Context) {
         val lastWarn = booleanPreferencesKey("last_warn")
         val theme = stringPreferencesKey("theme")
         val override = stringPreferencesKey("override")
+        val mockAt = intPreferencesKey("mock_at")
+        val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
 
@@ -72,6 +77,8 @@ class PrefsStore(private val context: Context) {
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
+            mockAt = p[Keys.mockAt],
+            mockOffset = if (p[Keys.mockAt] != null) p[Keys.mockOffset] ?: 0L else 0L,
             reminder = if (reminderRoute != null && reminderDep != null) Reminder(reminderRoute, reminderDep) else null,
         )
     }
@@ -88,6 +95,14 @@ class PrefsStore(private val context: Context) {
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
+        val mockAt = next.mockAt
+        if (mockAt != null) {
+            p[Keys.mockAt] = mockAt
+            p[Keys.mockOffset] = next.mockOffset
+        } else {
+            p.remove(Keys.mockAt)
+            p.remove(Keys.mockOffset)
+        }
         p.put(Keys.override, next.override?.let { "${it.date}|${it.type.name}" })
         val reminder = next.reminder
         if (reminder == null) {

@@ -69,6 +69,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.flash.headway.app.Alerts
+import com.flash.headway.app.Clock
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
@@ -90,10 +91,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     val previewStatus by vm.previewStatus.collectAsStateWithLifecycle()
 
     // One clock for every countdown, aligned to the second.
-    val now by produceState(System.currentTimeMillis()) {
+    val now by produceState(Clock.now()) {
         while (true) {
-            delay(1000 - System.currentTimeMillis() % 1000)
-            value = System.currentTimeMillis()
+            delay(1000 - Clock.now() % 1000)
+            value = Clock.now()
         }
     }
 
@@ -167,6 +168,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             remind = ::remind,
                             menu = { menuFor = it },
                             closePreview = vm::closePreview,
+                            mockOff = { vm.setMock(null) },
                             savePreview = {
                                 vm.savePreview()
                                 toast("Route saved")
@@ -184,6 +186,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             count = vm::setCount,
                             lastWarn = vm::setLastWarn,
                             theme = vm::setTheme,
+                            mock = vm::setMock,
                             allowNotifications = {
                                 if (Build.VERSION.SDK_INT >= 33) {
                                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)

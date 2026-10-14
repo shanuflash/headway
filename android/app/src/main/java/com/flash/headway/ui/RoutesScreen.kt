@@ -68,6 +68,7 @@ class RouteActions(
     val remind: (RouteStatus, Long) -> Unit,
     val menu: (String) -> Unit,
     val closePreview: () -> Unit,
+    val mockOff: () -> Unit,
     val savePreview: () -> Unit,
 )
 
@@ -111,6 +112,7 @@ fun ColumnScope.RoutesScreen(
         )
     })
     LargeTitle("Routes")
+    if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
 
     if (preview != null) RouteCard(preview, prefs, now, actions, isPreview = true)
     if (statuses == null) return
@@ -119,6 +121,28 @@ fun ColumnScope.RoutesScreen(
         return
     }
     statuses.forEach { s -> RouteCard(s, prefs, now, actions, isPreview = false) }
+}
+
+/** Shown while mock time is on, so a mocked schedule is never mistaken for the real one. */
+@Composable
+private fun MockBanner(now: Long, offset: Long, onOff: () -> Unit) {
+    val hw = LocalHw.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.warnBg).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Mock time: ${clock(now)}", style = HwType.subheadStrong, color = hw.warn)
+            Text("Not the real schedule. Real time is ${clock(now - offset)}.", style = HwType.footnote, color = hw.warn)
+        }
+        Box(
+            Modifier.height(36.dp).clip(CircleShape).background(hw.warnButton).press(scaleTo = 0.95f, onClick = onOff).padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Turn off", style = HwType.subheadStrong, color = hw.warn)
+        }
+    }
 }
 
 @Composable

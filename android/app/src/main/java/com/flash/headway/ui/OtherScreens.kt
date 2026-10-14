@@ -132,6 +132,7 @@ class SettingsActions(
     val count: (Int) -> Unit,
     val lastWarn: (Boolean) -> Unit,
     val theme: (ThemeMode) -> Unit,
+    val mock: (Int?) -> Unit,
     val allowNotifications: () -> Unit,
     val openTimetable: () -> Unit,
 )
@@ -196,6 +197,16 @@ fun ColumnScope.SettingsScreen(
             onSelect = actions.theme,
         )
     }
+
+    SettingsCard {
+        Text("Mock time", style = HwType.body, color = hw.text)
+        Segmented(
+            options = listOf<Pair<Int?, String>>(null to "Off") + com.flash.headway.app.MOCK_CHOICES,
+            selected = prefs.mockAt,
+            onSelect = actions.mock,
+        )
+    }
+    Footnote("For testing. The app runs as if it were that time now, and the clock keeps ticking from there.")
 
     ListCard(
         listOf<@Composable () -> Unit>({
