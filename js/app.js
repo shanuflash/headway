@@ -98,9 +98,17 @@ const feed = createFeed({
 /* ---------- formatting ---------- */
 
 const pad = (n) => String(n).padStart(2, '0');
-const clock = (ms) => {
+/** "8:13 AM": 12-hour times throughout. */
+const clockTime = (ms) => {
   const d = new Date(ms);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`;
+};
+const ampm = (ms) => (new Date(ms).getHours() < 12 ? 'AM' : 'PM');
+const clock = (ms) => `${clockTime(ms)} ${ampm(ms)}`;
+/** "05:30" from the timetable as "5:30 AM". */
+const hm12 = (s) => {
+  const [h, m] = s.split(':').map(Number);
+  return `${h % 12 || 12}:${pad(m)} ${h % 24 < 12 ? 'AM' : 'PM'}`;
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const name = (id) => STATIONS[id]?.name ?? '';
@@ -278,7 +286,7 @@ function routeCard(m, isPreview) {
           : `Leaves ${clock(d.dep)} · arrives ${clock(d.arr)}${note}`;
     const [n, u] = bigParts(d.dep - m.now);
     const big = tomorrow
-      ? `<div class="big clock"><span class="n">${clock(d.dep)}</span></div>`
+      ? `<div class="big clock"><span class="n">${clockTime(d.dep)}</span><span class="u">${ampm(d.dep)}</span></div>`
       : `<div class="big"><span class="n flow" data-flow-at="${d.dep}"><number-flow-group><number-flow class="a"></number-flow><span class="sep">:</span><number-flow class="b"></number-flow></number-flow-group><span class="now">Now</span></span><span class="u" data-at="${d.dep}" data-fmt="bigUnit">${u}</span></div>`;
     const on = reminderOn(r, d.dep);
     const chips = m.deps
@@ -333,13 +341,13 @@ function linesScreen() {
         <div class="tt-head"><span class="bar ${line}"></span><span class="grow"><span class="t">${title}</span><span class="s">${esc(name(a))} to ${esc(name(b))}${extra}</span></span></div>
         <div class="tt-grid">
           <span class="h">From</span><span class="h r">First</span><span class="h r">Last</span>
-          <span>${esc(name(a))}</span><span class="r">${spec.first.fwd}</span><span class="r">${spec.last.fwd}</span>
-          <span>${esc(name(b))}</span><span class="r">${spec.first.rev}</span><span class="r">${spec.last.rev}</span>
+          <span>${esc(name(a))}</span><span class="r">${hm12(spec.first.fwd)}</span><span class="r">${hm12(spec.last.fwd)}</span>
+          <span>${esc(name(b))}</span><span class="r">${hm12(spec.first.rev)}</span><span class="r">${hm12(spec.last.rev)}</span>
         </div>
         <div class="bands">${spec.bands
           .map(
             (bnd) =>
-              `<div class="band ${bnd === current ? 'now' : ''}"><span>${bnd[0]} to ${bnd[1] === '24:00' ? 'close' : bnd[1]}${
+              `<div class="band ${bnd === current ? 'now' : ''}"><span>${hm12(bnd[0])} to ${bnd[1] === '24:00' ? 'close' : hm12(bnd[1])}${
                 bnd[3] === 'peak' ? ', peak' : ''
               }</span><span>every ${bnd[2]} min</span></div>`,
           )

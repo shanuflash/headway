@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -304,7 +305,10 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = HwType.subheadStrong, color = labelColor)
             if (tomorrow) {
-                Text(clock(d.dep), style = HwType.bigClock, color = hw.text)
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(clockTime(d.dep), style = HwType.bigClock, color = hw.text)
+                    Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
+                }
             } else {
                 BigCountdown(d.dep - now)
             }
@@ -349,12 +353,12 @@ private fun Chips(s: RouteStatus, selected: Int, now: Long, onPick: (Long) -> Un
             }
             Column(
                 Modifier
-                    .width(74.dp)
+                    .widthIn(min = 74.dp)
                     .clip(shape)
                     .background(if (on) hw.tintSoft else hw.fill)
                     .then(if (on) Modifier.border(1.5.dp, hw.tint, shape) else Modifier.edge(shape))
                     .press(scaleTo = 0.94f) { onPick(d.dep) }
-                    .padding(top = 10.dp, bottom = 9.dp),
+                    .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {

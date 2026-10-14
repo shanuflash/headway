@@ -5,11 +5,26 @@ import com.flash.headway.engine.IST
 import com.flash.headway.engine.Journey
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.roundToLong
 
-private val HHMM = DateTimeFormatter.ofPattern("HH:mm")
+private val H12 = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+private val H12_TIME = DateTimeFormatter.ofPattern("h:mm", Locale.US)
+private val AMPM = DateTimeFormatter.ofPattern("a", Locale.US)
 
-fun clock(ms: Long): String = Instant.ofEpochMilli(ms).atZone(IST).format(HHMM)
+/** "8:13 AM": 12-hour, in IST. */
+fun clock(ms: Long): String = Instant.ofEpochMilli(ms).atZone(IST).format(H12)
+
+/** "8:13" without AM/PM, for big numerals and tight spots. */
+fun clockTime(ms: Long): String = Instant.ofEpochMilli(ms).atZone(IST).format(H12_TIME)
+
+fun clockAmPm(ms: Long): String = Instant.ofEpochMilli(ms).atZone(IST).format(AMPM)
+
+/** Minutes past midnight as "5:30 AM". */
+fun minutesClock(m: Int): String {
+    val h = (m / 60) % 24
+    return "${if (h % 12 == 0) 12 else h % 12}:${"%02d".format(m % 60)} ${if (h < 12) "AM" else "PM"}"
+}
 
 fun plural(n: Int, word: String): String = "$n $word${if (n == 1) "" else "s"}"
 

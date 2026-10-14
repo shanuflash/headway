@@ -82,7 +82,7 @@ private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec
     val b = r.fwd.last().first
     val open = nowMin >= minOf(spec.firstFwd, spec.firstRev) && nowMin <= maxOf(spec.lastFwd, spec.lastRev)
     val current = if (open) bandAt(spec.bands, nowMin) else null
-    fun hhmm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
+    fun hhmm(m: Int) = minutesClock(m)
     HwCard(gap = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             LineBar(color, width = 6.dp)

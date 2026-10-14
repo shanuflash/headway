@@ -26,6 +26,7 @@ import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
 import com.flash.headway.engine.routeGroup
 import com.flash.headway.ui.clock
+import com.flash.headway.ui.clockTime
 import com.flash.headway.ui.mins
 import java.time.LocalDate
 
@@ -129,7 +130,7 @@ object Widgets {
             status.closed -> {
                 views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_neutral)
                 views.setViewVisibility(R.id.widget_icon, View.VISIBLE)
-                big(clock(next.dep), 19f)
+                big(clockTime(next.dep), 19f)
                 views.setTextColor(R.id.widget_number, color(R.color.widget_text))
                 views.setTextViewText(R.id.widget_label, if (label) destination else "first")
             }
