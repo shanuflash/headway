@@ -87,9 +87,9 @@ private fun trainNote(d: RouteDeparture): String? = when (d.trip.route) {
 
 /** "4 min", "1 h 5", or "now": short enough for a chip. */
 private fun chipSpan(ms: Long): String {
-    val m = ms / MINUTE
+    val m = mins(ms)
     return when {
-        m < 1 -> "now"
+        ms < 30_000 -> "now"
         m < 60 -> "$m min"
         else -> "${m / 60} h ${m % 60}"
     }

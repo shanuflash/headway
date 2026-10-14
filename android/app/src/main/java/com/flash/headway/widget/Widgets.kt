@@ -26,6 +26,7 @@ import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
 import com.flash.headway.engine.routeGroup
 import com.flash.headway.ui.clock
+import com.flash.headway.ui.mins
 import java.time.LocalDate
 
 /**
@@ -133,9 +134,11 @@ object Widgets {
                 views.setTextViewText(R.id.widget_label, if (label) destination else "first")
             }
             else -> {
-                val minutes = (next.dep - Clock.now()) / MINUTE
+                val left = next.dep - Clock.now()
+                val minutes = mins(left)
+                val now = left < 30_000
                 views.setViewVisibility(R.id.widget_icon, View.GONE)
-                big(if (minutes < 1) "Now" else minutes.toString(), if (minutes < 1 || minutes >= 100) 22f else 30f)
+                big(if (now) "Now" else minutes.toString(), if (now || minutes >= 100) 22f else 30f)
                 if (status.late) {
                     views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_bg_amber)
                     views.setTextColor(R.id.widget_number, color(R.color.widget_amber))

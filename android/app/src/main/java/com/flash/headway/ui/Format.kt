@@ -13,7 +13,8 @@ fun clock(ms: Long): String = Instant.ofEpochMilli(ms).atZone(IST).format(HHMM)
 
 fun plural(n: Int, word: String): String = "$n $word${if (n == 1) "" else "s"}"
 
-fun mins(ms: Long): Long = (ms / 60_000).coerceAtLeast(0)
+// Rounds up: departures are on the minute, so this matches subtracting the clock times shown.
+fun mins(ms: Long): Long = ((ms + 59_999) / 60_000).coerceAtLeast(0)
 
 /** "7 min" or "2 h 5 min". */
 fun span(ms: Long): String {
@@ -21,9 +22,9 @@ fun span(ms: Long): String {
     return if (m < 60) "$m min" else "${m / 60} h ${m % 60} min"
 }
 
-// Floors like the hero number, so "in 7 min" and a big "7" always agree.
+// Same rounding as the hero number, so "in 7 min" and a big "7" always agree.
 fun inSpan(ms: Long): String = when {
-    ms < 60_000 -> "now"
+    ms < 30_000 -> "now"
     ms < 60 * 60_000 -> "in ${mins(ms)} min"
     else -> "in ${span(ms)}"
 }

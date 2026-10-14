@@ -106,7 +106,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 const name = (id) => STATIONS[id]?.name ?? '';
 const ic = (n, cls = '') => `<span class="ms ${cls}" aria-hidden="true">${n}</span>`;
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const mins = (ms) => Math.max(0, Math.floor(ms / MIN));
+// Rounds up: departures are on the minute, so this matches subtracting the clock times shown.
+const mins = (ms) => Math.max(0, Math.ceil(ms / MIN));
 
 function span(ms) {
   const m = Math.max(0, Math.round(ms / MIN));
@@ -129,11 +130,11 @@ function bigParts(ms) {
 const FORMATS = {
   big: (ms) => bigParts(ms)[0],
   bigUnit: (ms) => bigParts(ms)[1],
-  // Floors like the hero number, so "in 7 min" and a big "7" always agree.
-  chip: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `${mins(ms)} min` : `${Math.floor(mins(ms) / 60)} h ${mins(ms) % 60}`),
+  // Same rounding as the hero number, so "in 7 min" and a big "7" always agree.
+  chip: (ms) => (ms < 30_000 ? 'now' : ms < 60 * MIN ? `${mins(ms)} min` : `${Math.floor(mins(ms) / 60)} h ${mins(ms) % 60}`),
   // Banner clocks: data-at is 0 for the mocked clock, the offset for real time.
   now: (ms) => clock(-ms),
-  in: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `in ${mins(ms)} min` : `in ${span(ms)}`),
+  in: (ms) => (ms < 30_000 ? 'now' : ms < 60 * MIN ? `in ${mins(ms)} min` : `in ${span(ms)}`),
 };
 const live = (at, fmt) => `<span data-at="${at}" data-fmt="${fmt}">${FORMATS[fmt](at - clockNow())}</span>`;
 
