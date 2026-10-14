@@ -132,6 +132,7 @@ class SettingsActions(
     val count: (Int) -> Unit,
     val lastWarn: (Boolean) -> Unit,
     val theme: (ThemeMode) -> Unit,
+    val allowNotifications: () -> Unit,
     val openTimetable: () -> Unit,
 )
 
@@ -139,6 +140,7 @@ class SettingsActions(
 fun ColumnScope.SettingsScreen(
     prefs: Prefs,
     today: DayInfo,
+    notificationsAllowed: Boolean,
     actions: SettingsActions,
 ) {
     val hw = LocalHw.current
@@ -171,6 +173,19 @@ fun ColumnScope.SettingsScreen(
             }
             HwSwitch(prefs.lastWarn, actions.lastWarn, "Last train warning")
         }
+    }
+
+    if (!notificationsAllowed) {
+        val rows = ArrayList<@Composable () -> Unit>()
+        if (!notificationsAllowed) {
+            rows.add {
+                ListRow(onClick = actions.allowNotifications) {
+                    RowText("Allow notifications", "Needed for the train countdown", modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+        ListCard(rows, inset = 16.dp)
     }
 
     SettingsCard {

@@ -104,10 +104,14 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             _preview.value = SavedRoute(pv.to, pv.from)
             return
         }
+        if (prefs.value?.reminder?.routeId == id) Alerts.stopCountdown(getApplication())
         update { p ->
             val r = p.routes.firstOrNull { it.id == id } ?: return@update p
             val flipped = SavedRoute(r.to, r.from)
-            p.copy(routes = p.routes.filterNot { it.id == flipped.id }.map { if (it.id == id) flipped else it })
+            p.copy(
+                routes = p.routes.filterNot { it.id == flipped.id }.map { if (it.id == id) flipped else it },
+                reminder = p.reminder?.takeIf { it.routeId != id },
+            )
         }
     }
 
@@ -117,8 +121,12 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeRoute(id: String) {
+        if (prefs.value?.reminder?.routeId == id) Alerts.stopCountdown(getApplication())
         update { p ->
-            p.copy(routes = p.routes.filterNot { it.id == id })
+            p.copy(
+                routes = p.routes.filterNot { it.id == id },
+                reminder = p.reminder?.takeIf { it.routeId != id },
+            )
         }
     }
 
@@ -142,6 +150,22 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         _preview.value = null
         addRoute(pv.from, pv.to)
     }
+
+    fun toggleReminder(route: SavedRoute, dep: Long) {
+        val p = prefs.value ?: return
+        val ctx = getApplication<Application>()
+        val current = p.reminder
+        if (current != null && current.routeId == route.id && current.dep == dep) {
+            Alerts.stopCountdown(ctx)
+            update { it.copy(reminder = null) }
+            return
+        }
+        Alerts.startCountdown(ctx, route, dep)
+        update { it.copy(reminder = Reminder(route.id, dep)) }
+    }
+
+    fun reminderToast(route: SavedRoute, dep: Long): String =
+        "Counting down to the ${clock(dep)} from ${Network.name(route.from)}"
 
     fun setLastWarn(on: Boolean) = update { it.copy(lastWarn = on) }
 

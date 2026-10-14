@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.flash.headway.app.Alerts
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
@@ -113,7 +114,25 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
     BackHandler(enabled = settings) { settings = false }
 
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    fun askNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && !Alerts.canNotify(context)) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+
+    fun remind(s: RouteStatus, dep: Long) {
+        if (previewStatus?.route?.id == s.route.id) {
+            toast("Save the route to set a reminder")
+            return
+        }
+        val on = prefs.reminder?.let { it.routeId == s.route.id && it.dep == dep } == true
+        if (!on) askNotifications()
+        vm.toggleReminder(s.route, dep)
+        toast(if (on) "Reminder off" else vm.reminderToast(s.route, dep))
+    }
 
     val screen = if (settings) "settings" else tab.name
 
@@ -145,6 +164,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             look = { picker = Picker.LOOK },
                             settings = { settings = true },
                             swap = vm::swapRoute,
+                            remind = ::remind,
                             menu = { menuFor = it },
                             closePreview = vm::closePreview,
                             savePreview = {
@@ -157,12 +177,18 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     else -> SettingsScreen(
                         prefs = prefs,
                         today = vm.todayInfo(),
+                        notificationsAllowed = Alerts.canNotify(context),
                         actions = SettingsActions(
                             back = { settings = false },
                             override = vm::setOverride,
                             count = vm::setCount,
                             lastWarn = vm::setLastWarn,
                             theme = vm::setTheme,
+                            allowNotifications = {
+                                if (Build.VERSION.SDK_INT >= 33) {
+                                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
                             openTimetable = {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Timetable.SOURCE_URL)))
                             },
