@@ -66,7 +66,8 @@ fun ColumnScope.LinesScreen(today: DayInfo, now: Long, onSettings: () -> Unit) {
     }
     LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin)
     LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin)
-    LineCard("Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, " via CMBT")
+    // Green Line tracks, then Blue Line to the Airport.
+    LineCard("Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)))
     LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin)
     Footnote(
         (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
@@ -75,7 +76,7 @@ fun ColumnScope.LinesScreen(today: DayInfo, now: Long, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec, nowMin: Int, extra: String = "") {
+private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec, nowMin: Int, extra: String = "", bar: Brush? = null) {
     val hw = LocalHw.current
     val r = Network.routes.getValue(route)
     val a = r.fwd.first().first
@@ -85,7 +86,11 @@ private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec
     fun hhmm(m: Int) = minutesClock(m)
     HwCard(gap = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            LineBar(color, width = 6.dp)
+            if (bar != null) {
+                Box(Modifier.size(6.dp, 36.dp).clip(RoundedCornerShape(3.dp)).background(bar))
+            } else {
+                LineBar(color, width = 6.dp)
+            }
             RowText(title, "${Network.name(a)} to ${Network.name(b)}$extra", titleStyle = HwType.headline)
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

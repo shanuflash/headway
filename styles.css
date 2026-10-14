@@ -385,6 +385,8 @@ button.hero:active { transform: scale(0.985); }
 .bar.yellow { background: var(--yellow); }
 .bar.dim { opacity: 0.45; }
 .bar.neutral { background: var(--sub); }
+/* Inter-corridor: Green Line tracks, then Blue Line to the Airport. */
+.bar.inter { background: linear-gradient(180deg, var(--green), var(--blue)); }
 
 /* ---------- dock ---------- */
 
