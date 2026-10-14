@@ -6,7 +6,6 @@ import { createFeed, activeNotices } from './live.js';
 const MIN = 60_000;
 const STORE = 'headway:v3';
 const COUNT_CHOICES = [3, 5, 8];
-const LEAD_CHOICES = [2, 5, 10, 15];
 const view = document.getElementById('view');
 const dock = document.getElementById('dock');
 const sheetRoot = document.getElementById('sheet-root');
@@ -18,7 +17,6 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const DEFAULTS = {
   routes: [],
   count: 5,
-  remindLead: 5,
   lastWarn: true,
   theme: 'auto',
   override: null,
@@ -34,7 +32,6 @@ function load() {
     if (saved) {
       const p = { ...DEFAULTS, ...saved };
       if (!COUNT_CHOICES.includes(p.count)) p.count = DEFAULTS.count;
-      if (!LEAD_CHOICES.includes(p.remindLead)) p.remindLead = DEFAULTS.remindLead;
       return p;
     }
     // Carry the last trip from the trip-planner versions over as a first route.
@@ -113,6 +110,7 @@ const FORMATS = {
   big: (ms) => bigParts(ms)[0],
   bigUnit: (ms) => bigParts(ms)[1],
   // Floors like the hero number, so "in 7 min" and a big "7" always agree.
+  chip: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `${mins(ms)} min` : `${Math.floor(mins(ms) / 60)} h ${mins(ms) % 60}`),
   in: (ms) => (ms < MIN ? 'now' : ms < 60 * MIN ? `in ${mins(ms)} min` : `in ${span(ms)}`),
 };
 const live = (at, fmt) => `<span data-at="${at}" data-fmt="${fmt}">${FORMATS[fmt](at - Date.now())}</span>`;
@@ -172,8 +170,10 @@ function routesScreen(now) {
   const notices = activeNotices(feedState.feed, now).map(noticeCard).join('');
   const head = `
     ${topbar(`
-      <button class="round" data-act="add-route" aria-label="Add a route">${ic('add')}</button>
-      <button class="round" data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>`)}
+      <span class="glass-group glass">
+        <button data-act="add-route" aria-label="Add a route">${ic('add')}</button>
+        <button data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>
+      </span>`)}
     <div class="title"><h1>Routes</h1></div>
     ${notices}`;
 
@@ -201,82 +201,88 @@ function emptyState() {
 
 const reminderOn = (r, dep) => !!(prefs.reminder && prefs.reminder.routeId === r.id && prefs.reminder.dep === dep && !prefs.reminder.fired);
 
+// Picked train per route (departure ms). Falls back to the next train once the picked one leaves.
+const picked = new Map();
+
 function routeCard(m, isPreview) {
   const { r } = m;
   const line = routeLine(r);
   const head = `
-    <div class="route-head">
-      <span class="bar ${line}"></span>
+    <div class="rc-head">
       <span class="grow">
         <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
-        <span class="s">${esc(routeLabel(r))}</span>
+        <span class="s"><i class="dot ${line}"></i>${esc(routeLabel(r))}</span>
       </span>
-      <button class="mini" data-act="swap" data-route="${r.id}" aria-label="Switch direction">${ic('swap_vert')}</button>
-      ${
-        isPreview
-          ? `<button class="mini" data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
-          : `<button class="mini" data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_horiz')}</button>`
-      }
+      <span class="pillgroup">
+        <button data-act="swap" data-route="${r.id}" aria-label="Switch direction">${ic('swap_vert')}</button>
+        ${
+          isPreview
+            ? `<button data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
+            : `<button data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_horiz')}</button>`
+        }
+      </span>
     </div>`;
 
   let body = '';
   if (m.kind === 'none') {
-    body = `<div class="sub" style="font-size: 15px">No direct trains between these stations.</div>`;
+    body = `<div class="rc-pad sub" style="font-size: 15px">No direct trains between these stations.</div>`;
   } else {
     const closed = m.kind === 'closed';
-    const label = closed
-      ? m.running
-        ? 'No more trains tonight'
-        : 'Metro is closed'
-      : m.late && m.remaining <= 2
-        ? m.remaining === 1
-          ? 'Last train'
-          : 'Last 2 trains'
-        : 'Next train';
-    const [n, u] = bigParts(m.next.dep - m.now);
-    const on = reminderOn(r, m.next.dep);
-    const big = closed
-      ? `<div class="big clock"><span class="n">${clock(m.next.dep)}</span></div>`
-      : `<div class="big"><span class="n" data-at="${m.next.dep}" data-fmt="big">${n}</span><span class="u" data-at="${m.next.dep}" data-fmt="bigUnit">${u}</span></div>`;
-    const note = trainNote(m.next.trip);
-    const rows = m.deps.slice(1).map((d, i) => {
-      const index = i + 1;
-      const extra = trainNote(d.trip);
-      const isLast = m.last && d.dep === m.last.dep;
-      const isTomorrow = m.tomorrowFrom >= 0 && index >= m.tomorrowFrom;
-      const divider = !closed && index === m.tomorrowFrom ? '<div class="day-break">Tomorrow</div>' : '';
-      return `${divider}<div class="train-row"><span class="time">${clock(d.dep)}</span><span class="note ${isLast ? 'warn' : ''}">${
-        isLast ? 'last train, ' : extra ? `${extra}, ` : ''
-      }arrives ${clock(d.arr)}</span><span class="right">${isTomorrow ? '' : live(d.dep, 'in')}</span></div>`;
-    });
-    const tomorrow = m.tomorrowFrom > 0 ? m.deps[m.tomorrowFrom] : null;
-    const footnote =
-      m.late && m.last && tomorrow
-        ? `<div class="note">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight. The first one tomorrow is at ${clock(tomorrow.dep)}.</span></div>`
-        : '';
+    const want = picked.get(r.id);
+    const i = Math.max(0, m.deps.findIndex((d) => d.dep === want));
+    const d = m.deps[i];
+    const lastIdx = closed ? -1 : m.deps.findIndex((x) => m.last && x.dep === m.last.dep);
+    const isTomorrow = (k) => closed || (m.tomorrowFrom >= 0 && k >= m.tomorrowFrom);
+    const tomorrow = isTomorrow(i);
+    let label = i === 0 ? 'Next train' : 'Later train';
+    let tone = 'tint';
+    if (closed && i === 0) [label, tone] = [m.running ? 'No more trains tonight' : 'Metro is closed', 'warn'];
+    else if (closed) [label, tone] = ['Tomorrow', 'sub'];
+    else if (tomorrow) [label, tone] = [i === m.tomorrowFrom ? 'First train tomorrow' : 'Tomorrow', 'sub'];
+    else if (i === lastIdx) [label, tone] = ['Last train', 'warn'];
+    else if (m.late && lastIdx > i) [label, tone] = [`Last ${lastIdx - i + 1} trains`, 'warn'];
+    const note = trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
+    const lineText =
+      closed && i === 0
+        ? `First train · arrives ${clock(d.arr)}`
+        : tomorrow
+          ? `Arrives ${clock(d.arr)}${note}`
+          : `Leaves ${clock(d.dep)} · arrives ${clock(d.arr)}${note}`;
+    const [n, u] = bigParts(d.dep - m.now);
+    const big = tomorrow
+      ? `<div class="big clock"><span class="n">${clock(d.dep)}</span></div>`
+      : `<div class="big"><span class="n" data-at="${d.dep}" data-fmt="big">${n}</span><span class="u" data-at="${d.dep}" data-fmt="bigUnit">${u}</span></div>`;
+    const on = reminderOn(r, d.dep);
+    const chips = m.deps
+      .map((x, k) => {
+        const sel = k === i;
+        const tm = isTomorrow(k);
+        const sub = closed && k === 0 ? 'first' : tm ? 'tomorrow' : `<span data-at="${x.dep}" data-fmt="chip">${FORMATS.chip(x.dep - m.now)}</span>`;
+        return `<button class="tchip ${sel ? 'on' : ''} ${tm && !closed ? 'dim' : ''}" data-act="pick" data-route="${r.id}" data-dep="${x.dep}" aria-pressed="${sel}"><span class="t">${clock(
+          x.dep,
+        )}</span><span class="s ${k === lastIdx ? 'warn' : ''}">${sub}</span></button>`;
+      })
+      .join('');
     body = `
-      <div class="big-row">
-        <div class="catch">
-          <span class="label ${closed || m.late ? 'warn' : 'tint'}">${label}</span>
+      <div class="rc-hero rc-pad">
+        <div class="grow">
+          <span class="label ${tone}">${label}</span>
           ${big}
+          <span class="line">${lineText}</span>
         </div>
-        <div class="big-side"><span class="t">${closed ? 'first train' : clock(m.next.dep)}</span><span class="s">${
-          note ? `${note}, ` : ''
-        }arrives ${clock(m.next.arr)}</span></div>
-        <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${m.next.dep}" aria-pressed="${on}" aria-label="Remind me before this train">${ic(
-          'notifications',
-          on ? 'fill' : '',
-        )}</button>
+        <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${
+          on ? 'Stop the countdown' : 'Count down to this train'
+        }">${ic('notifications', on ? 'fill' : '')}</button>
       </div>
-      ${rows.length ? `<div class="train-list">${rows.join('')}</div>` : ''}
-      ${footnote}`;
+      <div class="tchips">${chips}</div>
+      ${m.late && m.last ? `<div class="note rc-pad">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight.</span></div>` : ''}`;
   }
 
   return `
-    <div class="card hero route">
+    <div class="card rc">
       ${head}
       ${body}
-      ${isPreview ? `<button class="cta" data-act="save-preview">${ic('add')}Save this route</button>` : ''}
+      ${isPreview ? `<div class="rc-pad"><button class="cta" data-act="save-preview">${ic('add')}Save this route</button></div>` : ''}
     </div>`;
 }
 
@@ -337,17 +343,16 @@ function settingsScreen() {
     <span class="select-wrap"><select data-act="${act}" aria-label="${label}">${options
       .map(([v, l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`)
       .join('')}</select>${ic('unfold_more')}</span>`;
-  const theme = (v, label, a, b) => `
-    <button class="theme-opt" role="radio" aria-checked="${prefs.theme === v}" data-act="theme" data-v="${v}">
-      <span class="pv" style="background: ${a}"><i style="background: ${b}"></i></span>${label}
-    </button>`;
+  const seg = (act, value, options) => `
+    <div class="seg" role="radiogroup">${options
+      .map(([v, l]) => `<button role="radio" aria-checked="${v === value}" data-act="${act}" data-v="${v}">${l}</button>`)
+      .join('')}</div>`;
   return `
-    ${topbar(`<button class="round" data-act="back" aria-label="Done" style="background: var(--tint); color: #fff; border-color: transparent">${ic('check')}</button>`)}
+    ${topbar(`<button class="round tinted" data-act="back" aria-label="Done">${ic('check')}</button>`)}
     <div class="title"><h1>Settings</h1></div>
 
     <div class="card list">
-      <div class="row icon">
-        <span class="icon-tile" style="background: var(--tint)">${ic('calendar_month')}</span>
+      <div class="row">
         <span class="grow"><span class="t">Today's timetable</span></span>
         ${select('override', "Today's timetable", override, [
           ['auto', `Auto, ${autoName}`],
@@ -359,37 +364,22 @@ function settingsScreen() {
     </div>
     <p class="footnote">Auto follows the calendar and public holidays (${esc(auto.reason)}). Pick Sunday or holiday if CMRL announces it for today.</p>
 
-    <div class="card list">
-      <div class="row icon">
-        <span class="icon-tile" style="background: #ff3b30">${ic('notifications')}</span>
-        <span class="grow"><span class="t">Remind me before a train</span></span>
-        ${select('lead', 'Remind me before a train', String(prefs.remindLead), LEAD_CHOICES.map((m) => [String(m), `${m} min`]))}
-      </div>
-      <div class="row icon">
-        <span class="icon-tile" style="background: #34c759">${ic('schedule')}</span>
-        <span class="grow"><span class="t">Departures shown</span></span>
-        ${select('count', 'Departures shown', String(prefs.count), COUNT_CHOICES.map((n) => [String(n), String(n)]))}
-      </div>
-      <div class="row icon" style="padding-right: 4px">
-        <span class="icon-tile" style="background: #5856d6">${ic('bedtime')}</span>
-        <span class="grow"><span class="t">Last train warning</span></span>
+    <div class="card set">
+      <span>Trains shown per route</span>
+      ${seg('count', String(prefs.count), COUNT_CHOICES.map((n) => [String(n), String(n)]))}
+      <div class="set-row">
+        <span class="grow"><span class="t">Last train warning</span><span class="s">In the final hour of service</span></span>
         <button class="switch" role="switch" aria-checked="${prefs.lastWarn}" data-act="last-warn" aria-label="Last train warning"><i></i></button>
       </div>
     </div>
-    <p class="footnote">Reminders go off this long before the train leaves. The last-train warning shows in the final hour of service.</p>
 
-    <div class="card hero" style="gap: 12px">
+    <div class="card set">
       <span>Appearance</span>
-      <div class="themes" role="radiogroup" aria-label="Appearance">
-        ${theme('light', 'Light', '#f2f2f7', '#ffffff')}
-        ${theme('dark', 'Dark', '#0b0b0d', '#2c2c2e')}
-        ${theme('auto', 'Automatic', 'linear-gradient(90deg, #f2f2f7 0 50%, #0b0b0d 50%)', 'linear-gradient(90deg, #ffffff 0 50%, #2c2c2e 50%)')}
-      </div>
+      ${seg('theme', prefs.theme, [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']])}
     </div>
 
     <div class="card list">
-      <a class="row icon tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
-        <span class="icon-tile" style="background: #8e8e93">${ic('description')}</span>
+      <a class="row tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
         <span class="grow"><span class="t">Official timetable</span></span>
         <span class="v light">${TIMETABLE_SOURCE.published}</span>
         ${ic('chevron_right', 'chev')}
@@ -573,17 +563,20 @@ async function notify(title, body) {
 
 function checkReminder(now) {
   const rem = prefs.reminder;
-  if (!rem || rem.fired || now < rem.at) return;
+  const r = rem && !rem.fired ? prefs.routes.find((x) => x.id === rem.routeId) : null;
+  document.title = r ? `${FORMATS.chip(rem.dep - now)} · the ${clock(rem.dep)} from ${name(r.from)}` : 'Headway';
+  if (!rem || rem.fired || now < rem.dep) return;
   save({ reminder: { ...rem, fired: true } });
-  const r = prefs.routes.find((x) => x.id === rem.routeId);
-  notify(`Catch the ${clock(rem.dep)}`, r ? `${name(r.from)} to ${name(r.to)}. Head to the platform now.` : 'Head to the platform now.');
+  document.title = 'Headway';
+  notify(`The ${clock(rem.dep)} is leaving`, r ? `${name(r.from)} to ${name(r.to)}.` : '');
   render({ force: true });
 }
 
 async function toggleReminder(r, dep) {
   if (reminderOn(r, dep)) {
     save({ reminder: null });
-    toast('Reminder off');
+    document.title = 'Headway';
+    toast('Countdown off');
     render({ force: true });
     return;
   }
@@ -592,9 +585,8 @@ async function toggleReminder(r, dep) {
       await Notification.requestPermission();
     } catch {}
   }
-  const at = Math.max(Date.now() + 5000, dep - prefs.remindLead * MIN);
-  save({ reminder: { routeId: r.id, dep, at, fired: false } });
-  toast(`Reminder set for ${clock(at)}. Keep Headway open.`);
+  save({ reminder: { routeId: r.id, dep, at: dep, fired: false } });
+  toast(`Counting down to the ${clock(dep)}`);
   render({ force: true });
 }
 
@@ -825,11 +817,21 @@ const ACTIONS = {
     }
     render({ force: true, animate: true });
   },
+  pick: (el) => {
+    buzz();
+    picked.set(el.dataset.route, Number(el.dataset.dep));
+    render({ force: true });
+  },
+  count: (el) => {
+    buzz();
+    save({ count: Number(el.dataset.v) });
+    render({ force: true });
+  },
   remind: (el) => {
     buzz(14);
     const r = routeOf(el);
     if (r && r !== preview) toggleReminder(r, Number(el.dataset.dep));
-    else if (r) toast('Save the route to set a reminder');
+    else if (r) toast('Save the route to start a countdown');
   },
   'route-menu': (el) => openRouteMenu(el.dataset.route),
   'reverse-route': (el) => {
@@ -894,11 +896,6 @@ document.addEventListener('change', (e) => {
     const key = serviceDateKey(Date.now());
     save({ override: el.value === 'auto' ? null : { date: key, type: el.value } });
     refreshSchedule();
-  } else if (el.dataset.act === 'lead') {
-    save({ remindLead: Number(el.value) });
-  } else if (el.dataset.act === 'count') {
-    save({ count: Number(el.value) });
-    render({ force: true });
   } else if (el.id === 'feed-url') {
     const url = el.value.trim();
     save({ feedUrl: url });
