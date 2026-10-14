@@ -34,8 +34,8 @@ fun leaveText(ms: Long): String = if (ms < 30_000) "Leave now" else "Leave in ${
 /** Hero number and unit: whole minutes, m:ss under two minutes, h:mm past an hour. */
 fun bigParts(ms: Long): Pair<String, String> {
     if (ms < 30_000) return "Now" to ""
-    if (ms < 120_000) {
-        val s = ms / 1000
+    if (ms <= 120_000) {
+        val s = (ms + 999) / 1000
         return "${s / 60}:${"%02d".format(s % 60)}" to "min"
     }
     val m = mins(ms)

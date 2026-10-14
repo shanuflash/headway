@@ -1,6 +1,7 @@
 package com.flash.headway.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -36,6 +37,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
@@ -285,22 +288,39 @@ fun HwSwitch(checked: Boolean, onChange: (Boolean) -> Unit, description: String)
     )
 }
 
-/** The hero countdown: digits roll up as the minutes change. */
+/** The hero countdown. Only the digits that change roll, like NumberFlow. */
 @Composable
 fun BigCountdown(msLeft: Long) {
     val hw = LocalHw.current
     val (number, unit) = bigParts(msLeft)
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        AnimatedContent(
-            targetState = number,
-            transitionSpec = {
-                (slideInVertically(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)) { -it / 2 } + fadeIn()) togetherWith
-                    (slideOutVertically { it / 2 } + fadeOut())
-            },
-            label = "countdown",
-        ) { n ->
-            Text(n, style = HwType.big, color = hw.text)
-        }
+        RollingText(number, HwType.big, hw.text)
         if (unit.isNotEmpty()) Text(unit, style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
+    }
+}
+
+/**
+ * Text whose characters animate one by one: a changed digit rolls down (we count down), an
+ * unchanged one stays still. Slots are keyed from the right so "10" -> "9" keeps the ones place.
+ */
+@Composable
+fun RollingText(text: String, style: TextStyle, color: Color) {
+    val tabular = style.copy(fontFeatureSettings = "tnum")
+    Row {
+        text.forEachIndexed { i, ch ->
+            key(text.length - i) {
+                AnimatedContent(
+                    targetState = ch,
+                    transitionSpec = {
+                        val spec = spring<IntOffset>(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
+                        ((slideInVertically(spec) { -it } + fadeIn()) togetherWith (slideOutVertically(spec) { it } + fadeOut()))
+                            .using(SizeTransform(clip = true))
+                    },
+                    label = "digit",
+                ) { c ->
+                    Text(c.toString(), style = tabular, color = color)
+                }
+            }
+        }
     }
 }

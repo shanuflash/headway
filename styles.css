@@ -884,3 +884,13 @@ button.hero:active { transform: scale(0.985); }
 .strip.mock .t { font-weight: 600; }
 .strip.mock .s { opacity: 0.9; }
 .strip-btn.mock-off { width: auto; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 15px; font-weight: 600; }
+
+/* Rolling hero digits (number-flow); falls back to plain text. */
+.big .n.flow { display: inline-flex; align-items: baseline; }
+.big .n.flow number-flow-group { display: inline-flex; align-items: baseline; }
+.big .n.flow number-flow { line-height: 0.85; font-variant-numeric: tabular-nums; --number-flow-mask-height: 0.12em; }
+.big .n.flow .sep, .big .n.flow .b { display: none; }
+.big .n.flow.pair .sep, .big .n.flow.pair .b { display: inline; }
+.big .n.flow .now { display: none; }
+.big .n.flow.is-now number-flow-group { display: none; }
+.big .n.flow.is-now .now { display: inline; }

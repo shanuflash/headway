@@ -118,8 +118,8 @@ function span(ms) {
 // Hero number: whole minutes, m:ss under two minutes, h:mm past an hour.
 function bigParts(ms) {
   if (ms < 30_000) return ['Now', ''];
-  if (ms < 2 * MIN) {
-    const s = Math.floor(ms / 1000);
+  if (ms <= 2 * MIN) {
+    const s = Math.ceil(ms / 1000);
     return [`${Math.floor(s / 60)}:${pad(s % 60)}`, 'min'];
   }
   const m = mins(ms);
@@ -279,7 +279,7 @@ function routeCard(m, isPreview) {
     const [n, u] = bigParts(d.dep - m.now);
     const big = tomorrow
       ? `<div class="big clock"><span class="n">${clock(d.dep)}</span></div>`
-      : `<div class="big"><span class="n" data-at="${d.dep}" data-fmt="big">${n}</span><span class="u" data-at="${d.dep}" data-fmt="bigUnit">${u}</span></div>`;
+      : `<div class="big"><span class="n flow" data-flow-at="${d.dep}"><number-flow-group><number-flow class="a"></number-flow><span class="sep">:</span><number-flow class="b"></number-flow></number-flow-group><span class="now">Now</span></span><span class="u" data-at="${d.dep}" data-fmt="bigUnit">${u}</span></div>`;
     const on = reminderOn(r, d.dep);
     const chips = m.deps
       .map((x, k) => {
@@ -496,6 +496,7 @@ function render({ force = false, animate = false } = {}) {
   lastKey = key;
   const focused = document.activeElement?.id;
   view.innerHTML = html;
+  paintFlows(now);
   view.classList.toggle('enter', animate);
   if (focused) document.getElementById(focused)?.focus();
 }
@@ -557,7 +558,58 @@ function tick() {
       el.classList.add('roll');
     }
   }
+  paintFlows(now);
   checkReminder(now);
+}
+
+/* ---------- rolling digits (number-flow) ---------- */
+
+let flowReady = false;
+// Loaded from a CDN; if it can't load, the same elements just show plain text.
+Promise.all([import('https://esm.sh/number-flow'), import('https://esm.sh/number-flow/group')])
+  .then(() => {
+    flowReady = true;
+    paintFlows(clockNow());
+  })
+  .catch(() => {});
+
+/** Hero parts: [main, second (two digits) or null] for minutes, m:ss under two minutes, h:mm past an hour. */
+function flowParts(ms) {
+  if (ms < 30_000) return null;
+  if (ms <= 2 * MIN) {
+    const s = Math.ceil(ms / 1000);
+    return [Math.floor(s / 60), s % 60];
+  }
+  const m = mins(ms);
+  return m < 60 ? [m, null] : [Math.floor(m / 60), m % 60];
+}
+
+function setFlow(el, value, twoDigits) {
+  if (flowReady && el.update) {
+    if (!el.dataset.ready) {
+      el.dataset.ready = '1';
+      el.trend = -1; // counting down: digits always roll down
+      if (twoDigits) {
+        el.format = { minimumIntegerDigits: 2 };
+        el.digits = { 1: { max: 5 } }; // 00 -> 59
+      }
+    }
+    el.update(value);
+  } else {
+    el.textContent = twoDigits ? String(value).padStart(2, '0') : String(value);
+  }
+}
+
+function paintFlows(now) {
+  for (const box of view.querySelectorAll('[data-flow-at]')) {
+    const parts = flowParts(Number(box.dataset.flowAt) - now);
+    box.classList.toggle('is-now', !parts);
+    if (!parts) continue;
+    const [a, b] = parts;
+    setFlow(box.querySelector('.a'), a, false);
+    box.classList.toggle('pair', b !== null);
+    if (b !== null) setFlow(box.querySelector('.b'), b, true);
+  }
 }
 
 function startClock() {
