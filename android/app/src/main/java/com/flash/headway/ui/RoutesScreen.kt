@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -73,10 +74,19 @@ class RouteActions(
     val savePreview: () -> Unit,
 )
 
-fun routeLabel(r: SavedRoute): String {
+fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
+    if (inter) {
+        // The inter-corridor runs Chennai Central <-> Airport; name the end this route heads to.
+        val stops = Network.routes.getValue(RouteId.INTER).fwd.map { it.first }
+        val end = if (stops.indexOf(r.from) < stops.indexOf(r.to)) stops.last() else stops.first()
+        return "Inter-corridor · toward ${Network.name(end)}"
+    }
     val g = routeGroup(r.from, r.to) ?: return ""
     return "${g.line.label} · toward ${g.terminals.joinToString(" or ") { Network.name(it) }}"
 }
+
+/** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
+private fun interOnly(s: RouteStatus) = s.departures.isNotEmpty() && s.departures.all { it.trip.route == RouteId.INTER }
 
 private fun routeLine(r: SavedRoute): Line = routeGroup(r.from, r.to)?.line ?: Line.BLUE
 
@@ -219,8 +229,13 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("${Network.name(shown.from)} → ${Network.name(shown.to)}", style = HwType.cardTitle, color = hw.text)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(hw.line(routeLine(shown))))
-                        Text(routeLabel(shown), style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val inter = shown == r && interOnly(s)
+                        Box(
+                            Modifier.size(8.dp).clip(CircleShape).then(
+                                if (inter) Modifier.background(Brush.verticalGradient(listOf(hw.green, hw.blue))) else Modifier.background(hw.line(routeLine(shown))),
+                            ),
+                        )
+                        Text(routeLabel(shown, inter), style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

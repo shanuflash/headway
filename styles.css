@@ -819,6 +819,7 @@ button.hero:active { transform: scale(0.985); }
 .dot.blue { background: var(--blue); }
 .dot.green { background: var(--green); }
 .dot.yellow { background: var(--yellow); }
+.dot.inter { background: linear-gradient(180deg, var(--green), var(--blue)); }
 
 .tabs.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tabs.two .tab-pill { width: calc((100% - 8px) / 2); }
@@ -844,6 +845,7 @@ button.hero:active { transform: scale(0.985); }
 .dot { width: 8px; height: 8px; border-radius: 4px; flex: none; background: var(--blue); }
 .dot.green { background: var(--green); }
 .dot.yellow { background: var(--yellow); }
+.dot.inter { background: linear-gradient(180deg, var(--green), var(--blue)); }
 .pillgroup { display: flex; height: 36px; border-radius: 18px; background: var(--pill); box-shadow: var(--edge); flex: none; }
 .pillgroup button { width: 42px; height: 36px; display: grid; place-items: center; border-radius: 18px; transition: transform 0.25s var(--spring); }
 .pillgroup button:active { transform: scale(0.9); }

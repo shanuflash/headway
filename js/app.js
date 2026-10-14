@@ -155,12 +155,21 @@ function trainNote(trip) {
 }
 
 /** "Blue Line toward Wimco Nagar Depot", from the routes that serve this pair. */
-function routeLabel(r) {
+function routeLabel(r, inter = false) {
   const groups = directDestinations(r.from);
   const g = groups.find((x) => x.stations.some((s) => s.id === r.to));
   if (!g) return '';
-  return `${lineName(g.line)} toward ${g.terminals.map(name).join(' or ')}`;
+  if (inter) {
+    // The inter-corridor runs Chennai Central <-> Airport; name the end this route heads to.
+    const stops = ROUTES.inter.fwd.map(([id]) => id);
+    const end = stops.indexOf(r.from) < stops.indexOf(r.to) ? stops.at(-1) : stops[0];
+    return `Inter-corridor · toward ${name(end)}`;
+  }
+  return `${lineName(g.line)} · toward ${g.terminals.map(name).join(' or ')}`;
 }
+
+/** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
+const interOnly = (m) => m.kind !== 'none' && m.deps.length > 0 && m.deps.every((d) => d.trip.route === 'inter');
 
 function routeLine(r) {
   const g = directDestinations(r.from).find((x) => x.stations.some((s) => s.id === r.to));
@@ -247,7 +256,7 @@ function routeCard(m, isPreview) {
     <div class="rc-head">
       <span class="grow">
         <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
-        <span class="s"><i class="dot ${line}"></i>${esc(routeLabel(r))}</span>
+        <span class="s"><i class="dot ${interOnly(m) ? 'inter' : line}"></i>${esc(routeLabel(r, interOnly(m)))}</span>
       </span>
       <span class="pillgroup">
         <button data-act="swap" data-route="${r.id}" aria-label="Switch direction">${ic('swap_vert')}</button>
