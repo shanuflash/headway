@@ -360,7 +360,7 @@ function linesScreen() {
     <div class="title"><h1>Lines</h1><span class="sub">${esc(today.label)} timetable${reason}</span></div>
     ${card('blue', 'Blue Line', 'blue')}
     ${card('green', 'Green Line', 'green')}
-    ${card('inter', 'Green Line to Airport', 'green', ' via CMBT, no change at Alandur')}
+    ${card('inter', 'Inter-corridor', 'green', ' via CMBT')}
     ${card('yellow', 'Yellow Line', 'yellow')}
     <p class="footnote" style="margin-top: 0">${
       day.loop ? 'Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. ' : ''
