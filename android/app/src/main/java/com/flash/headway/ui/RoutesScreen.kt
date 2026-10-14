@@ -38,6 +38,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -321,7 +323,10 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
             Text(label, style = HwType.subheadStrong, color = labelColor)
             if (tomorrow) {
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(clockTime(d.dep), style = HwType.bigClock, color = hw.text)
+                    val lastDep = remember { mutableLongStateOf(d.dep) }
+                    val later = d.dep > lastDep.longValue
+                    SideEffect { lastDep.longValue = d.dep }
+                    RollingText(clockTime(d.dep), HwType.bigClock, hw.text, up = later)
                     Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
                 }
             } else {

@@ -37,7 +37,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -293,8 +295,12 @@ fun HwSwitch(checked: Boolean, onChange: (Boolean) -> Unit, description: String)
 fun BigCountdown(msLeft: Long) {
     val hw = LocalHw.current
     val (number, unit) = bigParts(msLeft)
+    // Ticks count down; a jump up means a later train was picked, so roll the other way.
+    val last = remember { mutableLongStateOf(msLeft) }
+    val up = msLeft > last.longValue + 1_500
+    SideEffect { last.longValue = msLeft }
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        RollingText(number, HwType.big, hw.text)
+        RollingText(number, HwType.big, hw.text, up)
         if (unit.isNotEmpty()) Text(unit, style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
     }
 }
@@ -304,7 +310,7 @@ fun BigCountdown(msLeft: Long) {
  * unchanged one stays still. Slots are keyed from the right so "10" -> "9" keeps the ones place.
  */
 @Composable
-fun RollingText(text: String, style: TextStyle, color: Color) {
+fun RollingText(text: String, style: TextStyle, color: Color, up: Boolean = false) {
     val tabular = style.copy(fontFeatureSettings = "tnum")
     Row {
         text.forEachIndexed { i, ch ->
@@ -313,7 +319,8 @@ fun RollingText(text: String, style: TextStyle, color: Color) {
                     targetState = ch,
                     transitionSpec = {
                         val spec = spring<IntOffset>(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)
-                        ((slideInVertically(spec) { -it } + fadeIn()) togetherWith (slideOutVertically(spec) { it } + fadeOut()))
+                        val dir = if (up) -1 else 1 // down: new digit enters from the top
+                        ((slideInVertically(spec) { -it * dir } + fadeIn()) togetherWith (slideOutVertically(spec) { it * dir } + fadeOut()))
                             .using(SizeTransform(clip = true))
                     },
                     label = "digit",

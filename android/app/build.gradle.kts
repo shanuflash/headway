@@ -14,8 +14,20 @@ android {
         applicationId = "com.flash.headway"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI run number, so each build is a newer version than the last.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+    }
+
+    // One fixed debug key, committed on purpose: CI otherwise signs every build with a fresh
+    // random key, and Android refuses to update an app whose signature changed.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("headway-debug.keystore")
+            storePassword = "android"
+            keyAlias = "headway"
+            keyPassword = "android"
+        }
     }
 
     buildFeatures { compose = true }

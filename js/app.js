@@ -293,10 +293,10 @@ function routeCard(m, isPreview) {
         : tomorrow
           ? `Arrives ${clock(d.arr)}${note}`
           : `Leaves ${clock(d.dep)} · arrives ${clock(d.arr)}${note}`;
-    const [n, u] = bigParts(d.dep - m.now);
-    const big = tomorrow
-      ? `<div class="big clock"><span class="n">${clockTime(d.dep)}</span><span class="u">${ampm(d.dep)}</span></div>`
-      : `<div class="big"><span class="n flow" data-flow-at="${d.dep}"><number-flow-group><number-flow class="a"></number-flow><span class="sep">:</span><number-flow class="b"></number-flow></number-flow-group><span class="now">Now</span></span><span class="u" data-at="${d.dep}" data-fmt="bigUnit">${u}</span></div>`;
+    // One rolling-digit hero for every state, so switching trains or modes animates digit by digit.
+    const big = `<div class="big ${tomorrow ? 'clock' : ''}"><span class="n flow" data-flow-at="${d.dep}" data-flow-mode="${
+      tomorrow ? 'clock' : 'count'
+    }" data-flow-key="${r.id}"><number-flow-group><number-flow class="a"></number-flow><span class="sep">:</span><number-flow class="b"></number-flow></number-flow-group><span class="now">Now</span></span><span class="u"></span></div>`;
     const on = reminderOn(r, d.dep);
     const chips = m.deps
       .map((x, k) => {
@@ -590,42 +590,71 @@ Promise.all([import('https://esm.sh/number-flow'), import('https://esm.sh/number
   })
   .catch(() => {});
 
-/** Hero parts: [main, second (two digits) or null] for minutes, m:ss under two minutes, h:mm past an hour. */
-function flowParts(ms) {
+/** Hero digits: { a, b (two digits) or null, unit }, or null for "Now". */
+function flowParts(mode, at, now) {
+  if (mode === 'clock') {
+    const d = new Date(at);
+    return { a: d.getHours() % 12 || 12, b: d.getMinutes(), unit: ampm(at) };
+  }
+  const ms = at - now;
   if (ms < 30_000) return null;
   if (ms <= 2 * MIN) {
     const s = Math.ceil(ms / 1000);
-    return [Math.floor(s / 60), s % 60];
+    return { a: Math.floor(s / 60), b: s % 60, unit: 'min' };
   }
   const m = mins(ms);
-  return m < 60 ? [m, null] : [Math.floor(m / 60), m % 60];
+  return m < 60 ? { a: m, b: null, unit: 'min' } : { a: Math.floor(m / 60), b: m % 60, unit: 'h' };
 }
 
-function setFlow(el, value, twoDigits) {
+const byChange = (old, value) => Math.sign(value - old);
+
+/** Ticks always roll down (we count down); picking another train rolls the way the value moved. */
+function setFlow(el, value, twoDigits, trend = -1) {
   if (flowReady && el.update) {
     if (!el.dataset.ready) {
       el.dataset.ready = '1';
-      el.trend = -1; // counting down: digits always roll down
       if (twoDigits) {
         el.format = { minimumIntegerDigits: 2 };
         el.digits = { 1: { max: 5 } }; // 00 -> 59
       }
     }
+    el.trend = trend;
     el.update(value);
   } else {
     el.textContent = twoDigits ? String(value).padStart(2, '0') : String(value);
   }
 }
 
+// What each route's hero last showed, so a re-render can roll from it instead of jumping.
+const lastFlow = new Map();
+
 function paintFlows(now) {
   for (const box of view.querySelectorAll('[data-flow-at]')) {
-    const parts = flowParts(Number(box.dataset.flowAt) - now);
-    box.classList.toggle('is-now', !parts);
-    if (!parts) continue;
-    const [a, b] = parts;
-    setFlow(box.querySelector('.a'), a, false);
-    box.classList.toggle('pair', b !== null);
-    if (b !== null) setFlow(box.querySelector('.b'), b, true);
+    const p = flowParts(box.dataset.flowMode, Number(box.dataset.flowAt), now);
+    box.classList.toggle('is-now', !p);
+    const unit = box.nextElementSibling;
+    if (unit && unit.textContent !== (p ? p.unit : '')) unit.textContent = p ? p.unit : '';
+    if (!p) continue;
+    box.classList.toggle('pair', p.b !== null);
+    const A = box.querySelector('.a');
+    const B = box.querySelector('.b');
+    const key = box.dataset.flowKey;
+    const prev = lastFlow.get(key);
+    const fresh = !box.dataset.painted;
+    box.dataset.painted = '1';
+    lastFlow.set(key, p);
+    if (fresh && prev && flowReady) {
+      // A new hero (another train picked, or the shown one left): start from the old digits.
+      setFlow(A, prev.a, false);
+      setFlow(B, prev.b ?? p.b ?? 0, true);
+      requestAnimationFrame(() => {
+        setFlow(A, p.a, false, byChange);
+        if (p.b !== null) setFlow(B, p.b, true, byChange);
+      });
+      continue;
+    }
+    setFlow(A, p.a, false, box.dataset.flowMode === 'clock' ? byChange : -1);
+    if (p.b !== null) setFlow(B, p.b, true, box.dataset.flowMode === 'clock' ? byChange : -1);
   }
 }
 
