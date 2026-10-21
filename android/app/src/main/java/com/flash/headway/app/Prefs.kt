@@ -27,6 +27,9 @@ data class SavedRoute(val from: String, val to: String) {
 
 data class Reminder(val routeId: String, val dep: Long)
 
+/** Where to stand on the platform for this route, set by the rider (no public data has it). */
+enum class Coach(val label: String) { FRONT("front"), MIDDLE("middle"), REAR("rear") }
+
 data class Prefs(
     val routes: List<SavedRoute> = emptyList(),
     /** How many departures each route card lists. */
@@ -38,6 +41,8 @@ data class Prefs(
     val mockAt: Int? = null,
     val mockOffset: Long = 0L,
     val reminder: Reminder? = null,
+    /** Best coach per route id. */
+    val coaches: Map<String, Coach> = emptyMap(),
 )
 
 val COUNT_CHOICES = listOf(3, 5, 8)
@@ -51,6 +56,7 @@ class PrefsStore(private val context: Context) {
         val theme = stringPreferencesKey("theme")
         val override = stringPreferencesKey("override")
         val mockAt = intPreferencesKey("mock_at")
+        val coaches = stringPreferencesKey("coaches")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -74,6 +80,10 @@ class PrefsStore(private val context: Context) {
         return Prefs(
             routes = routes,
             count = (p[Keys.count] ?: 5).takeIf { it in COUNT_CHOICES } ?: 5,
+            coaches = p[Keys.coaches].orEmpty().split(';').mapNotNull { part ->
+                val (id, c) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+                runCatching { id to Coach.valueOf(c) }.getOrNull()
+            }.toMap(),
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -92,6 +102,7 @@ class PrefsStore(private val context: Context) {
     private fun write(p: MutablePreferences, next: Prefs) {
         p[Keys.routes] = next.routes.joinToString(";") { "${it.from}>${it.to}" }
         p[Keys.count] = next.count
+        p[Keys.coaches] = next.coaches.entries.joinToString(";") { "${it.key}=${it.value.name}" }
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name

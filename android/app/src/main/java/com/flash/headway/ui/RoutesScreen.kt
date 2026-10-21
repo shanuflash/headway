@@ -52,11 +52,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.flash.headway.app.Coach
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
+import com.flash.headway.data.Platforms
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
@@ -85,6 +87,21 @@ fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
     }
     val g = routeGroup(r.from, r.to) ?: return ""
     return "${g.line.label} · toward ${g.terminals.joinToString(" or ") { Network.name(it) }}"
+}
+
+/** Platform at the boarding station, from the direction the train heads off in. */
+private fun platformFor(r: SavedRoute): String? {
+    val g = routeGroup(r.from, r.to) ?: return null
+    val line = when (g.line) {
+        Line.BLUE -> RouteId.BLUE
+        Line.GREEN -> RouteId.GREEN
+        else -> return null
+    }
+    val order = Network.routes.getValue(line).fwd.map { it.first }
+    val i = order.indexOf(r.from)
+    val j = order.indexOf(g.next)
+    if (i < 0 || j < 0) return null
+    return Platforms.at(r.from, g.line, if (j > i) order.last() else order.first())
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
@@ -261,6 +278,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
             )
         } else {
             Hero(s, shown, index, prefs, now, actions)
+            Boarding(platformFor(r), prefs.coaches[r.id])
             Chips(s, index, now) { picked = it }
         }
 
@@ -351,6 +369,28 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
             )
         }
     }
+}
+
+/** "Platform 2 · Front coach": where to wait. Hidden when neither is known. */
+@Composable
+private fun Boarding(platform: String?, coach: Coach?) {
+    if (platform == null && coach == null) return
+    val hw = LocalHw.current
+    Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (platform != null) BoardingTag("Platform $platform")
+        if (coach != null) BoardingTag("${coach.label.replaceFirstChar { it.uppercase() }} coach")
+    }
+}
+
+@Composable
+private fun BoardingTag(text: String) {
+    val hw = LocalHw.current
+    Text(
+        text,
+        style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
+        color = hw.text,
+        modifier = Modifier.clip(CircleShape).background(hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 /** Every upcoming departure as a chip; the picked one is ringed and shown in the hero. */

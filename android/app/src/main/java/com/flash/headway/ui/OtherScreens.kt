@@ -235,7 +235,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     val hw = LocalHw.current
     Row(
         Modifier

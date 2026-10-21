@@ -898,3 +898,6 @@ button.hero:active { transform: scale(0.985); }
 .big .n.flow .now { display: none; }
 .big .n.flow.is-now number-flow-group { display: none; }
 .big .n.flow.is-now .now { display: inline; }
+
+.boarding { display: flex; gap: 8px; margin-top: -6px; }
+.boarding span { font-size: 13px; line-height: 18px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--pill); box-shadow: var(--edge); }

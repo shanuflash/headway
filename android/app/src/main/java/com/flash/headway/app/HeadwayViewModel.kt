@@ -136,6 +136,10 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(routes = listOf(r) + p.routes.filterNot { it.id == id })
     }
 
+    fun setCoach(routeId: String, coach: Coach?) = update { p ->
+        p.copy(coaches = if (coach == null) p.coaches - routeId else p.coaches + (routeId to coach))
+    }
+
     fun setCount(n: Int) = update { it.copy(count = n) }
 
     fun showPreview(from: String, to: String) {

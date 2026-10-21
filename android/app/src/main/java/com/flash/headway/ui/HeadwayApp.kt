@@ -257,6 +257,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         vm.removeRoute(id)
                         toast("Removed ${Network.name(route.from)} → ${Network.name(route.to)}")
                     },
+                    coach = prefs.coaches[id],
+                    onCoach = { vm.setCoach(id, it) },
                     onDismiss = { menuFor = null },
                 )
             }

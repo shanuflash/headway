@@ -2,6 +2,7 @@ import { Schedule, serviceDateKey, bandAt, hm } from './engine.js';
 import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations } from './network.js';
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
+import { PLATFORMS } from './platforms.js';
 
 const MIN = 60_000;
 const STORE = 'headway:v3';
@@ -23,6 +24,7 @@ const DEFAULTS = {
   feedUrl: '',
   reminder: null,
   mock: null,
+  coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
 };
 
 const routeId = (from, to) => `${from}>${to}`;
@@ -166,6 +168,24 @@ function routeLabel(r, inter = false) {
     return `Inter-corridor · toward ${name(end)}`;
   }
   return `${lineName(g.line)} · toward ${g.terminals.map(name).join(' or ')}`;
+}
+
+/** Platform at the boarding station, from the direction the train heads off in. */
+function platformFor(r) {
+  const g = directDestinations(r.from).find((x) => x.stations.some((s) => s.id === r.to));
+  if (!g || !PLATFORMS[r.from]?.[g.line]) return null;
+  const order = ROUTES[g.line].fwd.map(([id]) => id);
+  const i = order.indexOf(r.from);
+  const j = order.indexOf(g.next);
+  if (i < 0 || j < 0) return null;
+  return PLATFORMS[r.from][g.line][j > i ? order.at(-1) : order[0]] ?? null;
+}
+
+function boardingTags(r) {
+  const p = platformFor(r);
+  const c = prefs.coaches?.[r.id];
+  if (!p && !c) return '';
+  return `<div class="boarding rc-pad">${p ? `<span>Platform ${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}</div>`;
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
@@ -319,6 +339,7 @@ function routeCard(m, isPreview) {
           on ? 'Stop the countdown' : 'Count down to this train'
         }">${ic('notifications', on ? 'fill' : '')}</button>
       </div>
+      ${boardingTags(r)}
       <div class="tchips">${chips}</div>
       ${m.late && m.last ? `<div class="note rc-pad">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight.</span></div>` : ''}`;
   }
@@ -871,6 +892,13 @@ function openRouteMenu(id) {
   openSheet(
     `${sheetHead(`${name(r.from)} → ${name(r.to)}`, null, null)}
     <div class="sheet-body" style="flex: none">
+      <div class="card set">
+        <span>Best coach to board</span>
+        <div class="seg" role="radiogroup" aria-label="Best coach to board">${[['', 'Off'], ['front', 'Front'], ['middle', 'Middle'], ['rear', 'Rear']]
+          .map(([v, l]) => `<button role="radio" aria-checked="${(prefs.coaches?.[id] ?? '') === v}" data-act="coach" data-route="${id}" data-v="${v}">${l}</button>`)
+          .join('')}</div>
+        <span class="sub" style="font-size: 13px; line-height: 18px">Where to stand so you get off near the exit or stairs you use. Shown on the route card.</span>
+      </div>
       <div class="card list">
         <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
         <button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>
@@ -986,6 +1014,15 @@ const ACTIONS = {
     history.back();
     if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)] });
     render({ force: true, animate: true });
+  },
+  coach: (el) => {
+    buzz();
+    const coaches = { ...(prefs.coaches ?? {}) };
+    if (el.dataset.v) coaches[el.dataset.route] = el.dataset.v;
+    else delete coaches[el.dataset.route];
+    save({ coaches });
+    openRouteMenu(el.dataset.route);
+    render({ force: true });
   },
   'remove-route': (el) => {
     const r = routeOf(el);

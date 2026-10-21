@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.flash.headway.app.Coach
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.engine.directDestinations
@@ -222,12 +223,26 @@ fun RouteMenu(
     onReturn: () -> Unit,
     onTop: () -> Unit,
     onRemove: () -> Unit,
+    coach: Coach?,
+    onCoach: (Coach?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val hw = LocalHw.current
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(title, style = HwType.headline, color = hw.text, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Column(
+                Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Best coach to board", style = HwType.body, color = hw.text)
+                Segmented(
+                    options = listOf<Pair<Coach?, String>>(null to "Off", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear"),
+                    selected = coach,
+                    onSelect = onCoach,
+                )
+                Text("Where to stand so you get off near the exit or stairs you use. Shown on the route card.", style = HwType.footnote, color = hw.sub)
+            }
             val danger = Color(0xFFD70015)
             ListCard(
                 listOf<@Composable () -> Unit>(
