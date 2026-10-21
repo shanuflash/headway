@@ -64,9 +64,9 @@ import kotlinx.coroutines.launch
 /** Station first, then a destination reachable without changing trains. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDismiss: () -> Unit) {
+fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDismiss: () -> Unit, startFrom: String? = null) {
     val hw = LocalHw.current
-    var from by remember { mutableStateOf<String?>(null) }
+    var from by remember { mutableStateOf(startFrom) }
     var query by remember { mutableStateOf("") }
 
     HwSheet(onDismiss = onDismiss, heightFraction = 0.92f) { close ->

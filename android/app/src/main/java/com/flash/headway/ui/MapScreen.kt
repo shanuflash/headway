@@ -1,0 +1,217 @@
+package com.flash.headway.ui
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.flash.headway.data.Line
+import com.flash.headway.data.MapLayout
+import com.flash.headway.data.Network
+import com.flash.headway.engine.DestinationGroup
+import com.flash.headway.engine.RouteDeparture
+import com.flash.headway.ui.theme.HwType
+import com.flash.headway.ui.theme.LocalHw
+
+/** Next departures each way from a station: the direction, its platform, and trains with their terminal. */
+class StationBoard(val group: DestinationGroup, val platform: String?, val trains: List<Pair<RouteDeparture, String>>)
+
+@Composable
+fun ColumnScope.MapScreen(onSettings: () -> Unit, onStation: (String) -> Unit) {
+    TopBar(right = { RoundButton(Icons.Rounded.MoreHoriz, "Settings", onSettings) })
+    LargeTitle("Map")
+    NetworkMap(onStation)
+    Footnote("Not to scale. Pinch to zoom, and tap a station for its next trains each way.")
+}
+
+/** The schematic network: pinch to zoom, drag to pan, tap a station. */
+@Composable
+private fun NetworkMap(onStation: (String) -> Unit) {
+    val hw = LocalHw.current
+    val measurer = rememberTextMeasurer()
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    val labelStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium, color = hw.text)
+
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(560.dp)
+            .clip(RouteCardShape)
+            .background(hw.card),
+    ) {
+        val widthPx = constraints.maxWidth.toFloat()
+        val heightPx = constraints.maxHeight.toFloat()
+        // At zoom 1 the whole map's width fits the card.
+        val base = widthPx / MapLayout.WIDTH
+
+        fun clampPan(p: Offset, z: Float): Offset {
+            val w = MapLayout.WIDTH * base * z
+            val h = MapLayout.HEIGHT * base * z
+            val minX = minOf(0f, widthPx - w)
+            val minY = minOf(0f, heightPx - h)
+            return Offset(p.x.coerceIn(minX, 0f), p.y.coerceIn(minY, 0f))
+        }
+
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTransformGestures { centroid, panChange, zoomChange, _ ->
+                        val newZoom = (zoom * zoomChange).coerceIn(1f, 4f)
+                        // Zoom about the fingers, then apply the drag.
+                        val k = newZoom / zoom
+                        val next = (pan - centroid) * k + centroid + panChange
+                        zoom = newZoom
+                        pan = clampPan(next, newZoom)
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures { tap ->
+                        val s = base * zoom
+                        val x = (tap.x - pan.x) / s
+                        val y = (tap.y - pan.y) / s
+                        val hit = MapLayout.stations.entries.minByOrNull { (_, p) ->
+                            (p.first - x) * (p.first - x) + (p.second - y) * (p.second - y)
+                        }
+                        if (hit != null) {
+                            val dx = hit.value.first - x
+                            val dy = hit.value.second - y
+                            if (dx * dx + dy * dy < 34f * 34f) onStation(hit.key)
+                        }
+                    }
+                },
+        ) {
+            val s = base * zoom
+            translate(pan.x, pan.y) {
+                fun at(id: String): Offset {
+                    val p = MapLayout.stations.getValue(id)
+                    return Offset(p.first * s, p.second * s)
+                }
+                MapLayout.lines.forEach { (line, ids) ->
+                    val path = Path()
+                    ids.forEachIndexed { i, id ->
+                        val o = at(id)
+                        if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
+                    }
+                    drawPath(path, hw.line(line), style = Stroke(width = 12f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+                MapLayout.stations.forEach { (id, p) ->
+                    val o = at(id)
+                    val lines = Network.stations.getValue(id).lines
+                    if (lines.size > 1) {
+                        drawCircle(hw.card, 13f * s, o)
+                        drawCircle(hw.text, 13f * s, o, style = Stroke(5f * s))
+                    } else {
+                        drawCircle(hw.card, 8f * s, o)
+                        drawCircle(hw.line(lines.first()), 8f * s, o, style = Stroke(5f * s))
+                    }
+                    val text = measurer.measure(Network.name(id), labelStyle.copy(fontSize = (22f * s).toSp()))
+                    val h = text.size.height.toFloat()
+                    when (p.third) {
+                        'l' -> drawText(text, topLeft = Offset(o.x - 18f * s - text.size.width, o.y - h / 2))
+                        'd' -> drawText(text, topLeft = Offset(o.x + 16f * s, o.y + 34f * s - h * 0.8f))
+                        'u' -> rotate(-55f, pivot = Offset(o.x + 10f * s, o.y - 16f * s)) {
+                            drawText(text, topLeft = Offset(o.x + 10f * s, o.y - 16f * s - h * 0.8f))
+                        }
+                        else -> drawText(text, topLeft = Offset(o.x + 18f * s, o.y - h / 2))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The bottom sheet for a tapped station. */
+@Composable
+fun StationSheet(id: String, boards: List<StationBoard>, now: Long, onRouteFrom: () -> Unit, onDismiss: () -> Unit) {
+    val hw = LocalHw.current
+    HwSheet(onDismiss = onDismiss) { close ->
+        Column(
+            Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(Network.name(id), style = HwType.headline, color = hw.text)
+                Text(Network.stations.getValue(id).lines.joinToString(" · ") { it.label }, style = HwType.footnote, color = hw.sub)
+            }
+            boards.forEach { b ->
+                val many = b.group.terminals.size > 1
+                Column(
+                    Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(hw.line(b.group.line)))
+                        Text(
+                            "Toward ${b.group.terminals.joinToString(" or ") { Network.name(it) }}" + (b.platform?.let { " · Platform $it" } ?: ""),
+                            style = HwType.subheadStrong,
+                            color = hw.text,
+                        )
+                    }
+                    if (b.trains.isEmpty()) {
+                        Text("No more trains today", style = HwType.subhead, color = hw.sub)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            b.trains.forEach { (d, to) ->
+                                Column(
+                                    Modifier.weight(1f).clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).background(hw.fill).edge(CircleShape).padding(vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Text(clock(d.dep), style = HwType.subheadStrong.copy(fontFeatureSettings = "tnum"), color = hw.text)
+                                    Text(
+                                        if (many) Network.name(to) else if (d.dep - now < 30_000) "now" else "${mins(d.dep - now)} min",
+                                        style = HwType.caption,
+                                        color = hw.sub,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            PrimaryButton("Save a route from here", Icons.Rounded.Add) { close(onRouteFrom) }
+        }
+    }
+}
+

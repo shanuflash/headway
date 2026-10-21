@@ -85,6 +85,21 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Next trains each way from a station, for the map's station sheet. */
+    fun stationBoard(id: String): List<com.flash.headway.ui.StationBoard> {
+        val p = prefs.value ?: return emptyList()
+        val s = engine(p)
+        val now = Clock.now()
+        return com.flash.headway.engine.directDestinations(id).map { g ->
+            val trains = g.terminals
+                .flatMap { t -> s.routeDepartures(id, t, now, 4).map { it to t } }
+                .sortedBy { it.first.dep }
+                .distinctBy { it.first.dep }
+                .take(4)
+            com.flash.headway.ui.StationBoard(g, com.flash.headway.ui.platformAt(id, g), trains)
+        }
+    }
+
     fun todayInfo(): DayInfo = dayTypeFor(serviceDate(Clock.now()), prefs.value?.override)
 
     // ---------- actions ----------

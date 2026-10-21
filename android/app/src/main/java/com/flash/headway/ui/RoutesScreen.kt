@@ -60,6 +60,7 @@ import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.data.Platforms
 import com.flash.headway.data.RouteId
+import com.flash.headway.engine.DestinationGroup
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.engine.routeGroup
@@ -90,18 +91,20 @@ fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
 }
 
 /** Platform at the boarding station, from the direction the train heads off in. */
-private fun platformFor(r: SavedRoute): String? {
-    val g = routeGroup(r.from, r.to) ?: return null
+private fun platformFor(r: SavedRoute): String? = routeGroup(r.from, r.to)?.let { platformAt(r.from, it) }
+
+/** Platform at [from] for a direction group (its line and next stop). */
+fun platformAt(from: String, g: DestinationGroup): String? {
     val line = when (g.line) {
         Line.BLUE -> RouteId.BLUE
         Line.GREEN -> RouteId.GREEN
         else -> return null
     }
     val order = Network.routes.getValue(line).fwd.map { it.first }
-    val i = order.indexOf(r.from)
+    val i = order.indexOf(from)
     val j = order.indexOf(g.next)
     if (i < 0 || j < 0) return null
-    return Platforms.at(r.from, g.line, if (j > i) order.last() else order.first())
+    return Platforms.at(from, g.line, if (j > i) order.last() else order.first())
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */

@@ -49,6 +49,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Commute
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -79,7 +80,7 @@ import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlinx.coroutines.delay
 
-enum class Tab { ROUTES, LINES }
+enum class Tab { ROUTES, LINES, MAP }
 
 private enum class Picker { ADD, LOOK }
 
@@ -102,6 +103,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var settings by rememberSaveable { mutableStateOf(false) }
     var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
+    var stationFor by remember { mutableStateOf<String?>(null) }
+    var pickFrom by remember { mutableStateOf<String?>(null) }
 
     // A widget tap opens the app on that route.
     LaunchedEffect(openRoute) {
@@ -176,6 +179,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         ),
                     )
                     Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, onSettings = { settings = true })
+                    Tab.MAP.name -> MapScreen(onSettings = { settings = true }, onStation = { stationFor = it })
                     else -> SettingsScreen(
                         prefs = prefs,
                         today = vm.todayInfo(),
@@ -224,6 +228,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 title = if (mode == Picker.ADD) "Where do you board?" else "Check a station",
                 onPick = { from, to ->
                     picker = null
+                    pickFrom = null
                     tab = Tab.ROUTES
                     if (mode == Picker.ADD) {
                         vm.addRoute(from, to)
@@ -232,7 +237,25 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         vm.showPreview(from, to)
                     }
                 },
-                onDismiss = { picker = null },
+                onDismiss = {
+                    picker = null
+                    pickFrom = null
+                },
+                startFrom = pickFrom,
+            )
+        }
+
+        stationFor?.let { id ->
+            StationSheet(
+                id = id,
+                boards = remember(id) { vm.stationBoard(id) },
+                now = now,
+                onRouteFrom = {
+                    stationFor = null
+                    pickFrom = id
+                    picker = Picker.ADD
+                },
+                onDismiss = { stationFor = null },
             )
         }
 
@@ -292,11 +315,11 @@ private fun TabDock(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         Glass(Modifier.weight(1f).height(62.dp)) {
             BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
-                val w = maxWidth / 2
+                val w = maxWidth / 3
                 val x by animateDpAsState(w * tab.ordinal, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow), label = "tab")
                 Box(Modifier.offset(x = x).width(w).fillMaxHeight().clip(CircleShape).background(hw.selected))
                 Row(Modifier.fillMaxSize()) {
-                    listOf(Tab.ROUTES to ("Routes" to Icons.Rounded.Commute), Tab.LINES to ("Lines" to Icons.Rounded.Map)).forEach { (t, labelIcon) ->
+                    listOf(Tab.ROUTES to ("Routes" to Icons.Rounded.Commute), Tab.LINES to ("Lines" to Icons.Rounded.Schedule), Tab.MAP to ("Map" to Icons.Rounded.Map)).forEach { (t, labelIcon) ->
                         val (label, icon) = labelIcon
                         val on = t == tab
                         Column(
