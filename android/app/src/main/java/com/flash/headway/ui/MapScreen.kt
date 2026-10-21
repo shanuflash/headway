@@ -60,7 +60,7 @@ fun ColumnScope.MapScreen(onSettings: () -> Unit, onStation: (String) -> Unit) {
     TopBar(right = { RoundButton(Icons.Rounded.MoreHoriz, "Settings", onSettings) })
     LargeTitle("Map")
     NetworkMap(onStation)
-    Footnote("Not to scale. Pinch to zoom, and tap a station for its next trains each way.")
+    Footnote("Pinch to zoom, and tap a station for its next trains each way. Map data © OpenStreetMap contributors.")
 }
 
 /** The schematic network: pinch to zoom, drag to pan, tap a station. */
@@ -81,8 +81,8 @@ private fun NetworkMap(onStation: (String) -> Unit) {
     ) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
-        // At zoom 1 the whole map's width fits the card.
-        val base = widthPx / MapLayout.WIDTH
+        // At zoom 1 the whole network fits the card.
+        val base = minOf(widthPx / MapLayout.WIDTH, heightPx / MapLayout.HEIGHT)
 
         fun clampPan(p: Offset, z: Float): Offset {
             val w = MapLayout.WIDTH * base * z
@@ -123,6 +123,21 @@ private fun NetworkMap(onStation: (String) -> Unit) {
         ) {
             val s = base * zoom
             translate(pan.x, pan.y) {
+                // Water first, under the lines: sea and lakes filled, coast and rivers stroked.
+                val waterFill = androidx.compose.ui.graphics.lerp(hw.card, hw.blue, 0.12f)
+                val waterLine = androidx.compose.ui.graphics.lerp(hw.card, hw.blue, 0.25f)
+                MapLayout.features.forEach { (kind, pts) ->
+                    val path = Path()
+                    pts.forEachIndexed { i, (x, y) -> if (i == 0) path.moveTo(x * s, y * s) else path.lineTo(x * s, y * s) }
+                    when (kind) {
+                        "sea", "lake" -> {
+                            path.close()
+                            drawPath(path, waterFill)
+                        }
+                        "coast" -> drawPath(path, waterLine, style = Stroke(width = 2f * s))
+                        else -> drawPath(path, waterLine, style = Stroke(width = 4f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    }
+                }
                 fun at(id: String): Offset {
                     val p = MapLayout.stations.getValue(id)
                     return Offset(p.first * s, p.second * s)
@@ -145,16 +160,18 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                         drawCircle(hw.card, 8f * s, o)
                         drawCircle(hw.line(lines.first()), 8f * s, o, style = Stroke(5f * s))
                     }
-                    val text = measurer.measure(Network.name(id), labelStyle.copy(fontSize = (22f * s).toSp()))
+                    val text = measurer.measure(Network.name(id), labelStyle.copy(fontSize = (20f * s).toSp()))
+                    val w = text.size.width.toFloat()
                     val h = text.size.height.toFloat()
-                    when (p.third) {
-                        'l' -> drawText(text, topLeft = Offset(o.x - 18f * s - text.size.width, o.y - h / 2))
-                        'd' -> drawText(text, topLeft = Offset(o.x + 16f * s, o.y + 34f * s - h * 0.8f))
-                        'u' -> rotate(-55f, pivot = Offset(o.x + 10f * s, o.y - 16f * s)) {
-                            drawText(text, topLeft = Offset(o.x + 10f * s, o.y - 16f * s - h * 0.8f))
-                        }
-                        else -> drawText(text, topLeft = Offset(o.x + 18f * s, o.y - h / 2))
+                    val topLeft = when (p.third) {
+                        'l' -> Offset(o.x - 14f * s - w, o.y - h / 2)
+                        'a' -> Offset(o.x + 10f * s, o.y - 12f * s - h)
+                        'd' -> Offset(o.x + 10f * s, o.y + 12f * s)
+                        'A' -> Offset(o.x - 10f * s - w, o.y - 12f * s - h)
+                        'D' -> Offset(o.x - 10f * s - w, o.y + 12f * s)
+                        else -> Offset(o.x + 14f * s, o.y - h / 2)
                     }
+                    drawText(text, topLeft = topLeft)
                 }
             }
         }
@@ -183,7 +200,7 @@ fun StationSheet(id: String, boards: List<StationBoard>, now: Long, onRouteFrom:
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(hw.line(b.group.line)))
                         Text(
-                            "Toward ${b.group.terminals.joinToString(" or ") { Network.name(it) }}" + (b.platform?.let { " · Platform $it" } ?: ""),
+                            "Toward ${b.group.terminals.joinToString(" or ") { Network.name(it) }}" + (b.platform?.let { " · $it" } ?: ""),
                             style = HwType.subheadStrong,
                             color = hw.text,
                         )

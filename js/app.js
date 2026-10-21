@@ -2,8 +2,8 @@ import { Schedule, serviceDateKey, bandAt, hm } from './engine.js';
 import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations } from './network.js';
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
-import { PLATFORMS } from './platforms.js';
-import { MAP_SIZE, MAP_STATIONS, MAP_LINES } from './map-layout.js';
+import { PLATFORMS, platformText } from './platforms.js';
+import { MAP_SIZE, MAP_STATIONS, MAP_LINES, MAP_FEATURES } from './map-layout.js';
 
 const MIN = 60_000;
 const STORE = 'headway:v3';
@@ -177,21 +177,22 @@ function platformFor(r) {
   return g ? platformAt(r.from, g) : null;
 }
 
-/** Platform at `from` for a direction group (its line and next stop). */
+/** Platform text at `from` for a direction group (its line and next stop), e.g. "Platform 2". */
 function platformAt(from, g) {
   if (!PLATFORMS[from]?.[g.line]) return null;
   const order = ROUTES[g.line].fwd.map(([id]) => id);
   const i = order.indexOf(from);
   const j = order.indexOf(g.next);
   if (i < 0 || j < 0) return null;
-  return PLATFORMS[from][g.line][j > i ? order.at(-1) : order[0]] ?? null;
+  const p = PLATFORMS[from][g.line][j > i ? order.at(-1) : order[0]];
+  return p ? platformText(p) : null;
 }
 
 function boardingTags(r) {
   const p = platformFor(r);
   const c = prefs.coaches?.[r.id];
   if (!p && !c) return '';
-  return `<div class="boarding rc-pad">${p ? `<span>Platform ${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}</div>`;
+  return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}</div>`;
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
@@ -367,13 +368,19 @@ const lineColor = { blue: 'var(--blue)', green: 'var(--green)', yellow: 'var(--y
 function mapLabel(text, x, y, side) {
   const t = esc(text);
   if (side === 'l') return `<text x="${x - 18}" y="${y + 7}" text-anchor="end">${t}</text>`;
-  if (side === 'd') return `<text x="${x + 16}" y="${y + 34}">${t}</text>`;
-  if (side === 'u') return `<text x="${x + 10}" y="${y - 16}" transform="rotate(-55 ${x + 10} ${y - 16})">${t}</text>`;
+  if (side === 'd') return `<text x="${x + 10}" y="${y + 30}">${t}</text>`;
+  if (side === 'a') return `<text x="${x + 10}" y="${y - 16}">${t}</text>`;
+  if (side === 'A') return `<text x="${x - 10}" y="${y - 16}" text-anchor="end">${t}</text>`;
+  if (side === 'D') return `<text x="${x - 10}" y="${y + 30}" text-anchor="end">${t}</text>`;
   return `<text x="${x + 18}" y="${y + 7}">${t}</text>`;
 }
 
 function mapScreen() {
   const { w, h } = MAP_SIZE;
+  const water = MAP_FEATURES.map(([k, pts]) => {
+    const d = pts.map(([x, y]) => `${x},${y}`).join(' ');
+    return k === 'sea' || k === 'lake' ? `<polygon class="w-${k}" points="${d}"/>` : `<polyline class="w-${k}" points="${d}"/>`;
+  }).join('');
   const lines = Object.entries(MAP_LINES)
     .map(
       ([l, ids]) =>
@@ -395,14 +402,14 @@ function mapScreen() {
     <div class="title"><h1>Map</h1></div>
     <div class="card map-card">
       <div class="map-wrap" id="map-wrap">
-        <svg class="metro-map" viewBox="0 0 ${w} ${h}" style="width: ${MAP_ZOOMS[mapZoom] * 100}%" role="img" aria-label="Chennai Metro network map">${lines}${stations}</svg>
+        <svg class="metro-map" viewBox="0 0 ${w} ${h}" style="width: ${MAP_ZOOMS[mapZoom] * 100}%" role="img" aria-label="Chennai Metro network map">${water}${lines}${stations}</svg>
       </div>
       <span class="map-zoom glass-group glass">
         <button data-act="zoom" data-v="-1" aria-label="Zoom out" ${mapZoom === 0 ? 'disabled' : ''}>${ic('remove')}</button>
         <button data-act="zoom" data-v="1" aria-label="Zoom in" ${mapZoom === MAP_ZOOMS.length - 1 ? 'disabled' : ''}>${ic('add')}</button>
       </span>
     </div>
-    <p class="footnote">Not to scale. Tap a station for its next trains each way.</p>`;
+    <p class="footnote">Tap a station for its next trains each way. Map data © OpenStreetMap contributors.</p>`;
 }
 
 function zoomMap(step) {
@@ -443,7 +450,7 @@ function openStationSheet(id) {
         .join('');
       return `
         <div class="card set">
-          <span class="dir"><i class="dot ${g.line}"></i>Toward ${esc(g.terminals.map(name).join(' or '))}${p ? ` · Platform ${esc(p)}` : ''}</span>
+          <span class="dir"><i class="dot ${g.line}"></i>Toward ${esc(g.terminals.map(name).join(' or '))}${p ? ` · ${esc(p)}` : ''}</span>
           ${deps.length ? `<div class="st-deps">${chips}</div>` : '<span class="sub" style="font-size: 15px">No more trains today</span>'}
         </div>`;
     })

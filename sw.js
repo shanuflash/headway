@@ -1,5 +1,5 @@
 // App shell is cache-first so the timetable works underground; advisories are network-first.
-const VERSION = 'headway-v11';
+const VERSION = 'headway-v12';
 const FONTS = 'headway-fonts-v1';
 const SHELL = [
   './',

@@ -907,10 +907,14 @@ button.hero:active { transform: scale(0.985); }
 .map-wrap { overflow: auto; max-height: calc(100dvh - 260px); overscroll-behavior: contain; scrollbar-width: none; }
 .map-wrap::-webkit-scrollbar { display: none; }
 .metro-map { display: block; min-width: 100%; height: auto; }
-.metro-map text { font-size: 22px; font-weight: 500; fill: var(--text); paint-order: stroke; stroke: var(--card); stroke-width: 6px; stroke-linejoin: round; }
+.metro-map text { font-size: 20px; font-weight: 500; fill: var(--text); paint-order: stroke; stroke: var(--card); stroke-width: 6px; stroke-linejoin: round; }
 .metro-map .mst { cursor: pointer; }
 .map-zoom { position: absolute; right: 12px; bottom: 12px; }
 .map-zoom button[disabled] { opacity: 0.35; }
 .st-deps { display: flex; gap: 8px; flex-wrap: wrap; }
 .st-deps .tchip { cursor: default; }
 .card.set .dir { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+
+.metro-map .w-sea, .metro-map .w-lake { fill: color-mix(in srgb, var(--blue) 12%, var(--card)); stroke: none; }
+.metro-map .w-coast { fill: none; stroke: color-mix(in srgb, var(--blue) 30%, var(--card)); stroke-width: 2; }
+.metro-map .w-river { fill: none; stroke: color-mix(in srgb, var(--blue) 22%, var(--card)); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }

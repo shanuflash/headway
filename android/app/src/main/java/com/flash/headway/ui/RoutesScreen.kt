@@ -93,18 +93,18 @@ fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
 /** Platform at the boarding station, from the direction the train heads off in. */
 private fun platformFor(r: SavedRoute): String? = routeGroup(r.from, r.to)?.let { platformAt(r.from, it) }
 
-/** Platform at [from] for a direction group (its line and next stop). */
+/** Platform text at [from] for a direction group (its line and next stop), e.g. "Platform 2". */
 fun platformAt(from: String, g: DestinationGroup): String? {
     val line = when (g.line) {
         Line.BLUE -> RouteId.BLUE
         Line.GREEN -> RouteId.GREEN
-        else -> return null
+        Line.YELLOW -> RouteId.YELLOW
     }
     val order = Network.routes.getValue(line).fwd.map { it.first }
     val i = order.indexOf(from)
     val j = order.indexOf(g.next)
     if (i < 0 || j < 0) return null
-    return Platforms.at(from, g.line, if (j > i) order.last() else order.first())
+    return Platforms.at(from, g.line, if (j > i) order.last() else order.first())?.let { Platforms.text(it) }
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
@@ -380,7 +380,7 @@ private fun Boarding(platform: String?, coach: Coach?) {
     if (platform == null && coach == null) return
     val hw = LocalHw.current
     Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (platform != null) BoardingTag("Platform $platform")
+        if (platform != null) BoardingTag(platform)
         if (coach != null) BoardingTag("${coach.label.replaceFirstChar { it.uppercase() }} coach")
     }
 }

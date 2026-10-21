@@ -2,7 +2,10 @@ package com.flash.headway.data
 
 /**
  * Platform numbers by station, line and the terminal the train heads to.
- * Source: India Metro (metro.reclaimchennai.city), which cites CMRL. No Yellow Line data yet.
+ * Blue and Green: India Metro (metro.reclaimchennai.city), which cites CMRL.
+ * Yellow: seen by the rider in Oct 2026: platform 1 toward Vadapalani, and at Vadapalani platform 3
+ * toward Poonamallee Bypass (4 is the arrival platform). A trailing "?" marks a number not yet seen,
+ * shown as "likely".
  */
 object Platforms {
     private val table: Map<String, Map<Line, Map<String, String>>> = mapOf(
@@ -42,11 +45,24 @@ object Platforms {
         "tiruvottiyur-theradi" to mapOf(Line.BLUE to mapOf("airport" to "1", "wimco-nagar-depot" to "2")),
         "tollgate" to mapOf(Line.BLUE to mapOf("airport" to "1", "wimco-nagar-depot" to "2")),
         "tondiarpet" to mapOf(Line.BLUE to mapOf("airport" to "1", "wimco-nagar-depot" to "2")),
-        "vadapalani" to mapOf(Line.GREEN to mapOf("st-thomas-mount" to "1", "central" to "2")),
+        "vadapalani" to mapOf(Line.GREEN to mapOf("st-thomas-mount" to "1", "central" to "2"), Line.YELLOW to mapOf("poonamallee-bypass" to "3")),
         "washermenpet" to mapOf(Line.BLUE to mapOf("airport" to "1", "wimco-nagar-depot" to "2")),
         "wimco-nagar" to mapOf(Line.BLUE to mapOf("airport" to "1", "wimco-nagar-depot" to "2")),
         "wimco-nagar-depot" to mapOf(Line.BLUE to mapOf("airport" to "1")),
+        "poonamallee" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "mullaithottam" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "karayanchavadi" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "kumananchavadi" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "kattupakkam" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "iyyappanthangal" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "thelliyaragaram" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "porur-bypass" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
+        "porur-junction" to mapOf(Line.YELLOW to mapOf("poonamallee-bypass" to "2?", "vadapalani" to "1")),
     )
 
     fun at(station: String, line: Line, terminal: String): String? = table[station]?.get(line)?.get(terminal)
+
+    /** "Platform 2", "Platform 1 or 2" (either), or "Likely platform 2" where it is not yet confirmed. */
+    fun text(platform: String): String =
+        "${if (platform.endsWith("?")) "Likely platform" else "Platform"} ${platform.removeSuffix("?").replace("/", " or ")}"
 }
