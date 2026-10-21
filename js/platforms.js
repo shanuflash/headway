@@ -1,8 +1,8 @@
 // Platform numbers by station, line and the terminal the train heads to.
 // Blue and Green: India Metro (metro.reclaimchennai.city), which cites CMRL.
-// Yellow: seen by the rider in Oct 2026: platform 1 toward Vadapalani, and at Vadapalani platform 3
-// toward Poonamallee Bypass (4 is the arrival platform). A trailing "?" marks a number not yet seen,
-// shown as "likely".
+// Yellow: seen by the rider in Oct 2026: platform 1 toward Vadapalani at every station (so 2 the
+// other way), and platform 3 at Vadapalani toward Poonamallee Bypass (4 is the arrival platform).
+// A trailing "?" marks a number not yet confirmed, shown as "likely".
 export const PLATFORMS = {
   agdms: { blue: { 'airport': '1', 'wimco-nagar-depot': '2' } },
   airport: { blue: { 'wimco-nagar-depot': '1/2' } },
@@ -44,15 +44,15 @@ export const PLATFORMS = {
   washermenpet: { blue: { 'airport': '1', 'wimco-nagar-depot': '2' } },
   'wimco-nagar': { blue: { 'airport': '1', 'wimco-nagar-depot': '2' } },
   'wimco-nagar-depot': { blue: { 'airport': '1' } },
-  poonamallee: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  mullaithottam: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  karayanchavadi: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  kumananchavadi: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  kattupakkam: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  iyyappanthangal: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  thelliyaragaram: { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  'porur-bypass': { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
-  'porur-junction': { yellow: { 'poonamallee-bypass': '2?', 'vadapalani': '1' } },
+  poonamallee: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  mullaithottam: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  karayanchavadi: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  kumananchavadi: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  kattupakkam: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  iyyappanthangal: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  thelliyaragaram: { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  'porur-bypass': { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
+  'porur-junction': { yellow: { 'poonamallee-bypass': '2', 'vadapalani': '1' } },
 };
 
 /** "1/2" means either platform; a trailing "?" means not yet confirmed. */
