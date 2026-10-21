@@ -901,3 +901,16 @@ button.hero:active { transform: scale(0.985); }
 
 .boarding { display: flex; gap: 8px; margin-top: -6px; }
 .boarding span { font-size: 13px; line-height: 18px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--pill); box-shadow: var(--edge); }
+
+/* ---------- map tab ---------- */
+.map-card { position: relative; padding: 0; overflow: hidden; border-radius: 30px; }
+.map-wrap { overflow: auto; max-height: calc(100dvh - 260px); overscroll-behavior: contain; scrollbar-width: none; }
+.map-wrap::-webkit-scrollbar { display: none; }
+.metro-map { display: block; min-width: 100%; height: auto; }
+.metro-map text { font-size: 22px; font-weight: 500; fill: var(--text); paint-order: stroke; stroke: var(--card); stroke-width: 6px; stroke-linejoin: round; }
+.metro-map .mst { cursor: pointer; }
+.map-zoom { position: absolute; right: 12px; bottom: 12px; }
+.map-zoom button[disabled] { opacity: 0.35; }
+.st-deps { display: flex; gap: 8px; flex-wrap: wrap; }
+.st-deps .tchip { cursor: default; }
+.card.set .dir { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }

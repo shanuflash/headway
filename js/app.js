@@ -3,6 +3,7 @@ import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations } from './ne
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
 import { PLATFORMS } from './platforms.js';
+import { MAP_SIZE, MAP_STATIONS, MAP_LINES } from './map-layout.js';
 
 const MIN = 60_000;
 const STORE = 'headway:v3';
@@ -173,12 +174,17 @@ function routeLabel(r, inter = false) {
 /** Platform at the boarding station, from the direction the train heads off in. */
 function platformFor(r) {
   const g = directDestinations(r.from).find((x) => x.stations.some((s) => s.id === r.to));
-  if (!g || !PLATFORMS[r.from]?.[g.line]) return null;
+  return g ? platformAt(r.from, g) : null;
+}
+
+/** Platform at `from` for a direction group (its line and next stop). */
+function platformAt(from, g) {
+  if (!PLATFORMS[from]?.[g.line]) return null;
   const order = ROUTES[g.line].fwd.map(([id]) => id);
-  const i = order.indexOf(r.from);
+  const i = order.indexOf(from);
   const j = order.indexOf(g.next);
   if (i < 0 || j < 0) return null;
-  return PLATFORMS[r.from][g.line][j > i ? order.at(-1) : order[0]] ?? null;
+  return PLATFORMS[from][g.line][j > i ? order.at(-1) : order[0]] ?? null;
 }
 
 function boardingTags(r) {
@@ -352,6 +358,106 @@ function routeCard(m, isPreview) {
     </div>`;
 }
 
+/* ----- map tab ----- */
+
+const MAP_ZOOMS = [1, 1.6, 2.4, 3.2];
+let mapZoom = 0;
+const lineColor = { blue: 'var(--blue)', green: 'var(--green)', yellow: 'var(--yellow)' };
+
+function mapLabel(text, x, y, side) {
+  const t = esc(text);
+  if (side === 'l') return `<text x="${x - 18}" y="${y + 7}" text-anchor="end">${t}</text>`;
+  if (side === 'd') return `<text x="${x + 16}" y="${y + 34}">${t}</text>`;
+  if (side === 'u') return `<text x="${x + 10}" y="${y - 16}" transform="rotate(-55 ${x + 10} ${y - 16})">${t}</text>`;
+  return `<text x="${x + 18}" y="${y + 7}">${t}</text>`;
+}
+
+function mapScreen() {
+  const { w, h } = MAP_SIZE;
+  const lines = Object.entries(MAP_LINES)
+    .map(
+      ([l, ids]) =>
+        `<polyline points="${ids.map((id) => MAP_STATIONS[id].slice(0, 2).join(',')).join(' ')}" fill="none" stroke="${lineColor[l]}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>`,
+    )
+    .join('');
+  const stations = Object.entries(MAP_STATIONS)
+    .map(([id, [x, y, side]]) => {
+      const st = STATIONS[id];
+      const dot =
+        st.lines.length > 1
+          ? `<circle cx="${x}" cy="${y}" r="13" fill="var(--card)" stroke="var(--text)" stroke-width="5"/>`
+          : `<circle cx="${x}" cy="${y}" r="8" fill="var(--card)" stroke="${lineColor[st.lines[0]]}" stroke-width="5"/>`;
+      return `<g class="mst" data-act="station" data-id="${id}" role="button" aria-label="${esc(name(id))}"><circle cx="${x}" cy="${y}" r="28" fill="transparent"/>${dot}${mapLabel(name(id), x, y, side)}</g>`;
+    })
+    .join('');
+  return `
+    ${topbar(`<button class="round" data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>`)}
+    <div class="title"><h1>Map</h1></div>
+    <div class="card map-card">
+      <div class="map-wrap" id="map-wrap">
+        <svg class="metro-map" viewBox="0 0 ${w} ${h}" style="width: ${MAP_ZOOMS[mapZoom] * 100}%" role="img" aria-label="Chennai Metro network map">${lines}${stations}</svg>
+      </div>
+      <span class="map-zoom glass-group glass">
+        <button data-act="zoom" data-v="-1" aria-label="Zoom out" ${mapZoom === 0 ? 'disabled' : ''}>${ic('remove')}</button>
+        <button data-act="zoom" data-v="1" aria-label="Zoom in" ${mapZoom === MAP_ZOOMS.length - 1 ? 'disabled' : ''}>${ic('add')}</button>
+      </span>
+    </div>
+    <p class="footnote">Not to scale. Tap a station for its next trains each way.</p>`;
+}
+
+function zoomMap(step) {
+  const wrap = document.getElementById('map-wrap');
+  const before = MAP_ZOOMS[mapZoom];
+  mapZoom = Math.max(0, Math.min(MAP_ZOOMS.length - 1, mapZoom + step));
+  const k = MAP_ZOOMS[mapZoom] / before;
+  // Keep the middle of the view where it was.
+  const cx = wrap ? wrap.scrollLeft + wrap.clientWidth / 2 : 0;
+  const cy = wrap ? wrap.scrollTop + wrap.clientHeight / 2 : 0;
+  render({ force: true });
+  const next = document.getElementById('map-wrap');
+  if (next) {
+    next.scrollLeft = cx * k - next.clientWidth / 2;
+    next.scrollTop = cy * k - next.clientHeight / 2;
+  }
+}
+
+/** Next trains each way from a station, with the platform for each direction. */
+function openStationSheet(id) {
+  const now = clockNow();
+  const rows = directDestinations(id)
+    .map((g) => {
+      const deps = g.terminals
+        .flatMap((t) => schedule.routeDepartures(id, t, now, 4).map((d) => ({ ...d, to: t })))
+        .sort((a, b) => a.dep - b.dep)
+        .filter((d, k, all) => k === 0 || d.dep !== all[k - 1].dep)
+        .slice(0, 4);
+      const p = platformAt(id, g);
+      const many = g.terminals.length > 1;
+      const chips = deps
+        .map(
+          (d) =>
+            `<span class="tchip"><span class="t">${clock(d.dep)}</span><span class="s">${
+              many ? esc(name(d.to)) : `<span data-at="${d.dep}" data-fmt="chip">${FORMATS.chip(d.dep - now)}</span>`
+            }</span></span>`,
+        )
+        .join('');
+      return `
+        <div class="card set">
+          <span class="dir"><i class="dot ${g.line}"></i>Toward ${esc(g.terminals.map(name).join(' or '))}${p ? ` · Platform ${esc(p)}` : ''}</span>
+          ${deps.length ? `<div class="st-deps">${chips}</div>` : '<span class="sub" style="font-size: 15px">No more trains today</span>'}
+        </div>`;
+    })
+    .join('');
+  openSheet(
+    `${sheetHead(name(id), STATIONS[id].lines.map(lineName).join(' · '), null)}
+    <div class="sheet-body" style="flex: none; display: flex; flex-direction: column; gap: 12px">
+      ${rows}
+      <button class="cta" data-act="route-from" data-id="${id}">${ic('add')}Save a route from here</button>
+    </div>`,
+  );
+  sheetRoot.querySelector('.sheet').classList.add('short');
+}
+
 /* ----- lines tab ----- */
 
 function linesScreen() {
@@ -478,15 +584,16 @@ function renderDock(screen) {
       mode === 'none'
         ? ''
         : `
-      <nav class="tabs glass two" aria-label="Sections">
+      <nav class="tabs glass" aria-label="Sections">
         <span class="tab-pill"></span>
         <a class="tab" href="#routes" data-tab="routes">${ic('commute')}Routes</a>
-        <a class="tab" href="#lines" data-tab="lines">${ic('map')}Lines</a>
+        <a class="tab" href="#lines" data-tab="lines">${ic('schedule')}Lines</a>
+        <a class="tab" href="#map" data-tab="map">${ic('map')}Map</a>
       </nav>
       <button class="orb glass" data-act="look" aria-label="Check any station">${ic('search')}</button>`;
   }
   if (mode === 'tabs') {
-    const i = nav.tab === 'lines' ? 1 : 0;
+    const i = { routes: 0, lines: 1, map: 2 }[nav.tab] ?? 0;
     dock.querySelector('.tab-pill').style.transform = `translateX(${i * 100}%)`;
     dock.querySelectorAll('.tab').forEach((t) => {
       if (t.dataset.tab === nav.tab) t.setAttribute('aria-current', 'page');
@@ -517,6 +624,7 @@ function build(now) {
   }
   nextChange = Infinity;
   if (screen === 'lines') return linesScreen();
+  if (screen === 'map') return mapScreen();
   if (screen === 'settings') return settingsScreen();
   return '';
 }
@@ -1014,6 +1122,18 @@ const ACTIONS = {
     history.back();
     if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)] });
     render({ force: true, animate: true });
+  },
+  station: (el) => {
+    buzz();
+    openStationSheet(el.dataset.id);
+  },
+  zoom: (el) => {
+    buzz();
+    zoomMap(Number(el.dataset.v));
+  },
+  'route-from': (el) => {
+    pickMode = 'save';
+    openDestinationStep(el.dataset.id);
   },
   coach: (el) => {
     buzz();
