@@ -26,7 +26,7 @@ fun TopUpSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Top up metro card", style = HwType.headline, color = hw.text, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Text("Metro card", style = HwType.headline, color = hw.text, modifier = Modifier.align(Alignment.CenterHorizontally))
             ListCard(
                 listOf<@Composable () -> Unit>(
                     {
@@ -38,7 +38,7 @@ fun TopUpSheet(onDismiss: () -> Unit) {
                     {
                         ListRow(onClick = { close { TopUp.openAirtel(context) } }) {
                             Icon(Icons.Rounded.CreditCard, null, tint = hw.tint, modifier = Modifier.size(22.dp))
-                            RowText("Airtel Thanks", "Free, can write the balance to your card", modifier = Modifier.weight(1f))
+                            RowText("Check balance or top up", "In Airtel Thanks: free, and it loads money onto the card", modifier = Modifier.weight(1f))
                         }
                     },
                 ),

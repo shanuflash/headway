@@ -143,7 +143,7 @@ fun ColumnScope.RoutesScreen(
     TopBar(right = {
         GlassGroup(
             listOf(
-                Triple(Icons.Rounded.CreditCard, "Top up metro card", actions.topUp),
+                Triple(Icons.Rounded.CreditCard, "Metro card balance and top-up", actions.topUp),
                 Triple(Icons.Rounded.Add, "Add a route", actions.add),
                 Triple(Icons.Rounded.MoreHoriz, "Settings", actions.settings),
             ),
