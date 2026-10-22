@@ -189,7 +189,11 @@ private fun BalanceCard(read: Read, fresh: Boolean, nfcState: NfcState) {
                         Text(if (fresh) "Balance on the card" else "Last read", style = HwType.subheadStrong, color = hw.tint)
                         Text("₹" + "%.2f".format(r.paise / 100.0), style = HwType.big.copy(fontSize = 56.sp, lineHeight = 60.sp), color = hw.text)
                         Text("Read ${clock(r.at)}. Tap the card again to refresh.", style = HwType.footnote, color = hw.sub)
-                        if (r.trips.isNotEmpty()) TripList(r.trips)
+                        if (r.trips.isNotEmpty()) {
+                            TripList(r.trips)
+                        } else if (fresh) {
+                            Text("No trips on the card yet.", style = HwType.footnote, color = hw.sub, modifier = Modifier.padding(top = 8.dp))
+                        }
                     }
                     Read.Reading -> {
                         Text("Reading…", style = HwType.subheadStrong, color = hw.tint)
