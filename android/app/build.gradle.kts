@@ -61,6 +61,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.9.4")
 
     implementation("androidx.datastore:datastore-preferences:1.2.1")
+    // Google code scanner: scans the card's QR in a Play services UI, no camera permission.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }

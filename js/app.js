@@ -379,6 +379,35 @@ function routeCard(m, isPreview) {
 const AIRTEL_TOPUP = 'https://i.airtel.in/AIRBNK/transit-card';
 const UPI_ID = /^[A-Za-z0-9._-]{3,}@[A-Za-z0-9]{2,}$/;
 // The ID is validated to safe characters; '@' stays raw because some UPI apps reject %40.
+/** The UPI ID from a card's "Scan to recharge" QR (upi://pay?pa=…), or the text itself if it already is one. */
+function upiIdFromQr(raw) {
+  const text = (raw || '').trim();
+  const id = /^upi:/i.test(text) ? new URLSearchParams(text.split('?')[1] || '').get('pa') : text;
+  return id && UPI_ID.test(id.trim()) ? id.trim() : null;
+}
+
+/** Reads the QR in a photo of the card. Needs the BarcodeDetector API (Chrome on Android has it). */
+async function scanCardQr(file) {
+  if (!('BarcodeDetector' in window)) {
+    toast("This browser can't read QR codes. Type the ID instead.");
+    return;
+  }
+  try {
+    const codes = await new BarcodeDetector({ formats: ['qr_code'] }).detect(await createImageBitmap(file));
+    const id = codes.map((c) => upiIdFromQr(c.rawValue)).find(Boolean);
+    if (!id) {
+      toast("Couldn't find the card's top-up QR in that photo");
+      return;
+    }
+    save({ upi: id });
+    const input = document.getElementById('upi-id');
+    if (input) input.value = id;
+    toast('Saved. The top-up button now offers UPI.');
+  } catch {
+    toast("Couldn't read that photo. Type the ID instead.");
+  }
+}
+
 const upiLink = (id) => `upi://pay?pa=${id}&pn=Airtel%20NCMC%20Topup&mc=7412&cu=INR`;
 
 function openTopUp() {
@@ -601,10 +630,13 @@ function settingsScreen() {
     <div class="card list">
       <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px">
         <label for="upi-id" class="t">Metro card UPI ID</label>
-        <input class="text-input" id="upi-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ncmc.1234…@mairtel" value="${esc(prefs.upi)}">
+        <div class="upi-row">
+          <input class="text-input" id="upi-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ncmc.1234…@mairtel" value="${esc(prefs.upi)}">
+          <label class="cta small scan">Scan card QR<input id="upi-scan" type="file" accept="image/*" capture="environment" hidden></label>
+        </div>
       </div>
     </div>
-    <p class="footnote">From the "Scan to recharge" QR on your card. Adds "Pay by UPI" to the top-up button. Stays in this browser.</p>
+    <p class="footnote">Scan the "Scan to recharge" QR on your card, or paste its ID. Adds "Pay by UPI" to the top-up button. Stays in this browser.</p>
 
     <div class="card list">
       <a class="row tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
@@ -1257,6 +1289,9 @@ document.addEventListener('change', (e) => {
     const key = serviceDateKey(clockNow());
     save({ override: el.value === 'auto' ? null : { date: key, type: el.value } });
     refreshSchedule();
+  } else if (el.id === 'upi-scan') {
+    if (el.files?.[0]) scanCardQr(el.files[0]);
+    el.value = '';
   } else if (el.id === 'upi-id') {
     const id = el.value.trim();
     if (id && !UPI_ID.test(id)) {

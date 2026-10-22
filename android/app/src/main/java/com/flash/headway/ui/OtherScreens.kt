@@ -34,6 +34,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.text.BasicTextField
+import android.widget.Toast
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -244,7 +248,7 @@ private fun MetroCardSettings() {
     SettingsCard {
         Text("Metro card UPI ID", style = HwType.body, color = hw.text)
         Row(
-            Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(hw.fill).padding(horizontal = 16.dp),
+            Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(hw.fill).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicTextField(
@@ -264,9 +268,30 @@ private fun MetroCardSettings() {
                     }
                 },
             )
+            Text(
+                "Scan card QR",
+                style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White,
+                modifier = Modifier.clip(CircleShape).background(hw.tint).press {
+                    val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+                    GmsBarcodeScanning.getClient(context, options).startScan()
+                        .addOnSuccessListener { code ->
+                            val id = com.flash.headway.app.TopUp.upiIdFromQr(code.rawValue)
+                            if (id != null && com.flash.headway.app.TopUp.setUpiId(context, id)) {
+                                text = id
+                                bad = false
+                            } else {
+                                Toast.makeText(context, "That QR isn't a card top-up code", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                        .addOnFailureListener {
+                            Toast.makeText(context, "Couldn't open the scanner. Type the ID instead.", Toast.LENGTH_LONG).show()
+                        }
+                }.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
         }
         Text(
-            if (bad) "That doesn't look like a UPI ID." else "From the \"Scan to recharge\" QR on your card. Adds \"Pay by UPI\" to the top-up button. Stays on this phone.",
+            if (bad) "That doesn't look like a UPI ID." else "Scan the \"Scan to recharge\" QR on your card, or paste its ID. Adds \"Pay by UPI\" to the top-up button. Stays on this phone.",
             style = HwType.footnote,
             color = if (bad) hw.warn else hw.sub,
         )

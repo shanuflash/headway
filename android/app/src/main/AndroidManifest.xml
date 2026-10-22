@@ -25,6 +25,11 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Fetch the code scanner UI module at install time instead of on first scan. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
+
         <!-- Opens the chosen metro card top-up and closes; used by the shortcut and the tile. -->
         <activity
             android:name=".app.TopUpActivity"

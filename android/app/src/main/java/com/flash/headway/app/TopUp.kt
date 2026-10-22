@@ -42,6 +42,13 @@ object TopUp {
         return true
     }
 
+    /** The UPI ID from a card's "Scan to recharge" QR (upi://pay?pa=…), or the text itself if it already is one. */
+    fun upiIdFromQr(raw: String?): String? {
+        val text = raw?.trim() ?: return null
+        val id = if (text.startsWith("upi:", ignoreCase = true)) Uri.parse(text).getQueryParameter("pa") else text
+        return id?.trim()?.takeIf { UPI_ID.matches(it) }
+    }
+
     fun openAirtel(context: Context) {
         for (url in listOf(DEEP_LINK, SHORT_LINK)) {
             try {
