@@ -3,7 +3,6 @@ import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations } from './ne
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
 import { PLATFORMS, platformText } from './platforms.js';
-import { TOP_UP } from './topup.js';
 import { MAP_SIZE, MAP_STATIONS, MAP_LINES, MAP_FEATURES } from './map-layout.js';
 
 const MIN = 60_000;
@@ -239,7 +238,7 @@ function routesScreen(now) {
   const head = `
     ${topbar(`
       <span class="glass-group glass">
-        <button data-act="top-up" aria-label="Top up metro card">${ic('credit_card')}</button>
+        <a href="https://i.airtel.in/AIRBNK/transit-card" target="_blank" rel="noopener" aria-label="Top up metro card with Airtel">${ic('credit_card')}</a>
         <button data-act="add-route" aria-label="Add a route">${ic('add')}</button>
         <button data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>
       </span>`)}
@@ -359,27 +358,6 @@ function routeCard(m, isPreview) {
       ${body}
       ${isPreview ? `<div class="rc-pad"><button class="cta" data-act="save-preview">${ic('add')}Save this route</button></div>` : ''}
     </div>`;
-}
-
-/* ----- metro card top-up ----- */
-
-function openTopUp() {
-  const cards = TOP_UP.map(
-    (p) => `
-      <div class="card set topup">
-        <div class="topup-head"><span class="t">${esc(p.name)}</span><span class="fee ${p.fee.startsWith('Free') ? 'free' : ''}">${esc(p.fee)}</span></div>
-        <span class="sub">${esc(p.detail)}</span>
-        <span class="bal">${esc(p.balance)}</span>
-        ${p.link ? `<a class="cta small" href="${p.link}" target="_blank" rel="noopener">Open</a>` : ''}
-      </div>`,
-  ).join('');
-  openSheet(
-    `${sheetHead('Top up metro card', 'Singara Chennai and other NCMC cards', null)}
-    <div class="sheet-body" style="display: flex; flex-direction: column; gap: 12px">
-      ${cards}
-      <p class="footnote" style="margin: 0">Fees are what each provider charges as of Oct 2026. Online top-ups usually reach the card only after you update the balance at a Metro station.</p>
-    </div>`,
-  );
 }
 
 /* ----- map tab ----- */
@@ -1152,10 +1130,6 @@ const ACTIONS = {
     history.back();
     if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)] });
     render({ force: true, animate: true });
-  },
-  'top-up': () => {
-    buzz();
-    openTopUp();
   },
   station: (el) => {
     buzz();

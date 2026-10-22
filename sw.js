@@ -1,5 +1,5 @@
 // App shell is cache-first so the timetable works underground; advisories are network-first.
-const VERSION = 'headway-v13';
+const VERSION = 'headway-v14';
 const FONTS = 'headway-fonts-v1';
 const SHELL = [
   './',
@@ -14,7 +14,6 @@ const SHELL = [
   'js/live.js',
   'js/platforms.js',
   'js/map-layout.js',
-  'js/topup.js',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
