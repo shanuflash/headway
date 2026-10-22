@@ -32,7 +32,7 @@ fun TopUpSheet(onDismiss: () -> Unit) {
                     {
                         ListRow(onClick = { close { TopUp.payByUpi(context) } }) {
                             Icon(Icons.Rounded.QrCode2, null, tint = hw.tint, modifier = Modifier.size(22.dp))
-                            RowText("Pay by UPI", "Any UPI app, no fee", modifier = Modifier.weight(1f))
+                            RowText("Pay by UPI", "Any UPI app, no fee, then load it on the card in Airtel", modifier = Modifier.weight(1f))
                         }
                     },
                     {

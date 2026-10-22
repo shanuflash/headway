@@ -919,3 +919,7 @@ button.hero:active { transform: scale(0.985); }
 .metro-map .w-sea, .metro-map .w-lake { fill: color-mix(in srgb, var(--blue) 12%, var(--card)); stroke: none; }
 .metro-map .w-coast { fill: none; stroke: color-mix(in srgb, var(--blue) 30%, var(--card)); stroke-width: 2; }
 .metro-map .w-river { fill: none; stroke: color-mix(in srgb, var(--blue) 22%, var(--card)); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+
+.strip.load { background: var(--tint-soft); color: var(--text); padding: 8px 6px 8px 16px; border-radius: 20px; gap: 6px; }
+.strip.load .s { color: var(--sub); opacity: 1; }
+.strip-btn.load-go { width: auto; height: 36px; padding: 0 14px; border-radius: 18px; background: var(--tint); color: #fff; font-size: 15px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; }

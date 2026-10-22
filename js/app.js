@@ -25,6 +25,7 @@ const DEFAULTS = {
   feedUrl: '',
   reminder: null,
   mock: null,
+  upiPaidAt: 0, // last UPI top-up; it still has to be written to the card in Airtel
   upi: '', // the metro card's own UPI ID (from its "Scan to recharge" QR); stays in this browser
   coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
 };
@@ -249,6 +250,7 @@ function routesScreen(now) {
       </span>`)}
     <div class="title"><h1>Routes</h1></div>
     ${prefs.mock ? mockBanner() : ''}
+    ${Date.now() - (prefs.upiPaidAt || 0) < 30 * MIN ? loadCardBanner() : ''}
     ${notices}`;
 
   const cards = [];
@@ -256,6 +258,11 @@ function routesScreen(now) {
   if (!prefs.routes.length && !preview) return head + emptyState();
   for (const r of prefs.routes) cards.push(routeCard(routeModel(r, now), false));
   return head + cards.join('');
+}
+
+/** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
+function loadCardBanner() {
+  return `<div class="strip load"><span class="grow"><span class="t">Load it onto your card</span><span class="s">Paid by UPI? Tap your card in Airtel to write the balance.</span></span><a class="strip-btn load-go" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" data-act="card-loaded">Open Airtel</a><button class="mini" data-act="card-loaded" aria-label="Dismiss">${ic('close')}</button></div>`;
 }
 
 function mockBanner() {
@@ -379,7 +386,7 @@ function openTopUp() {
     `${sheetHead('Top up metro card', null, null)}
     <div class="sheet-body" style="flex: none">
       <div class="card list">
-        <a class="row tap plain" href="${upiLink(prefs.upi)}" style="color: inherit; text-decoration: none">${ic('qr_code_2')}<span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app, no fee</span></span></a>
+        <a class="row tap plain" href="${upiLink(prefs.upi)}" data-act="upi-paid" style="color: inherit; text-decoration: none">${ic('qr_code_2')}<span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app, no fee, then load it on the card in Airtel</span></span></a>
         <a class="row tap plain" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">${ic('credit_card')}<span class="grow"><span class="t">Airtel Thanks</span><span class="s">Free, can write the balance to your card</span></span></a>
       </div>
     </div>`,
@@ -1165,6 +1172,15 @@ const ACTIONS = {
     history.back();
     if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)] });
     render({ force: true, animate: true });
+  },
+  'upi-paid': () => {
+    save({ upiPaidAt: Date.now() });
+    history.back();
+    render({ force: true });
+  },
+  'card-loaded': () => {
+    save({ upiPaidAt: 0 });
+    render({ force: true });
   },
   'top-up': () => {
     buzz();

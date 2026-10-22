@@ -15,6 +15,7 @@ import android.widget.Toast
  * - Airtel Payments Bank's own card screen: free (the menu route goes through BBPS at ₹1.18) and
  *   it can write the new balance to the card. The app's menus hide it, so it opens by deep link.
  * - UPI to the card's own UPI ID (from the "Scan to recharge" QR on the card), from any UPI app.
+ *   That only pays in: the money reaches the chip when the Airtel screen writes it over NFC.
  *   The ID identifies the rider's card, so it is kept on the phone only, never in the code.
  */
 object TopUp {
@@ -22,6 +23,10 @@ object TopUp {
     private const val SHORT_LINK = "https://i.airtel.in/AIRBNK/transit-card"
     private const val STORE = "topup"
     private const val KEY_UPI = "upi"
+    private const val KEY_PAID = "upi_paid_at"
+
+    /** How long Routes offers to load a UPI top-up onto the card. */
+    private const val LOAD_WINDOW = 30 * 60_000L
 
     /** Same shape as the IDs on the card QRs, e.g. ncmc.1234p10000…@mairtel. */
     private val UPI_ID = Regex("^[A-Za-z0-9._-]{3,}@[A-Za-z0-9]{2,}$")
@@ -60,11 +65,22 @@ object TopUp {
         // The ID is validated to safe characters; '@' stays raw because some UPI apps reject %40.
         val uri = Uri.parse("upi://pay?pa=$id&pn=Airtel%20NCMC%20Topup&mc=7412&cu=INR")
         val pay = Intent(Intent.ACTION_VIEW, uri)
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().putLong(KEY_PAID, System.currentTimeMillis()).apply()
         try {
             context.startActivity(Intent.createChooser(pay, "Top up with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(context, "No UPI app found", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** True for a while after a UPI top-up, until the rider loads it onto the card or dismisses it. */
+    fun loadPending(context: Context): Boolean {
+        val at = context.getSharedPreferences(STORE, Context.MODE_PRIVATE).getLong(KEY_PAID, 0L)
+        return at > 0 && System.currentTimeMillis() - at < LOAD_WINDOW
+    }
+
+    fun clearLoadPending(context: Context) {
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().remove(KEY_PAID).apply()
     }
 
     /** The shortcut-free default: UPI once its ID is saved, else the Airtel screen. */

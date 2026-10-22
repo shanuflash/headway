@@ -49,11 +49,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flash.headway.app.Coach
+import com.flash.headway.app.TopUp
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.SavedRoute
@@ -149,6 +151,7 @@ fun ColumnScope.RoutesScreen(
     })
     LargeTitle("Routes")
     if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
+    LoadCardBanner(now)
 
     if (preview != null) RouteCard(preview, prefs, now, actions, isPreview = true)
     if (statuses == null) return
@@ -157,6 +160,41 @@ fun ColumnScope.RoutesScreen(
         return
     }
     statuses.forEach { s -> RouteCard(s, prefs, now, actions, isPreview = false) }
+}
+
+/** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
+@Composable
+private fun LoadCardBanner(now: Long) {
+    val context = LocalContext.current
+    // Re-read every few seconds (now ticks each second), so it appears on return from the UPI app.
+    val pending = remember(now / 5_000) { TopUp.loadPending(context) }
+    var hidden by remember { mutableStateOf(false) }
+    if (!pending || hidden) return
+    val hw = LocalHw.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.tintSoft).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Load it onto your card", style = HwType.subheadStrong, color = hw.text)
+            Text("Paid by UPI? Tap your card in Airtel to write the balance.", style = HwType.footnote, color = hw.sub)
+        }
+        Box(
+            Modifier.height(36.dp).clip(CircleShape).background(hw.tint).press(scaleTo = 0.95f) {
+                TopUp.clearLoadPending(context)
+                hidden = true
+                TopUp.openAirtel(context)
+            }.padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Open Airtel", style = HwType.subheadStrong, color = Color.White)
+        }
+        PillIcon(Icons.Rounded.Close, "Dismiss") {
+            TopUp.clearLoadPending(context)
+            hidden = true
+        }
+    }
 }
 
 /** Shown while mock time is on, so a mocked schedule is never mistaken for the real one. */
