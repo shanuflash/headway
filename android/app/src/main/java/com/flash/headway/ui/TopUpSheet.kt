@@ -72,10 +72,12 @@ fun TopUpSheet(onDismiss: () -> Unit) {
     val last = remember { TopUp.lastBalance(context) }
     var read by remember { mutableStateOf<Read>(if (last != null) Read.Done(last.first, last.second) else Read.Waiting) }
     var fresh by remember { mutableStateOf(false) }
+    // Listen for one read at a time: a card left on the phone would otherwise be read again and again.
+    var listening by remember { mutableStateOf(true) }
 
-    DisposableEffect(nfc) {
+    DisposableEffect(nfc, listening) {
         val activity = context.activity()
-        if (nfc != null && activity != null) {
+        if (nfc != null && activity != null && listening) {
             nfc.enableReaderMode(
                 activity,
                 { tag ->
@@ -83,6 +85,7 @@ fun TopUpSheet(onDismiss: () -> Unit) {
                     activity.runOnUiThread { read = Read.Reading }
                     val r = NcmcReader.read(iso)
                     activity.runOnUiThread {
+                        listening = false
                         if (r.balancePaise != null) {
                             val now = System.currentTimeMillis()
                             TopUp.saveBalance(context, r.balancePaise, now)
@@ -94,7 +97,8 @@ fun TopUpSheet(onDismiss: () -> Unit) {
                     }
                 },
                 NfcAdapter.FLAG_READER_NFC_A or NfcAdapter.FLAG_READER_NFC_B or NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
-                null,
+                // Check less often whether the card is still there, so a resting card isn't re-read.
+                android.os.Bundle().apply { putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 1000) },
             )
         }
         onDispose { if (nfc != null && activity != null) runCatching { nfc.disableReaderMode(activity) } }
@@ -103,7 +107,10 @@ fun TopUpSheet(onDismiss: () -> Unit) {
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Metro card", style = HwType.headline, color = hw.text, modifier = Modifier.align(Alignment.CenterHorizontally))
-            BalanceCard(read, fresh, nfcState = when {
+            BalanceCard(read, fresh, listening, onReadAgain = {
+                read = Read.Waiting
+                listening = true
+            }, nfcState = when {
                 nfc == null -> NfcState.MISSING
                 !nfc.isEnabled -> NfcState.OFF
                 else -> NfcState.ON
@@ -173,7 +180,7 @@ private fun TripList(trips: List<NcmcReader.Trip>) {
 }
 
 @Composable
-private fun BalanceCard(read: Read, fresh: Boolean, nfcState: NfcState) {
+private fun BalanceCard(read: Read, fresh: Boolean, listening: Boolean, onReadAgain: () -> Unit, nfcState: NfcState) {
     val hw = LocalHw.current
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -188,7 +195,7 @@ private fun BalanceCard(read: Read, fresh: Boolean, nfcState: NfcState) {
                     is Read.Done -> {
                         Text(if (fresh) "Balance on the card" else "Last read", style = HwType.subheadStrong, color = hw.tint)
                         Text("₹" + "%.2f".format(r.paise / 100.0), style = HwType.big.copy(fontSize = 56.sp, lineHeight = 60.sp), color = hw.text)
-                        Text("Read ${clock(r.at)}. Tap the card again to refresh.", style = HwType.footnote, color = hw.sub)
+                        Text("Read ${clock(r.at)}.", style = HwType.footnote, color = hw.sub)
                         if (r.trips.isNotEmpty()) {
                             TripList(r.trips)
                         } else if (fresh) {
@@ -227,6 +234,15 @@ private fun BalanceCard(read: Read, fresh: Boolean, nfcState: NfcState) {
                 Icon(Icons.Rounded.Contactless, null, tint = hw.sub, modifier = Modifier.size(16.dp))
                 Text("Shows the balance on the chip, which is what the gates use.", style = HwType.footnote, color = hw.sub)
             }
+        }
+        if (!listening && nfcState == NfcState.ON) {
+            Text(
+                "Read again",
+                style = HwType.subheadStrong,
+                color = Color.White,
+                modifier = Modifier.padding(top = 6.dp).clip(CircleShape).background(hw.tint).press(onClick = onReadAgain)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
         }
         if (read is Read.Failed) {
             Text(
