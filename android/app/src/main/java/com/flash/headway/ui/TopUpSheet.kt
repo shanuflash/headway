@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,7 +50,7 @@ import com.flash.headway.ui.theme.LocalHw
 private sealed interface Read {
     data object Waiting : Read
     data object Reading : Read
-    data class Done(val paise: Long, val at: Long) : Read
+    data class Done(val paise: Long, val at: Long, val trips: List<NcmcReader.Trip> = emptyList()) : Read
     data class Failed(val message: String, val log: List<String>) : Read
 }
 
@@ -83,7 +86,7 @@ fun TopUpSheet(onDismiss: () -> Unit) {
                         if (r.balancePaise != null) {
                             val now = System.currentTimeMillis()
                             TopUp.saveBalance(context, r.balancePaise, now)
-                            read = Read.Done(r.balancePaise, now)
+                            read = Read.Done(r.balancePaise, now, r.trips)
                             fresh = true
                         } else {
                             read = Read.Failed(r.error ?: "Couldn't read the card.", r.log)
@@ -128,6 +131,47 @@ fun TopUpSheet(onDismiss: () -> Unit) {
 
 private enum class NfcState { ON, OFF, MISSING }
 
+/** The card's recent taps, newest first: where, when, and the fare taken. */
+@Composable
+private fun TripList(trips: List<NcmcReader.Trip>) {
+    val hw = LocalHw.current
+    val today = java.time.LocalDate.now(com.flash.headway.engine.IST)
+    val dayFormat = java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", java.util.Locale.US)
+    Column(
+        Modifier.padding(top = 12.dp).heightIn(max = 300.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Recent trips", style = HwType.subheadStrong, color = hw.text)
+        trips.forEach { t ->
+            val date = java.time.Instant.ofEpochMilli(t.at).atZone(com.flash.headway.engine.IST).toLocalDate()
+            val day = when (date) {
+                today -> "Today"
+                today.minusDays(1) -> "Yesterday"
+                else -> date.format(dayFormat)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        (t.station?.let { com.flash.headway.data.Network.name(it) } ?: "Unknown station") + when (t.kind) {
+                            NcmcReader.Kind.ENTRY -> " · in"
+                            NcmcReader.Kind.EXIT -> " · out"
+                            NcmcReader.Kind.PENALTY -> " · penalty"
+                            NcmcReader.Kind.OTHER -> ""
+                        },
+                        style = HwType.subhead,
+                        color = hw.text,
+                    )
+                    Text("$day, ${clock(t.at)}", style = HwType.footnote, color = hw.sub)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    if (t.farePaise > 0) Text("−₹" + "%.2f".format(t.farePaise / 100.0), style = HwType.subheadStrong, color = hw.text)
+                    Text("₹" + "%.2f".format(t.balanceAfterPaise / 100.0) + " left", style = HwType.footnote, color = hw.sub)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun BalanceCard(read: Read, fresh: Boolean, nfcState: NfcState) {
     val hw = LocalHw.current
@@ -145,6 +189,7 @@ private fun BalanceCard(read: Read, fresh: Boolean, nfcState: NfcState) {
                         Text(if (fresh) "Balance on the card" else "Last read", style = HwType.subheadStrong, color = hw.tint)
                         Text("₹" + "%.2f".format(r.paise / 100.0), style = HwType.big.copy(fontSize = 56.sp, lineHeight = 60.sp), color = hw.text)
                         Text("Read ${clock(r.at)}. Tap the card again to refresh.", style = HwType.footnote, color = hw.sub)
+                        if (r.trips.isNotEmpty()) TripList(r.trips)
                     }
                     Read.Reading -> {
                         Text("Reading…", style = HwType.subheadStrong, color = hw.tint)
