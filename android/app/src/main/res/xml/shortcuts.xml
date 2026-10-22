@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Long-press the app icon: straight to the metro card top-up. -->
+    <!-- Long-press the app icon: straight to a metro card top-up. -->
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_topup_shortcut"
+        android:shortcutId="topup_upi"
+        android:shortcutLongLabel="@string/topup_upi_long"
+        android:shortcutShortLabel="@string/topup_upi_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.flash.headway.app.TopUpActivity"
+            android:targetPackage="com.flash.headway">
+            <extra android:name="via" android:value="upi" />
+        </intent>
+    </shortcut>
     <shortcut
         android:enabled="true"
         android:icon="@drawable/ic_topup_shortcut"
@@ -10,6 +23,8 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:targetClass="com.flash.headway.app.TopUpActivity"
-            android:targetPackage="com.flash.headway" />
+            android:targetPackage="com.flash.headway">
+            <extra android:name="via" android:value="airtel" />
+        </intent>
     </shortcut>
 </shortcuts>

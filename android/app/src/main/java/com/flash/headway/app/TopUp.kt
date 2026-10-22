@@ -11,15 +11,33 @@ import android.service.quicksettings.TileService
 import android.widget.Toast
 
 /**
- * Metro card top-up through Airtel Payments Bank's own card screen: free (the menu route goes
- * through BBPS at ₹1.18) and it can write the new balance to the card. The app's menus hide it,
- * so it is opened by deep link; the SMS short link redirects to the same screen.
+ * Metro card top-up, two ways:
+ * - Airtel Payments Bank's own card screen: free (the menu route goes through BBPS at ₹1.18) and
+ *   it can write the new balance to the card. The app's menus hide it, so it opens by deep link.
+ * - UPI to the card's own UPI ID (from the "Scan to recharge" QR on the card), from any UPI app.
+ *   The ID identifies the rider's card, so it is kept on the phone only, never in the code.
  */
 object TopUp {
     private const val DEEP_LINK = "myairtel://apb_cards?card=ncmc"
     private const val SHORT_LINK = "https://i.airtel.in/AIRBNK/transit-card"
+    private const val STORE = "topup"
+    private const val KEY_UPI = "upi"
 
-    fun open(context: Context) {
+    /** Same shape as the IDs on the card QRs, e.g. ncmc.1234p10000…@mairtel. */
+    private val UPI_ID = Regex("^[A-Za-z0-9._-]{3,}@[A-Za-z0-9]{2,}$")
+
+    fun upiId(context: Context): String? =
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).getString(KEY_UPI, null)?.takeIf { it.isNotBlank() }
+
+    /** Saves the card's UPI ID; returns false if it doesn't look like one. Blank clears it. */
+    fun setUpiId(context: Context, id: String): Boolean {
+        val clean = id.trim()
+        if (clean.isNotEmpty() && !UPI_ID.matches(clean)) return false
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().putString(KEY_UPI, clean.ifEmpty { null }).apply()
+        return true
+    }
+
+    fun openAirtel(context: Context) {
         for (url in listOf(DEEP_LINK, SHORT_LINK)) {
             try {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -30,14 +48,43 @@ object TopUp {
         }
         Toast.makeText(context, "Install Airtel Thanks to top up your card", Toast.LENGTH_LONG).show()
     }
+
+    /** Opens the UPI app picker with the card's UPI ID filled in; the rider enters the amount. */
+    fun payByUpi(context: Context) {
+        val id = upiId(context)
+        if (id == null) {
+            Toast.makeText(context, "Add your card's UPI ID in Headway settings", Toast.LENGTH_LONG).show()
+            openAirtel(context)
+            return
+        }
+        // The ID is validated to safe characters; '@' stays raw because some UPI apps reject %40.
+        val uri = Uri.parse("upi://pay?pa=$id&pn=Airtel%20NCMC%20Topup&mc=7412&cu=INR")
+        val pay = Intent(Intent.ACTION_VIEW, uri)
+        try {
+            context.startActivity(Intent.createChooser(pay, "Top up with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, "No UPI app found", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** The shortcut-free default: UPI once its ID is saved, else the Airtel screen. */
+    fun openDefault(context: Context) = if (upiId(context) != null) payByUpi(context) else openAirtel(context)
 }
 
-/** No UI: opens the top-up and closes. Used by the long-press shortcut and the tile. */
+/** No UI: opens a top-up and closes. Used by the long-press shortcuts and the tile. */
 class TopUpActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        TopUp.open(this)
+        when (intent?.getStringExtra(EXTRA_VIA)) {
+            "upi" -> TopUp.payByUpi(this)
+            "airtel" -> TopUp.openAirtel(this)
+            else -> TopUp.openDefault(this)
+        }
         finish()
+    }
+
+    companion object {
+        const val EXTRA_VIA = "via"
     }
 }
 

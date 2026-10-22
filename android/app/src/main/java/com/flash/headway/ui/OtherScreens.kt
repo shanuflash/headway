@@ -27,6 +27,13 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -203,6 +210,8 @@ fun ColumnScope.SettingsScreen(
         )
     }
 
+    MetroCardSettings()
+
     SettingsCard {
         Text("Mock time", style = HwType.body, color = hw.text)
         Segmented(
@@ -223,6 +232,45 @@ fun ColumnScope.SettingsScreen(
         }),
     )
     Footnote("First and last trains match CMRL's timetable. Times at stations in between are estimated, so allow a minute or two either way.")
+}
+
+/** The card's UPI ID, for "Pay by UPI" top-ups. Stays on this phone. */
+@Composable
+private fun MetroCardSettings() {
+    val hw = LocalHw.current
+    val context = LocalContext.current
+    var text by remember { mutableStateOf(com.flash.headway.app.TopUp.upiId(context).orEmpty()) }
+    var bad by remember { mutableStateOf(false) }
+    SettingsCard {
+        Text("Metro card UPI ID", style = HwType.body, color = hw.text)
+        Row(
+            Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(hw.fill).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = text,
+                onValueChange = {
+                    text = it
+                    bad = !com.flash.headway.app.TopUp.setUpiId(context, it)
+                },
+                singleLine = true,
+                textStyle = HwType.subhead.copy(color = hw.text),
+                cursorBrush = SolidColor(hw.tint),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    Box {
+                        if (text.isEmpty()) Text("ncmc.1234…@mairtel", style = HwType.subhead, color = hw.sub)
+                        inner()
+                    }
+                },
+            )
+        }
+        Text(
+            if (bad) "That doesn't look like a UPI ID." else "From the \"Scan to recharge\" QR on your card. Adds \"Pay by UPI\" to the top-up button. Stays on this phone.",
+            style = HwType.footnote,
+            color = if (bad) hw.warn else hw.sub,
+        )
+    }
 }
 
 @Composable

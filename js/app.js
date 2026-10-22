@@ -25,6 +25,7 @@ const DEFAULTS = {
   feedUrl: '',
   reminder: null,
   mock: null,
+  upi: '', // the metro card's own UPI ID (from its "Scan to recharge" QR); stays in this browser
   coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
 };
 
@@ -238,7 +239,11 @@ function routesScreen(now) {
   const head = `
     ${topbar(`
       <span class="glass-group glass">
-        <a href="https://i.airtel.in/AIRBNK/transit-card" target="_blank" rel="noopener" aria-label="Top up metro card with Airtel">${ic('credit_card')}</a>
+        ${
+          prefs.upi
+            ? `<button data-act="top-up" aria-label="Top up metro card">${ic('credit_card')}</button>`
+            : `<a href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" aria-label="Top up metro card with Airtel">${ic('credit_card')}</a>`
+        }
         <button data-act="add-route" aria-label="Add a route">${ic('add')}</button>
         <button data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>
       </span>`)}
@@ -358,6 +363,28 @@ function routeCard(m, isPreview) {
       ${body}
       ${isPreview ? `<div class="rc-pad"><button class="cta" data-act="save-preview">${ic('add')}Save this route</button></div>` : ''}
     </div>`;
+}
+
+/* ----- metro card top-up ----- */
+
+// Airtel Payments Bank's own card top-up screen (free; can write the balance to the card).
+// The short link redirects to myairtel://apb_cards?card=ncmc when Airtel Thanks is installed.
+const AIRTEL_TOPUP = 'https://i.airtel.in/AIRBNK/transit-card';
+const UPI_ID = /^[A-Za-z0-9._-]{3,}@[A-Za-z0-9]{2,}$/;
+// The ID is validated to safe characters; '@' stays raw because some UPI apps reject %40.
+const upiLink = (id) => `upi://pay?pa=${id}&pn=Airtel%20NCMC%20Topup&mc=7412&cu=INR`;
+
+function openTopUp() {
+  openSheet(
+    `${sheetHead('Top up metro card', null, null)}
+    <div class="sheet-body" style="flex: none">
+      <div class="card list">
+        <a class="row tap plain" href="${upiLink(prefs.upi)}" style="color: inherit; text-decoration: none">${ic('qr_code_2')}<span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app, no fee</span></span></a>
+        <a class="row tap plain" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">${ic('credit_card')}<span class="grow"><span class="t">Airtel Thanks</span><span class="s">Free, can write the balance to your card</span></span></a>
+      </div>
+    </div>`,
+  );
+  sheetRoot.querySelector('.sheet').classList.add('short');
 }
 
 /* ----- map tab ----- */
@@ -563,6 +590,14 @@ function settingsScreen() {
       ${seg('mock', prefs.mock ? String(prefs.mock.at) : 'off', [['off', 'Off'], ...MOCK_CHOICES.map(([m, l]) => [String(m), l])])}
     </div>
     <p class="footnote">For testing. The app runs as if it were that time now, and the clock keeps ticking from there.</p>
+
+    <div class="card list">
+      <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px">
+        <label for="upi-id" class="t">Metro card UPI ID</label>
+        <input class="text-input" id="upi-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ncmc.1234…@mairtel" value="${esc(prefs.upi)}">
+      </div>
+    </div>
+    <p class="footnote">From the "Scan to recharge" QR on your card. Adds "Pay by UPI" to the top-up button. Stays in this browser.</p>
 
     <div class="card list">
       <a class="row tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
@@ -1131,6 +1166,10 @@ const ACTIONS = {
     if (r) save({ routes: [r, ...prefs.routes.filter((x) => x.id !== r.id)] });
     render({ force: true, animate: true });
   },
+  'top-up': () => {
+    buzz();
+    openTopUp();
+  },
   station: (el) => {
     buzz();
     openStationSheet(el.dataset.id);
@@ -1202,6 +1241,14 @@ document.addEventListener('change', (e) => {
     const key = serviceDateKey(clockNow());
     save({ override: el.value === 'auto' ? null : { date: key, type: el.value } });
     refreshSchedule();
+  } else if (el.id === 'upi-id') {
+    const id = el.value.trim();
+    if (id && !UPI_ID.test(id)) {
+      toast("That doesn't look like a UPI ID");
+      return;
+    }
+    save({ upi: id });
+    toast(id ? 'Saved. The top-up button now offers UPI.' : 'UPI ID removed');
   } else if (el.id === 'feed-url') {
     const url = el.value.trim();
     save({ feedUrl: url });

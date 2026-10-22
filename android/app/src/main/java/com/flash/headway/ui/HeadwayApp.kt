@@ -105,6 +105,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var menuFor by remember { mutableStateOf<String?>(null) }
     var stationFor by remember { mutableStateOf<String?>(null) }
     var pickFrom by remember { mutableStateOf<String?>(null) }
+    var topUp by remember { mutableStateOf(false) }
 
     // A widget tap opens the app on that route.
     LaunchedEffect(openRoute) {
@@ -172,7 +173,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             menu = { menuFor = it },
                             closePreview = vm::closePreview,
                             mockOff = { vm.setMock(null) },
-                            topUp = { com.flash.headway.app.TopUp.open(context) },
+                            topUp = {
+                                // With the card's UPI ID saved there are two ways; without it, straight to Airtel.
+                                if (com.flash.headway.app.TopUp.upiId(context) != null) topUp = true else com.flash.headway.app.TopUp.openAirtel(context)
+                            },
                             savePreview = {
                                 vm.savePreview()
                                 toast("Route saved")
@@ -245,6 +249,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 startFrom = pickFrom,
             )
         }
+
+        if (topUp) TopUpSheet(onDismiss = { topUp = false })
 
         stationFor?.let { id ->
             StationSheet(
