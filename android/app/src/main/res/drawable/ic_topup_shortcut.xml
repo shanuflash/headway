@@ -1,0 +1,14 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Shortcut icon: the top-up card on the app's blue. -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#0B63CE" />
+        </shape>
+    </item>
+    <item
+        android:bottom="12dp"
+        android:drawable="@drawable/ic_topup"
+        android:left="12dp"
+        android:right="12dp"
+        android:top="12dp" />
+</layer-list>

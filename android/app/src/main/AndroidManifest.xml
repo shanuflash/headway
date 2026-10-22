@@ -20,7 +20,30 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Opens the chosen metro card top-up and closes; used by the shortcut and the tile. -->
+        <activity
+            android:name=".app.TopUpActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".app.TopUpTile"
+            android:exported="true"
+            android:icon="@drawable/ic_topup"
+            android:label="@string/topup_short"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name=".widget.WidgetConfigActivity"

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -76,6 +77,7 @@ class RouteActions(
     val menu: (String) -> Unit,
     val closePreview: () -> Unit,
     val mockOff: () -> Unit,
+    val topUp: () -> Unit,
     val savePreview: () -> Unit,
 )
 
@@ -139,6 +141,7 @@ fun ColumnScope.RoutesScreen(
     TopBar(right = {
         GlassGroup(
             listOf(
+                Triple(Icons.Rounded.CreditCard, "Top up metro card", actions.topUp),
                 Triple(Icons.Rounded.Add, "Add a route", actions.add),
                 Triple(Icons.Rounded.MoreHoriz, "Settings", actions.settings),
             ),

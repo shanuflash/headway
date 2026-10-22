@@ -918,3 +918,13 @@ button.hero:active { transform: scale(0.985); }
 .metro-map .w-sea, .metro-map .w-lake { fill: color-mix(in srgb, var(--blue) 12%, var(--card)); stroke: none; }
 .metro-map .w-coast { fill: none; stroke: color-mix(in srgb, var(--blue) 30%, var(--card)); stroke-width: 2; }
 .metro-map .w-river { fill: none; stroke: color-mix(in srgb, var(--blue) 22%, var(--card)); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- metro card top-up ---------- */
+.topup { gap: 6px; }
+.topup-head { display: flex; align-items: baseline; gap: 8px; }
+.topup-head .t { flex: 1; font-size: 17px; font-weight: 600; }
+.topup .fee { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.topup .fee.free { color: var(--ok); }
+.topup .sub { font-size: 15px; line-height: 20px; color: var(--sub); }
+.topup .bal { font-size: 13px; line-height: 18px; }
+.cta.small { align-self: flex-start; height: 38px; padding: 0 18px; font-size: 15px; margin-top: 6px; text-decoration: none; display: inline-flex; align-items: center; }
