@@ -90,6 +90,19 @@ object TopUp {
         context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().remove(KEY_PAID).apply()
     }
 
+    /** The last chip balance read over NFC, as (paise, read at). */
+    fun lastBalance(context: Context): Pair<Long, Long>? {
+        val p = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+        val at = p.getLong("balance_at", 0L)
+        return if (at > 0) p.getLong("balance", 0L) to at else null
+    }
+
+    fun saveBalance(context: Context, paise: Long, at: Long) {
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().putLong("balance", paise).putLong("balance_at", at).apply()
+        // A read after a UPI top-up means it has been loaded (or checked); stop nagging.
+        clearLoadPending(context)
+    }
+
     /** The shortcut-free default: UPI once its ID is saved, else the Airtel screen. */
     fun openDefault(context: Context) = if (upiId(context) != null) payByUpi(context) else openAirtel(context)
 }

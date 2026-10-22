@@ -1,8 +1,8 @@
 <resources>
     <string name="app_name">Headway</string>
     <string name="widget_description">Minutes to the next train you can catch on a saved route</string>
-    <string name="topup_short">Card balance</string>
-    <string name="topup_long">Card balance and top-up</string>
+    <string name="topup_short">Top up card</string>
+    <string name="topup_long">Top up in Airtel</string>
     <string name="topup_upi_short">Top up by UPI</string>
     <string name="topup_upi_long">Top up metro card by UPI</string>
 </resources>

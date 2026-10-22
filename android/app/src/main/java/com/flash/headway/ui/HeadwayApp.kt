@@ -173,10 +173,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             menu = { menuFor = it },
                             closePreview = vm::closePreview,
                             mockOff = { vm.setMock(null) },
-                            topUp = {
-                                // With the card's UPI ID saved there are two ways; without it, straight to Airtel.
-                                if (com.flash.headway.app.TopUp.upiId(context) != null) topUp = true else com.flash.headway.app.TopUp.openAirtel(context)
-                            },
+                            topUp = { topUp = true },
                             savePreview = {
                                 vm.savePreview()
                                 toast("Route saved")
