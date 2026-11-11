@@ -28,11 +28,11 @@ const DEFAULTS = {
   upiPaidAt: 0, // last UPI top-up; it still has to be written to the card in Airtel
   upi: '', // the metro card's own UPI ID (from its "Scan to recharge" QR); stays in this browser
   coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
-  delays: {}, // route id -> minutes the rider's trains run off the timetable, -5 (early) to +5 (late)
+  delays: {}, // route id -> minutes the rider's trains run off the timetable, -10 (early) to +10 (late)
   flips: {}, // station pair -> { at, home, applied }: show the trip from `home` until `at`, the ride back after
 };
 
-const DELAY_MAX = 5;
+const DELAY_MAX = 10;
 
 const routeId = (from, to) => `${from}>${to}`;
 
@@ -1283,9 +1283,13 @@ function delayPreviewHtml(r, d) {
 /** Route-menu card: how early or late this route's trains run, from DELAY_MAX early to DELAY_MAX late. */
 function delayCard(r) {
   const d = delayOf(r.id);
-  const ticks = Array.from({ length: DELAY_MAX * 2 + 1 }, (_, k) => `<i class="${k === DELAY_MAX ? 'mid' : ''}" style="--k:${k}"></i>`).join('');
+  // A notch a minute; on time is tallest, and every 5 min a little taller to count by.
+  const ticks = Array.from({ length: DELAY_MAX * 2 + 1 }, (_, k) => {
+    const cls = k === DELAY_MAX ? 'mid' : (k - DELAY_MAX) % 5 === 0 ? 'five' : '';
+    return `<i class="${cls}" style="--k:${k}"></i>`;
+  }).join('');
   return `
-      <div class="card dl" data-delay-card="${esc(r.id)}" data-tone="${delayTone(d)}" style="--v:${d}">
+      <div class="card dl" data-delay-card="${esc(r.id)}" data-tone="${delayTone(d)}" style="--v:${d}; --max:${DELAY_MAX}">
         <div class="dl-head">
           <span class="dl-icon">${ic('schedule')}</span>
           <span class="grow"><span class="t">Running early or late?</span><span class="s">Shift this route's train times</span></span>

@@ -242,8 +242,17 @@ private fun DelaySlider(value: Int, tone: Color, onValue: (Int) -> Unit, modifie
         drawRoundRect(tone, Offset(min(x0, x1), cy - track / 2), Size(abs(x1 - x0), track), CornerRadius(track / 2))
         for (k in -DELAY_MAX..DELAY_MAX) {
             val x = xOf(k.toFloat())
-            val half = if (k == 0) 8.dp.toPx() else track / 2
-            val color = if (k == 0) hw.sub else hw.chev.copy(alpha = 0.55f)
+            // On time is tallest, and every 5 min a little taller to count by.
+            val half = when {
+                k == 0 -> 8.dp.toPx()
+                k % 5 == 0 -> 5.dp.toPx()
+                else -> track / 2
+            }
+            val color = when {
+                k == 0 -> hw.sub
+                k % 5 == 0 -> hw.chev.copy(alpha = 0.8f)
+                else -> hw.chev.copy(alpha = 0.55f)
+            }
             drawLine(color, Offset(x, cy - half), Offset(x, cy + half), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
         }
         // Thumb: a white disc with a soft shadow, a little larger while held.

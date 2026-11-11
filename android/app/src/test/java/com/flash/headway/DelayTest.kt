@@ -50,9 +50,9 @@ class DelayTest {
 
     @Test
     fun delaysRoundTripAndStayInRange() {
-        val delays = mapOf("guindy>central" to 3, "airport>vadapalani" to -5)
+        val delays = mapOf("guindy>central" to 3, "airport>vadapalani" to -10)
         assertEquals(delays, decodeDelays(encodeDelays(delays)))
-        assertEquals(mapOf("a>b" to 5, "c>d" to -5), decodeDelays("a>b=9;c>d=-7;e>f=0;junk;g>h=x"))
+        assertEquals(mapOf("a>b" to 10, "c>d" to -10), decodeDelays("a>b=14;c>d=-12;e>f=0;junk;g>h=x"))
         assertEquals(emptyMap<String, Int>(), decodeDelays(null))
     }
 }

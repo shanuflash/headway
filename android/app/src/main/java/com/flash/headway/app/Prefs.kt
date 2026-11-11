@@ -31,7 +31,7 @@ data class Reminder(val routeId: String, val dep: Long)
 enum class Coach(val label: String) { FRONT("front"), MIDDLE("middle"), REAR("rear") }
 
 /** The furthest a route's static delay goes either way, in minutes. */
-const val DELAY_MAX = 5
+const val DELAY_MAX = 10
 
 data class Prefs(
     val routes: List<SavedRoute> = emptyList(),
