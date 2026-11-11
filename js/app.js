@@ -29,6 +29,7 @@ const DEFAULTS = {
   upi: '', // the metro card's own UPI ID (from its "Scan to recharge" QR); stays in this browser
   coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
   delays: {}, // route id -> minutes the rider's trains run off the timetable, -5 (early) to +5 (late)
+  flips: {}, // station pair -> { at, home, applied }: show the trip from `home` until `at`, the ride back after
 };
 
 const DELAY_MAX = 5;
@@ -224,6 +225,119 @@ const delayText = (d) => (d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 
 /** A departure moved by the route's delay; the trip itself is shared, so only dep and arr change. */
 const shifted = (x, off) => (x && off ? { ...x, dep: x.dep + off, arr: x.arr + off } : x);
 
+/* ---------- switch direction by time ---------- */
+
+const FLIP_DEFAULT = 17 * 60; // 5 PM
+const FLIP_MIN = 6 * 60;
+const FLIP_MAX = 23 * 60 + 30;
+const FLIP_STEP = 30;
+
+/** One key for both directions of a route, so the setting survives a swap. */
+const pairKey = (r) => [r.from, r.to].sort().join('|');
+const flipOf = (r) => prefs.flips?.[pairKey(r)] ?? null;
+/** Both directions saved as separate cards: each already has its own, so nothing flips. */
+const bothSaved = (r) => prefs.routes.some((x) => x.from === r.to && x.to === r.from);
+/** "5:00 PM" from minutes past midnight. */
+const minutesLabel = (m) => hm12(`${Math.floor(m / 60) % 24}:${pad(m % 60)}`);
+
+/** Whether `now` is past the switch time in its service day (which runs to 3 AM), and that half's key. */
+function flipPeriod(now, at) {
+  const d = new Date(now);
+  const m = d.getHours() * 60 + d.getMinutes() + (d.getHours() < 3 ? 24 * 60 : 0);
+  const pm = m >= at;
+  return { pm, key: `${serviceDateKey(now)}:${pm ? 'pm' : 'am'}` };
+}
+
+/** The way a route should face: from `home` before the switch time, back to it after. */
+function facing(r, f, pm) {
+  const other = r.from === f.home ? r.to : r.from;
+  return pm ? { from: other, to: f.home } : { from: f.home, to: other };
+}
+
+/**
+ * Turns routes that switch by time to face the right way, once per change-over, so a swap by
+ * hand lasts until the next one. Returns true when a route flipped.
+ */
+function applyFlips(now) {
+  const flips = prefs.flips ?? {};
+  if (!Object.keys(flips).length) return false;
+  let routes = prefs.routes;
+  let reminder = prefs.reminder;
+  const next = { ...flips };
+  let touched = false;
+  let flipped = false;
+  for (const r of prefs.routes) {
+    const k = pairKey(r);
+    const f = flips[k];
+    if (!f || (f.home !== r.from && f.home !== r.to)) continue;
+    const { pm, key } = flipPeriod(now, f.at);
+    if (f.applied === key) continue;
+    next[k] = { ...f, applied: key };
+    touched = true;
+    const want = facing(r, f, pm);
+    if (want.from === r.from || bothSaved(r)) continue;
+    const id = routeId(want.from, want.to);
+    routes = routes.map((x) => (x.id === r.id ? { id, ...want } : x));
+    if (reminder?.routeId === r.id) reminder = null;
+    flipped = true;
+  }
+  if (touched) save({ flips: next, routes, reminder });
+  return flipped;
+}
+
+function flipCard(r) {
+  const f = flipOf(r);
+  const both = bothSaved(r);
+  const on = !!f && !both;
+  const head = `
+        <div class="dl-head">
+          <span class="dl-icon">${ic('swap_vert')}</span>
+          <span class="grow"><span class="t">Switch direction by time</span><span class="s">Morning trip out, the ride home later</span></span>
+          ${both ? '' : `<button class="switch" role="switch" aria-checked="${on}" data-act="flip-toggle" data-route="${esc(r.id)}" aria-label="Switch direction by time"><i></i></button>`}
+        </div>`;
+  if (both) return `<div class="card fl">${head}<span class="fl-foot">You've saved both directions as separate routes, so each keeps its own card.</span></div>`;
+  if (!on) return `<div class="card fl">${head}</div>`;
+  const home = f.home;
+  const other = r.from === home ? r.to : r.from;
+  const { pm } = flipPeriod(clockNow(), f.at);
+  const t = minutesLabel(f.at);
+  const row = (active, icon, when, a, b) =>
+    `<div class="fl-row ${active ? 'on' : ''}"><span class="fl-ic">${ic(icon)}</span><span class="grow"><span class="k">${when}${
+      active ? '<em>Now</em>' : ''
+    }</span><span class="v">${esc(name(a))} → ${esc(name(b))}</span></span></div>`;
+  return `
+      <div class="card fl">
+        ${head}
+        <div class="fl-trips">
+          <div class="fl-rows">
+            ${row(!pm, 'light_mode', `Until ${t}`, home, other)}
+            ${row(pm, 'bedtime', `From ${t}`, other, home)}
+          </div>
+          <button class="fl-swap" data-act="flip-home" data-route="${esc(r.id)}" aria-label="Swap the morning and evening trips">${ic('swap_vert')}</button>
+        </div>
+        <div class="fl-time">
+          <span class="grow">Switch at</span>
+          <button class="dl-step" data-act="flip-time" data-route="${esc(r.id)}" data-d="${-FLIP_STEP}" aria-label="30 minutes earlier" ${f.at <= FLIP_MIN ? 'disabled' : ''}>${ic('remove')}</button>
+          <output class="fl-at" aria-live="polite">${t}</output>
+          <button class="dl-step" data-act="flip-time" data-route="${esc(r.id)}" data-d="${FLIP_STEP}" aria-label="30 minutes later" ${f.at >= FLIP_MAX ? 'disabled' : ''}>${ic('add')}</button>
+        </div>
+        <span class="fl-foot">Swap by hand any time; it switches again at the next change.</span>
+      </div>`;
+}
+
+/** Changes a route's switch-by-time setting; `apply` turns the card to match it right away. */
+function setFlip(r, f, apply) {
+  const flips = { ...(prefs.flips ?? {}) };
+  const k = pairKey(r);
+  if (f) flips[k] = f;
+  else delete flips[k];
+  save({ flips });
+  if (apply) applyFlips(clockNow());
+  const now = prefs.routes.find((x) => pairKey(x) === k);
+  if (now) refreshRouteMenu(now.id);
+  render({ force: true, animate: true });
+}
+
 function routeModel(r, now) {
   const today = schedule.today(now).key;
   // Trains that run `delay` min late leave `delay` min after their timetabled time, so look
@@ -255,7 +369,7 @@ function topbar(right, left = '') {
   return `<div class="topbar">${left}<span class="spacer"></span>${right}</div>`;
 }
 
-function routesScreen(now) {
+function routesScreen(now, models) {
   const notices = activeNotices(feedState.feed, now).map(noticeCard).join('');
   const head = `
     ${topbar(`
@@ -274,9 +388,9 @@ function routesScreen(now) {
     ${notices}`;
 
   const cards = [];
-  if (preview) cards.push(routeCard(routeModel(preview, now), true));
+  if (preview) cards.push(routeCard(models.get(preview), true));
   if (!prefs.routes.length && !preview) return head + emptyState();
-  for (const r of prefs.routes) cards.push(routeCard(routeModel(r, now), false));
+  for (const r of prefs.routes) cards.push(routeCard(models.get(r), false));
   return head + cards.join('');
 }
 
@@ -319,7 +433,9 @@ function routeCard(m, isPreview) {
         <span class="s"><i class="dot ${interOnly(m) ? 'inter' : line}"></i>${esc(routeLabel(r, interOnly(m)))}</span>
       </span>
       <span class="pillgroup">
-        <button data-act="swap" data-route="${r.id}" aria-label="Switch direction">${ic('swap_vert')}</button>
+        <button data-act="swap" data-route="${r.id}" class="${!isPreview && flipOf(r) && !bothSaved(r) ? 'auto' : ''}" aria-label="${
+          !isPreview && flipOf(r) && !bothSaved(r) ? `Switch direction (switches by itself at ${minutesLabel(flipOf(r).at)})` : 'Switch direction'
+        }">${ic('swap_vert')}</button>
         ${
           isPreview
             ? `<button data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
@@ -717,12 +833,11 @@ function build(now) {
   const screen = screenNow();
   if (screen === 'routes') {
     // Re-render when a train leaves or stops being catchable.
+    // Each route's model is built once per render, and reused for the cards.
+    const models = new Map([...prefs.routes, ...(preview ? [preview] : [])].map((r) => [r, routeModel(r, now)]));
     nextChange = Infinity;
-    for (const r of [...prefs.routes, ...(preview ? [preview] : [])]) {
-      const m = routeModel(r, now);
-      if (m.next) nextChange = Math.min(nextChange, m.next.dep);
-    }
-    return routesScreen(now);
+    for (const m of models.values()) if (m.next) nextChange = Math.min(nextChange, m.next.dep);
+    return routesScreen(now, models);
   }
   nextChange = Infinity;
   if (screen === 'lines') return linesScreen();
@@ -795,7 +910,11 @@ function switchTab(tab) {
 
 function tick() {
   const now = clockNow();
-  if (now - lastRender > 15_000 || now >= nextChange) render();
+  if (applyFlips(now)) {
+    const r = menuPair && prefs.routes.find((x) => pairKey(x) === menuPair);
+    if (r) refreshRouteMenu(r.id);
+    render({ force: true, animate: true });
+  } else if (now - lastRender > 15_000 || now >= nextChange) render();
   for (const el of view.querySelectorAll('[data-at]')) {
     const text = FORMATS[el.dataset.fmt](Number(el.dataset.at) - now);
     if (el.textContent === text) continue;
@@ -1096,10 +1215,32 @@ function addRoute(from, to) {
   toast(`Saved ${name(from)} → ${name(to)}`);
 }
 
+// Station pair of the route whose menu is open, so a flip at a change-over can redraw it.
+let menuPair = null;
+
 function openRouteMenu(id) {
   const r = prefs.routes.find((x) => x.id === id);
   if (!r) return;
-  openSheet(
+  menuPair = pairKey(r);
+  openSheet(routeMenuHtml(r));
+  sheetRoot.querySelector('.sheet').classList.add('short', 'fit');
+}
+
+/** Redraws the open route menu in place (no slide-in), keeping its scroll position. */
+function refreshRouteMenu(id) {
+  const r = prefs.routes.find((x) => x.id === id);
+  const body = sheetRoot.querySelector('.sheet-body');
+  if (!r || !sheetOpen || !body) return;
+  const top = body.scrollTop;
+  menuPair = pairKey(r);
+  replaceSheet(routeMenuHtml(r));
+  const nb = sheetRoot.querySelector('.sheet-body');
+  if (nb) nb.scrollTop = top;
+}
+
+function routeMenuHtml(r) {
+  const id = r.id;
+  return (
     `${sheetHead(`${name(r.from)} → ${name(r.to)}`, null, null)}
     <div class="sheet-body" style="flex: 0 1 auto">
       <div class="card set">
@@ -1110,14 +1251,14 @@ function openRouteMenu(id) {
         <span class="sub" style="font-size: 13px; line-height: 18px">Where to stand so you get off near the exit or stairs you use. Shown on the route card.</span>
       </div>
       ${delayCard(r)}
+      ${flipCard(r)}
       <div class="card list">
         <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
         <button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>
         <button class="row tap plain" data-act="remove-route" data-route="${id}" style="color: #d70015">${ic('delete')}<span class="grow"><span class="t">Remove route</span></span></button>
       </div>
-    </div>`,
+    </div>`
   );
-  sheetRoot.querySelector('.sheet').classList.add('short', 'fit');
 }
 
 const delayTone = (d) => (d > 0 ? 'late' : d < 0 ? 'early' : 'zero');
@@ -1204,6 +1345,7 @@ function closeSheet() {
   const scrim = sheetRoot.querySelector('.scrim');
   const sheet = sheetRoot.querySelector('.sheet');
   sheetOpen = false;
+  menuPair = null;
   if (!sheet) return;
   sheet.style.transform = '';
   sheet.classList.remove('open');
@@ -1337,8 +1479,32 @@ const ACTIONS = {
     if (el.dataset.v) coaches[el.dataset.route] = el.dataset.v;
     else delete coaches[el.dataset.route];
     save({ coaches });
-    openRouteMenu(el.dataset.route);
+    refreshRouteMenu(el.dataset.route);
     render({ force: true });
+  },
+  'flip-toggle': (el) => {
+    buzz();
+    const r = routeOf(el);
+    if (!r) return;
+    if (flipOf(r)) return setFlip(r, null, false);
+    // Start with the card as it is: this direction is the morning trip unless it's already evening.
+    const { pm, key } = flipPeriod(clockNow(), FLIP_DEFAULT);
+    setFlip(r, { at: FLIP_DEFAULT, home: pm ? r.to : r.from, applied: key }, false);
+  },
+  'flip-time': (el) => {
+    buzz();
+    const r = routeOf(el);
+    const f = r && flipOf(r);
+    if (!f) return;
+    const at = Math.max(FLIP_MIN, Math.min(FLIP_MAX, f.at + Number(el.dataset.d)));
+    setFlip(r, { ...f, at, applied: null }, true);
+  },
+  'flip-home': (el) => {
+    buzz();
+    const r = routeOf(el);
+    const f = r && flipOf(r);
+    if (!f) return;
+    setFlip(r, { ...f, home: r.from === f.home ? r.to : r.from, applied: null }, true);
   },
   'delay-step': (el) => {
     buzz();
@@ -1353,7 +1519,10 @@ const ACTIONS = {
     const r = routeOf(el);
     history.back();
     if (!r) return;
-    save({ routes: prefs.routes.filter((x) => x.id !== r.id), reminder: prefs.reminder?.routeId === r.id ? null : prefs.reminder });
+    const routes = prefs.routes.filter((x) => x.id !== r.id);
+    const flips = { ...(prefs.flips ?? {}) };
+    if (!routes.some((x) => pairKey(x) === pairKey(r))) delete flips[pairKey(r)];
+    save({ routes, flips, reminder: prefs.reminder?.routeId === r.id ? null : prefs.reminder });
     toast(`Removed ${name(r.from)} → ${name(r.to)}`);
     render({ force: true, animate: true });
   },

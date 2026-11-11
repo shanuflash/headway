@@ -48,6 +48,8 @@ data class Prefs(
     val coaches: Map<String, Coach> = emptyMap(),
     /** Minutes each route's trains run off the timetable, by route id: negative early, positive late. */
     val delays: Map<String, Int> = emptyMap(),
+    /** Switch direction by time, by station pair ([pairKey]). */
+    val flips: Map<String, AutoFlip> = emptyMap(),
 ) {
     fun delayOf(routeId: String): Int = delays[routeId] ?: 0
 }
@@ -65,6 +67,7 @@ class PrefsStore(private val context: Context) {
         val mockAt = intPreferencesKey("mock_at")
         val coaches = stringPreferencesKey("coaches")
         val delays = stringPreferencesKey("delays")
+        val flips = stringPreferencesKey("flips")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -93,6 +96,7 @@ class PrefsStore(private val context: Context) {
                 runCatching { id to Coach.valueOf(c) }.getOrNull()
             }.toMap(),
             delays = decodeDelays(p[Keys.delays]),
+            flips = decodeFlips(p[Keys.flips]),
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -113,6 +117,7 @@ class PrefsStore(private val context: Context) {
         p[Keys.count] = next.count
         p[Keys.coaches] = next.coaches.entries.joinToString(";") { "${it.key}=${it.value.name}" }
         p[Keys.delays] = encodeDelays(next.delays)
+        p[Keys.flips] = encodeFlips(next.flips)
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name

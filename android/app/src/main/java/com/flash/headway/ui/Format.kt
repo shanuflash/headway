@@ -67,3 +67,9 @@ fun delayText(d: Int): String = when {
     d < 0 -> "${-d} min early"
     else -> "On time"
 }
+
+/** "5:00 PM" from minutes past midnight. */
+fun minutesLabel(m: Int): String {
+    val h = (m / 60) % 24
+    return "${if (h % 12 == 0) 12 else h % 12}:${(m % 60).toString().padStart(2, '0')} ${if (h < 12) "AM" else "PM"}"
+}

@@ -852,6 +852,7 @@ button.hero:active { transform: scale(0.985); }
 .pillgroup { display: flex; height: 36px; border-radius: 18px; background: var(--pill); box-shadow: var(--edge); flex: none; }
 .pillgroup button { width: 42px; height: 36px; display: grid; place-items: center; border-radius: 18px; transition: transform 0.25s var(--spring); }
 .pillgroup button:active { transform: scale(0.9); }
+.pillgroup button.auto { color: var(--tint); }
 .pillgroup .ms { font-size: 20px; }
 
 .rc-hero { display: flex; align-items: center; gap: 12px; }
@@ -965,6 +966,28 @@ button.hero:active { transform: scale(0.985); }
 .dl-cell .v.now { color: var(--tone); }
 .dl-arrow { color: var(--sub); font-size: 20px; }
 .dl-note { color: var(--sub); }
+
+/* Switch direction by time: the two trips of the day, which one is on now, and the switch time. */
+.card.fl { --tone: var(--tint); --tone-bg: var(--tint-soft); padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+.card.fl .dl-head .switch { margin-right: -10px; }
+.fl-trips { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 16px; background: var(--fill); }
+.fl-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fl-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; transition: background 0.25s; }
+.fl-row.on { background: var(--card); box-shadow: var(--thumb-shadow); }
+.fl-row .grow { min-width: 0; }
+.fl-row .k { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: var(--sub); }
+.fl-row .k em { font-style: normal; font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 6px; color: var(--tint); background: var(--tint-soft); }
+.fl-row .v { display: block; font-size: 15px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-row:not(.on) .v { color: var(--sub); font-weight: 500; }
+.fl-ic { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--pill); color: var(--sub); }
+.fl-row.on .fl-ic { background: var(--tint-soft); color: var(--tint); }
+.fl-ic .ms { font-size: 17px; }
+.fl-swap { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--card); color: var(--tint); box-shadow: var(--btn-shadow); transition: transform 0.2s var(--spring); }
+.fl-swap:active { transform: scale(0.88) rotate(180deg); }
+.fl-swap .ms { font-size: 20px; }
+.fl-time { display: flex; align-items: center; gap: 8px; padding: 0 4px; font-size: 15px; }
+.fl-at { min-width: 84px; text-align: center; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fl-foot { padding: 0 4px; font-size: 13px; line-height: 18px; color: var(--sub); }
 
 /* ---------- map tab ---------- */
 .map-card { position: relative; padding: 0; overflow: hidden; border-radius: 30px; }

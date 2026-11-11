@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,8 @@ import com.flash.headway.app.TopUp
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.SavedRoute
+import com.flash.headway.app.pairKey
+import com.flash.headway.app.reverseId
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.data.Platforms
@@ -141,7 +144,7 @@ fun ColumnScope.RoutesScreen(
     statuses: List<RouteStatus>?,
     preview: RouteStatus?,
     prefs: Prefs,
-    now: Long,
+    now: () -> Long,
     actions: RouteActions,
 ) {
     TopBar(right = {
@@ -168,10 +171,10 @@ fun ColumnScope.RoutesScreen(
 
 /** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
 @Composable
-private fun LoadCardBanner(now: Long) {
+private fun LoadCardBanner(now: () -> Long) {
     val context = LocalContext.current
     // Re-read every few seconds (now ticks each second), so it appears on return from the UPI app.
-    val pending = remember(now / 5_000) { TopUp.loadPending(context) }
+    val pending = remember(now() / 5_000) { TopUp.loadPending(context) }
     var hidden by remember { mutableStateOf(false) }
     if (!pending || hidden) return
     val hw = LocalHw.current
@@ -203,7 +206,7 @@ private fun LoadCardBanner(now: Long) {
 
 /** Shown while mock time is on, so a mocked schedule is never mistaken for the real one. */
 @Composable
-private fun MockBanner(now: Long, offset: Long, onOff: () -> Unit) {
+private fun MockBanner(now: () -> Long, offset: Long, onOff: () -> Unit) {
     val hw = LocalHw.current
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.warnBg).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
@@ -211,8 +214,8 @@ private fun MockBanner(now: Long, offset: Long, onOff: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Mock time: ${clock(now)}", style = HwType.subheadStrong, color = hw.warn)
-            Text("Not the real schedule. Real time is ${clock(now - offset)}.", style = HwType.footnote, color = hw.warn)
+            LiveText({ "Mock time: ${clock(now())}" }, HwType.subheadStrong, hw.warn)
+            LiveText({ "Not the real schedule. Real time is ${clock(now() - offset)}." }, HwType.footnote, hw.warn)
         }
         Box(
             Modifier.height(36.dp).clip(CircleShape).background(hw.warnButton).press(scaleTo = 0.95f, onClick = onOff).padding(horizontal = 14.dp),
@@ -275,7 +278,7 @@ fun PrimaryButton(text: String, icon: ImageVector, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteActions, isPreview: Boolean) {
+private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: RouteActions, isPreview: Boolean) {
     val hw = LocalHw.current
     val r = s.route
     // The train shown big. Tapping a chip picks another; it falls back to the next one once it leaves.
@@ -297,17 +300,25 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
                     Text("${Network.name(shown.from)} → ${Network.name(shown.to)}", style = HwType.cardTitle, color = hw.text)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         val inter = shown == r && interOnly(s)
+                        val label = remember(shown, inter) { routeLabel(shown, inter) }
+                        val line = remember(shown) { routeLine(shown) }
                         Box(
                             Modifier.size(8.dp).clip(CircleShape).then(
-                                if (inter) Modifier.background(Brush.verticalGradient(listOf(hw.green, hw.blue))) else Modifier.background(hw.line(routeLine(shown))),
+                                if (inter) Modifier.background(Brush.verticalGradient(listOf(hw.green, hw.blue))) else Modifier.background(hw.line(line)),
                             ),
                         )
-                        Text(routeLabel(shown, inter), style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(label, style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
             Row(Modifier.height(36.dp).clip(CircleShape).background(hw.fill).edge(CircleShape)) {
-                PillIcon(Icons.Rounded.SwapVert, "Switch direction") { actions.swap(r.id) }
+                // Blue when the route also switches by itself at a set time.
+                val auto = if (isPreview) null else prefs.flips[pairKey(r)]?.takeIf { f -> prefs.routes.none { it.id == reverseId(r.id) } }
+                PillIcon(
+                    Icons.Rounded.SwapVert,
+                    if (auto != null) "Switch direction (switches by itself at ${minutesLabel(auto.at)})" else "Switch direction",
+                    tint = if (auto != null) hw.tint else null,
+                ) { actions.swap(r.id) }
                 if (isPreview) {
                     PillIcon(Icons.Rounded.Close, "Close quick look", actions.closePreview)
                 } else {
@@ -326,7 +337,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
             )
         } else {
             Hero(s, shown, index, prefs, now, actions)
-            Boarding(platformFor(r), prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
+            Boarding(remember(r) { platformFor(r) }, prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
             Chips(s, index, now) { picked = it }
         }
 
@@ -345,10 +356,10 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
 }
 
 @Composable
-private fun PillIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
+private fun PillIcon(icon: ImageVector, description: String, tint: Color? = null, onClick: () -> Unit) {
     val hw = LocalHw.current
     Box(Modifier.size(42.dp, 36.dp).clip(CircleShape).press(scaleTo = 0.9f, onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = description, tint = hw.text, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = description, tint = tint ?: hw.text, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -357,7 +368,7 @@ private fun isTomorrow(s: RouteStatus, i: Int) = s.closed || (s.tomorrowFrom in 
 private fun lastIndex(s: RouteStatus): Int = if (s.closed) -1 else s.departures.indexOfFirst { it.dep == s.last?.dep }
 
 @Composable
-private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: Long, actions: RouteActions) {
+private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: () -> Long, actions: RouteActions) {
     val hw = LocalHw.current
     val tomorrow = isTomorrow(s, i)
     val lastIdx = lastIndex(s)
@@ -396,7 +407,7 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
                     Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
                 }
             } else {
-                BigCountdown(d.dep - now)
+                HeroCountdown(d.dep, now)
             }
             Text(line, style = HwType.subhead, color = hw.sub)
         }
@@ -417,6 +428,18 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
             )
         }
     }
+}
+
+/** The hero's countdown on its own, so only it recomposes as the clock ticks. */
+@Composable
+private fun HeroCountdown(dep: Long, now: () -> Long) {
+    BigCountdown(dep - now())
+}
+
+/** Text that reads the clock; isolated so a tick redraws just this text, not its card. */
+@Composable
+private fun LiveText(text: () -> String, style: TextStyle, color: Color) {
+    Text(text(), style = style, color = color)
 }
 
 /** "Platform 2 · Front coach · 2 min late": where to wait, and the rider's delay. Hidden when none is set. */
@@ -461,7 +484,7 @@ private fun DelayTag(delay: Int, onClick: () -> Unit) {
 
 /** Every upcoming departure as a chip; the picked one is ringed and shown in the hero. */
 @Composable
-private fun Chips(s: RouteStatus, selected: Int, now: Long, onPick: (Long) -> Unit) {
+private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long) -> Unit) {
     val hw = LocalHw.current
     val lastIdx = lastIndex(s)
     Row(
@@ -472,10 +495,10 @@ private fun Chips(s: RouteStatus, selected: Int, now: Long, onPick: (Long) -> Un
             val on = i == selected
             val tomorrow = isTomorrow(s, i)
             val shape = RoundedCornerShape(20.dp)
-            val sub = when {
+            val fixed = when {
                 s.closed && i == 0 -> "first"
                 tomorrow -> "tomorrow"
-                else -> chipSpan(d.dep - now)
+                else -> null
             }
             Column(
                 Modifier
@@ -497,11 +520,9 @@ private fun Chips(s: RouteStatus, selected: Int, now: Long, onPick: (Long) -> Un
                         else -> hw.text
                     },
                 )
-                Text(
-                    sub,
-                    style = HwType.footnote.copy(fontWeight = if (i == lastIdx) FontWeight.SemiBold else FontWeight.Normal),
-                    color = if (i == lastIdx) hw.warn else hw.sub,
-                )
+                val subStyle = HwType.footnote.copy(fontWeight = if (i == lastIdx) FontWeight.SemiBold else FontWeight.Normal)
+                val subColor = if (i == lastIdx) hw.warn else hw.sub
+                if (fixed != null) Text(fixed, style = subStyle, color = subColor) else LiveText({ chipSpan(d.dep - now()) }, subStyle, subColor)
             }
         }
     }

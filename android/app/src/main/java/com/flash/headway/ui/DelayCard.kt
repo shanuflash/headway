@@ -163,7 +163,7 @@ fun DelayCard(routeId: String, delay: Int, preview: (Int) -> DelayPreview?, onDe
 }
 
 @Composable
-private fun StepButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun StepButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
     val hw = LocalHw.current
     Box(
         Modifier

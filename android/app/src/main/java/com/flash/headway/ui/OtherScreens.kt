@@ -65,10 +65,10 @@ import java.time.Instant
 // ---------------- lines ----------------
 
 @Composable
-fun ColumnScope.LinesScreen(today: DayInfo, now: Long, onSettings: () -> Unit) {
+fun ColumnScope.LinesScreen(today: DayInfo, now: () -> Long, onSettings: () -> Unit) {
     val hw = LocalHw.current
     val spec = Timetable.day(today.type)
-    val z = Instant.ofEpochMilli(now).atZone(IST)
+    val z = Instant.ofEpochMilli(now()).atZone(IST)
     val nowMin = z.hour * 60 + z.minute
     TopBar(right = { RoundButton(Icons.Rounded.MoreHoriz, "Settings", onSettings) })
     val reason = if (today.reason != "Weekday" && today.reason != "Saturday" && today.reason != "Sunday") ", ${today.reason}" else ""

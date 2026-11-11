@@ -18,7 +18,11 @@ import com.flash.headway.app.Clock
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.app.decodeDelays
+import com.flash.headway.app.decodeFlips
 import com.flash.headway.app.encodeDelays
+import com.flash.headway.app.encodeFlips
+import com.flash.headway.app.flipDue
+import com.flash.headway.app.reverseId
 import com.flash.headway.app.routeStatus
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Line
@@ -48,6 +52,7 @@ object Widgets {
             .putString("routes", p.routes.joinToString(";") { "${it.from}>${it.to}" })
             .putBoolean("lastWarn", p.lastWarn)
             .putString("delays", encodeDelays(p.delays))
+            .putString("flips", encodeFlips(p.flips))
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
             .putLong("mock", p.mockOffset)
             .apply()
@@ -93,7 +98,12 @@ object Widgets {
         val views = RemoteViews(context.packageName, R.layout.widget_1x1)
         val routes = routes(context)
         val (assignedId, label) = assigned(context, widgetId)
-        val route = routes.firstOrNull { it.id == assignedId } ?: routes.firstOrNull()
+        // A route flips direction on a swap or at its switch time; the widget follows it either way.
+        val saved = routes.firstOrNull { it.id == assignedId }
+            ?: routes.firstOrNull { assignedId != null && it.id == reverseId(assignedId) }
+            ?: routes.firstOrNull()
+        // Turn it at its switch time even while the app is closed (the app saves the flip when opened).
+        val route = saved?.let { flipDue(it, decodeFlips(store(context).getString("flips", null)), routes, Clock.now()) ?: it }
         views.setOnClickPendingIntent(R.id.widget_root, openApp(context, widgetId, route))
 
         fun big(text: String, sp: Float) {

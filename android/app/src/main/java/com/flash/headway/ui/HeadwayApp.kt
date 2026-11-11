@@ -74,6 +74,8 @@ import com.flash.headway.app.Clock
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
+import com.flash.headway.app.pairKey
+import com.flash.headway.app.reverseId
 import com.flash.headway.data.Network
 import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
@@ -91,13 +93,15 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     val statuses by vm.statuses.collectAsStateWithLifecycle()
     val previewStatus by vm.previewStatus.collectAsStateWithLifecycle()
 
-    // One clock for every countdown, aligned to the second.
-    val now by produceState(Clock.now()) {
+    // One clock for every countdown, aligned to the second. It's handed down as a function and
+    // only read by the bits of text that tick, so the rest of the app doesn't recompose each second.
+    val clockState = produceState(Clock.now()) {
         while (true) {
             delay(1000 - Clock.now() % 1000)
             value = Clock.now()
         }
     }
+    val now: () -> Long = remember(clockState) { { clockState.value } }
 
     var tab by rememberSaveable { mutableStateOf(Tab.ROUTES) }
     var settings by rememberSaveable { mutableStateOf(false) }
@@ -263,8 +267,11 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             )
         }
 
-        menuFor?.let { id ->
-            val route = prefs.routes.firstOrNull { it.id == id }
+        menuFor?.let { menuId ->
+            // The route may have flipped while its menu is open (its switch time, or a change
+            // here): follow it to the other direction.
+            val route = prefs.routes.firstOrNull { it.id == menuId } ?: prefs.routes.firstOrNull { it.id == reverseId(menuId) }
+            val id = route?.id ?: menuId
             if (route == null) {
                 menuFor = null
             } else {
@@ -290,6 +297,17 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     delay = prefs.delayOf(id),
                     delayPreview = { vm.delayPreview(route, it) },
                     onDelay = { vm.setDelay(id, it) },
+                    flipCard = {
+                        FlipCard(
+                            route = route,
+                            flip = prefs.flips[pairKey(route)],
+                            bothSaved = prefs.routes.any { it.id == reverseId(id) },
+                            now = now(),
+                            onToggle = { vm.setFlip(id, it) },
+                            onMoveTime = { vm.moveFlipTime(id, it) },
+                            onSwapHome = { vm.swapFlipHome(id) },
+                        )
+                    },
                     onDismiss = { menuFor = null },
                 )
             }

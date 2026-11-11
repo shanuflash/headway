@@ -229,6 +229,7 @@ fun RouteMenu(
     delay: Int,
     delayPreview: (Int) -> DelayPreview?,
     onDelay: (Int) -> Unit,
+    flipCard: @Composable () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val hw = LocalHw.current
@@ -251,6 +252,7 @@ fun RouteMenu(
                 Text("Where to stand so you get off near the exit or stairs you use. Shown on the route card.", style = HwType.footnote, color = hw.sub)
             }
             DelayCard(routeId, delay, delayPreview, onDelay)
+            flipCard()
             val danger = Color(0xFFD70015)
             ListCard(
                 listOf<@Composable () -> Unit>(

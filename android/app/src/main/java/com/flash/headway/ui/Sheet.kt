@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,10 +77,17 @@ fun HwSheet(
         }
     }
 
+    // A closed sheet must always leave composition: while it stays, its invisible scrim covers the
+    // screen and swallows every tap. So run the action, then dismiss, even when the action itself
+    // doesn't (opening Airtel or a UPI app from the top-up sheet didn't, and froze the app).
+    val dismiss by rememberUpdatedState(onDismiss)
     fun close(then: () -> Unit) {
         if (closing) return
         closing = true
-        settle(1f, then)
+        settle(1f) {
+            then()
+            if (then !== dismiss) dismiss()
+        }
     }
 
     LaunchedEffect(Unit) { settle(0f) }

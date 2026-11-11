@@ -61,11 +61,19 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             combine(prefs.filterNotNull(), _preview) { p, pv -> p to pv }.collectLatest { (p, pv) ->
                 Clock.offset = p.mockOffset
+                var flipping = false
                 while (true) {
                     val now = Clock.now()
+                    // A route that switches direction by time is due to flip: show it flipped
+                    // straight away, and save it once (the saved prefs then restart this loop).
+                    val shown = applyFlips(p, now)
+                    if (shown !== p && !flipping) {
+                        flipping = true
+                        flipNow()
+                    }
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
-                        p.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayOf(it.id)) } to
+                        shown.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayOf(it.id)) } to
                             pv?.let { routeStatus(s, it, now, p.lastWarn, p.count) }
                     }
                     _statuses.value = list
@@ -182,6 +190,51 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                 delays = if (d == 0) q.delays - routeId else q.delays + (routeId to d),
                 reminder = if (reminder != null && q.reminder?.routeId == routeId) reminder else q.reminder,
             )
+        }
+    }
+
+    /** Applies due change-overs, stopping a countdown on a route that flipped. */
+    private fun flipNow() {
+        viewModelScope.launch {
+            var stopped = false
+            store.update { q ->
+                val next = applyFlips(q, Clock.now())
+                stopped = q.reminder != null && next.reminder == null
+                next
+            }
+            if (stopped) Alerts.stopCountdown(getApplication())
+        }
+    }
+
+    /** Turns switching by time on or off. Turning it on keeps the card as it is right now. */
+    fun setFlip(routeId: String, on: Boolean) = update { p ->
+        val r = p.routes.firstOrNull { it.id == routeId } ?: return@update p
+        if (!on) return@update p.copy(flips = p.flips - pairKey(r))
+        val (pm, key) = flipPeriod(Clock.now(), FLIP_DEFAULT)
+        p.copy(flips = p.flips + (pairKey(r) to AutoFlip(FLIP_DEFAULT, if (pm) r.to else r.from, key)))
+    }
+
+    /** Moves the switch time by [stepMin]; the card turns right away if that changes its half of the day. */
+    fun moveFlipTime(routeId: String, stepMin: Int) = changeFlip(routeId) { f, _ ->
+        f.copy(at = (f.at + stepMin).coerceIn(FLIP_MIN, FLIP_MAX), applied = null)
+    }
+
+    /** Swaps which direction is the morning trip, and turns the card to match. */
+    fun swapFlipHome(routeId: String) = changeFlip(routeId) { f, r ->
+        f.copy(home = if (r.from == f.home) r.to else r.from, applied = null)
+    }
+
+    private fun changeFlip(routeId: String, change: (AutoFlip, SavedRoute) -> AutoFlip) {
+        viewModelScope.launch {
+            var stopped = false
+            store.update { p ->
+                val r = p.routes.firstOrNull { it.id == routeId } ?: return@update p
+                val f = p.flips[pairKey(r)] ?: return@update p
+                val next = applyFlips(p.copy(flips = p.flips + (pairKey(r) to change(f, r))), Clock.now())
+                stopped = p.reminder != null && next.reminder == null
+                next
+            }
+            if (stopped) Alerts.stopCountdown(getApplication())
         }
     }
 

@@ -180,7 +180,7 @@ private fun NetworkMap(onStation: (String) -> Unit) {
 
 /** The bottom sheet for a tapped station. */
 @Composable
-fun StationSheet(id: String, boards: List<StationBoard>, now: Long, onRouteFrom: () -> Unit, onDismiss: () -> Unit) {
+fun StationSheet(id: String, boards: List<StationBoard>, now: () -> Long, onRouteFrom: () -> Unit, onDismiss: () -> Unit) {
     val hw = LocalHw.current
     HwSheet(onDismiss = onDismiss) { close ->
         Column(
@@ -216,7 +216,7 @@ fun StationSheet(id: String, boards: List<StationBoard>, now: Long, onRouteFrom:
                                 ) {
                                     Text(clock(d.dep), style = HwType.subheadStrong.copy(fontFeatureSettings = "tnum"), color = hw.text)
                                     Text(
-                                        if (many) Network.name(to) else if (d.dep - now < 30_000) "now" else "${mins(d.dep - now)} min",
+                                        if (many) Network.name(to) else if (d.dep - now() < 30_000) "now" else "${mins(d.dep - now())} min",
                                         style = HwType.caption,
                                         color = hw.sub,
                                         maxLines = 1,
