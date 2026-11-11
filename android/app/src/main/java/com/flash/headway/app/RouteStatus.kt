@@ -27,11 +27,23 @@ data class RouteStatus(
     val nextChange: Long? get() = next?.dep
 }
 
-fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, count: Int): RouteStatus {
+/**
+ * Departures on [route] with the rider's static delay applied: trains that run [delayMin] late
+ * leave that much after their timetabled time, so look that far back for the ones still to come.
+ */
+fun Schedule.delayedDepartures(route: SavedRoute, nowMs: Long, limit: Int, delayMin: Int): List<RouteDeparture> {
+    val off = delayMin * MINUTE
+    return routeDepartures(route.from, route.to, nowMs - off, limit).map { it.shifted(off) }
+}
+
+private fun RouteDeparture.shifted(off: Long) = if (off == 0L) this else copy(dep = dep + off, arr = arr + off)
+
+fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, count: Int, delayMin: Int = 0): RouteStatus {
     val today = s.today(now).date
-    val deps = s.routeDepartures(route.from, route.to, now, count)
+    val off = delayMin * MINUTE
+    val deps = s.delayedDepartures(route, now, count, delayMin)
     val next = deps.firstOrNull()
-    val last = s.lastRouteDeparture(route.from, route.to, now)
+    val last = s.lastRouteDeparture(route.from, route.to, now - off)?.shifted(off)
     val closed = next != null && next.trip.serviceDate != today
     return RouteStatus(
         route = route,

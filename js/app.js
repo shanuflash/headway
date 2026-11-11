@@ -28,7 +28,10 @@ const DEFAULTS = {
   upiPaidAt: 0, // last UPI top-up; it still has to be written to the card in Airtel
   upi: '', // the metro card's own UPI ID (from its "Scan to recharge" QR); stays in this browser
   coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
+  delays: {}, // route id -> minutes the rider's trains run off the timetable, -5 (early) to +5 (late)
 };
+
+const DELAY_MAX = 5;
 
 const routeId = (from, to) => `${from}>${to}`;
 
@@ -193,8 +196,11 @@ function platformAt(from, g) {
 function boardingTags(r) {
   const p = platformFor(r);
   const c = prefs.coaches?.[r.id];
-  if (!p && !c) return '';
-  return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}</div>`;
+  const d = delayOf(r.id);
+  if (!p && !c && !d) return '';
+  return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}${
+    d ? `<span class="delay">${ic('schedule')}${delayText(d)}</span>` : ''
+  }</div>`;
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
@@ -207,12 +213,26 @@ function routeLine(r) {
 
 /* ---------- route model ---------- */
 
+/** The rider's static delay for a saved route, in whole minutes within ±DELAY_MAX. */
+function delayOf(id) {
+  const d = Math.round(Number(prefs.delays?.[id]) || 0);
+  return Math.max(-DELAY_MAX, Math.min(DELAY_MAX, d));
+}
+
+const delayText = (d) => (d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 'On time');
+
+/** A departure moved by the route's delay; the trip itself is shared, so only dep and arr change. */
+const shifted = (x, off) => (x && off ? { ...x, dep: x.dep + off, arr: x.arr + off } : x);
+
 function routeModel(r, now) {
   const today = schedule.today(now).key;
-  const deps = schedule.routeDepartures(r.from, r.to, now, prefs.count);
+  // Trains that run `delay` min late leave `delay` min after their timetabled time, so look
+  // that much further back in the timetable for the ones still to come.
+  const off = delayOf(r.id) * MIN;
+  const deps = schedule.routeDepartures(r.from, r.to, now - off, prefs.count).map((x) => shifted(x, off));
   const next = deps[0] ?? null;
   if (!next) return { r, kind: 'none' };
-  const last = schedule.lastRouteDeparture(r.from, r.to, now);
+  const last = shifted(schedule.lastRouteDeparture(r.from, r.to, now - off), off);
   const closed = next.trip.serviceDate !== today;
   return {
     r,
@@ -1081,13 +1101,19 @@ function openRouteMenu(id) {
   if (!r) return;
   openSheet(
     `${sheetHead(`${name(r.from)} → ${name(r.to)}`, null, null)}
-    <div class="sheet-body" style="flex: none">
+    <div class="sheet-body" style="flex: 0 1 auto">
       <div class="card set">
         <span>Best coach to board</span>
         <div class="seg" role="radiogroup" aria-label="Best coach to board">${[['', 'Off'], ['front', 'Front'], ['middle', 'Middle'], ['rear', 'Rear']]
           .map(([v, l]) => `<button role="radio" aria-checked="${(prefs.coaches?.[id] ?? '') === v}" data-act="coach" data-route="${id}" data-v="${v}">${l}</button>`)
           .join('')}</div>
         <span class="sub" style="font-size: 13px; line-height: 18px">Where to stand so you get off near the exit or stairs you use. Shown on the route card.</span>
+      </div>
+      <div class="card set">
+        <span class="delay-head"><span>Delay</span><output class="delay-val" for="delay-${esc(id)}">${delaySign(delayOf(id))}</output></span>
+        <input type="range" class="delay-range" id="delay-${esc(id)}" data-act="delay" data-route="${esc(id)}" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${delayOf(id)}" aria-label="Delay in minutes" aria-valuetext="${delayText(delayOf(id))}" />
+        <span class="delay-ticks" aria-hidden="true"><span>${-DELAY_MAX} early</span><span>0</span><span>late +${DELAY_MAX}</span></span>
+        <span class="sub" style="font-size: 13px; line-height: 18px">If trains on this route reliably leave early or late, shift their times by a few minutes. The countdown and times on the card use it.</span>
       </div>
       <div class="card list">
         <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
@@ -1096,7 +1122,26 @@ function openRouteMenu(id) {
       </div>
     </div>`,
   );
-  sheetRoot.querySelector('.sheet').classList.add('short');
+  sheetRoot.querySelector('.sheet').classList.add('short', 'fit');
+}
+
+/** "+2 min" for the slider readout. */
+const delaySign = (d) => (d > 0 ? `+${d} min` : d < 0 ? `−${-d} min` : 'On time');
+
+/** Saves a route's delay, keeping an active countdown on the same train it was set for. */
+function setDelay(id, d) {
+  const before = delayOf(id);
+  if (d === before) return;
+  const delays = { ...(prefs.delays ?? {}) };
+  if (d) delays[id] = d;
+  else delete delays[id];
+  const rem = prefs.reminder;
+  const moved = (d - before) * MIN;
+  const reminder = rem && rem.routeId === id && !rem.fired ? { ...rem, dep: rem.dep + moved, at: rem.at + moved } : rem;
+  // The picked chip keys on departure time, so move it with the train too.
+  if (picked.has(id)) picked.set(id, picked.get(id) + moved);
+  save({ delays, reminder });
+  render({ force: true });
 }
 
 function closeSheet() {
@@ -1306,6 +1351,18 @@ document.addEventListener('change', (e) => {
     feed.setRemote(url);
     toast(url ? 'Checking advisory feed' : 'Advisory feed removed');
   }
+});
+
+// The delay slider updates the card behind the sheet as it moves.
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.dataset?.act !== 'delay') return;
+  const d = Number(el.value);
+  el.setAttribute('aria-valuetext', delayText(d));
+  const out = el.closest('.card')?.querySelector('.delay-val');
+  if (out) out.textContent = delaySign(d);
+  if (d !== delayOf(el.dataset.route)) buzz(6);
+  setDelay(el.dataset.route, d);
 });
 
 document.addEventListener('keydown', (e) => {

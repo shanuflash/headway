@@ -286,6 +286,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     },
                     coach = prefs.coaches[id],
                     onCoach = { vm.setCoach(id, it) },
+                    delay = prefs.delayOf(id),
+                    onDelay = { vm.setDelay(id, it) },
                     onDismiss = { menuFor = null },
                 )
             }

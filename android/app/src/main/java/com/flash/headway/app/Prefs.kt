@@ -30,6 +30,9 @@ data class Reminder(val routeId: String, val dep: Long)
 /** Where to stand on the platform for this route, set by the rider (no public data has it). */
 enum class Coach(val label: String) { FRONT("front"), MIDDLE("middle"), REAR("rear") }
 
+/** The furthest a route's static delay goes either way, in minutes. */
+const val DELAY_MAX = 5
+
 data class Prefs(
     val routes: List<SavedRoute> = emptyList(),
     /** How many departures each route card lists. */
@@ -43,7 +46,11 @@ data class Prefs(
     val reminder: Reminder? = null,
     /** Best coach per route id. */
     val coaches: Map<String, Coach> = emptyMap(),
-)
+    /** Minutes each route's trains run off the timetable, by route id: negative early, positive late. */
+    val delays: Map<String, Int> = emptyMap(),
+) {
+    fun delayOf(routeId: String): Int = delays[routeId] ?: 0
+}
 
 val COUNT_CHOICES = listOf(3, 5, 8)
 
@@ -57,6 +64,7 @@ class PrefsStore(private val context: Context) {
         val override = stringPreferencesKey("override")
         val mockAt = intPreferencesKey("mock_at")
         val coaches = stringPreferencesKey("coaches")
+        val delays = stringPreferencesKey("delays")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -84,6 +92,7 @@ class PrefsStore(private val context: Context) {
                 val (id, c) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
                 runCatching { id to Coach.valueOf(c) }.getOrNull()
             }.toMap(),
+            delays = decodeDelays(p[Keys.delays]),
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -103,6 +112,7 @@ class PrefsStore(private val context: Context) {
         p[Keys.routes] = next.routes.joinToString(";") { "${it.from}>${it.to}" }
         p[Keys.count] = next.count
         p[Keys.coaches] = next.coaches.entries.joinToString(";") { "${it.key}=${it.value.name}" }
+        p[Keys.delays] = encodeDelays(next.delays)
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
@@ -146,3 +156,14 @@ class PrefsStore(private val context: Context) {
         DayOverride(LocalDate.parse(d), DayType.valueOf(t))
     }.getOrNull()
 }
+
+/** "a>b=2;c>d=-1": route id to minutes, the same text in DataStore and the widgets' mirror. */
+fun encodeDelays(delays: Map<String, Int>): String =
+    delays.entries.filter { it.value != 0 }.joinToString(";") { "${it.key}=${it.value}" }
+
+fun decodeDelays(raw: String?): Map<String, Int> =
+    raw.orEmpty().split(';').mapNotNull { part ->
+        val (id, d) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+        val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: return@mapNotNull null
+        (id to minutes).takeIf { minutes != 0 }
+    }.toMap()

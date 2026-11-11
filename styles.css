@@ -826,6 +826,8 @@ button.hero:active { transform: scale(0.985); }
 
 .sheet.short { top: auto; max-height: 60dvh; }
 .sheet.short .sheet-body { padding-bottom: calc(env(safe-area-inset-bottom) + 20px); }
+/* Grows to its content, up to the full sheet height, then scrolls (the route menu). */
+.sheet.short.fit { max-height: calc(100dvh - env(safe-area-inset-top) - 48px); }
 .row .ms { color: inherit; }
 
 /* ---------- iOS 27 pass ---------- */
@@ -900,8 +902,16 @@ button.hero:active { transform: scale(0.985); }
 .big .n.flow.is-now number-flow-group { display: none; }
 .big .n.flow.is-now .now { display: inline; }
 
-.boarding { display: flex; gap: 8px; margin-top: -6px; }
-.boarding span { font-size: 13px; line-height: 18px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--pill); box-shadow: var(--edge); }
+.boarding { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -6px; }
+.boarding > span { font-size: 13px; line-height: 18px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--pill); box-shadow: var(--edge); }
+.boarding > .delay { display: inline-flex; align-items: center; gap: 4px; padding-left: 9px; color: var(--warn); background: var(--warn-bg); }
+.boarding > .delay .ms { font-size: 16px; }
+
+/* Per-route delay slider in the route menu: -5 (early) to +5 (late), one notch a minute. */
+.delay-head { display: flex; justify-content: space-between; align-items: baseline; }
+.delay-val { font-size: 15px; font-weight: 600; color: var(--tint); font-variant-numeric: tabular-nums; }
+.delay-range { width: 100%; margin: 4px 0 0; accent-color: var(--tint); height: 28px; cursor: pointer; touch-action: pan-y; }
+.delay-ticks { display: flex; justify-content: space-between; font-size: 12px; line-height: 16px; color: var(--sub); margin-top: -4px; }
 
 /* ---------- map tab ---------- */
 .map-card { position: relative; padding: 0; overflow: hidden; border-radius: 30px; }

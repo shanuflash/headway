@@ -60,3 +60,10 @@ fun bigParts(ms: Long): Pair<String, String> {
 fun changesText(j: Journey): String =
     if (j.changes == 0) "Direct"
     else "${plural(j.changes, "change")}, at ${j.legs.drop(1).joinToString(" and ") { Network.name(it.from) }}"
+
+/** "2 min late", "1 min early" or "On time": a route's static delay in words. */
+fun delayText(d: Int): String = when {
+    d > 0 -> "$d min late"
+    d < 0 -> "${-d} min early"
+    else -> "On time"
+}

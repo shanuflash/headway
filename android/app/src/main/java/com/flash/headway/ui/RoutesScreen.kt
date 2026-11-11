@@ -322,7 +322,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
             )
         } else {
             Hero(s, shown, index, prefs, now, actions)
-            Boarding(platformFor(r), prefs.coaches[r.id])
+            Boarding(platformFor(r), prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id))
             Chips(s, index, now) { picked = it }
         }
 
@@ -415,25 +415,27 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
     }
 }
 
-/** "Platform 2 · Front coach": where to wait. Hidden when neither is known. */
+/** "Platform 2 · Front coach · 2 min late": where to wait, and the rider's delay. Hidden when none is set. */
 @Composable
-private fun Boarding(platform: String?, coach: Coach?) {
-    if (platform == null && coach == null) return
+private fun Boarding(platform: String?, coach: Coach?, delay: Int) {
+    if (platform == null && coach == null && delay == 0) return
     val hw = LocalHw.current
     Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (platform != null) BoardingTag(platform)
         if (coach != null) BoardingTag("${coach.label.replaceFirstChar { it.uppercase() }} coach")
+        if (delay != 0) BoardingTag(delayText(delay), color = hw.warn, background = hw.warnBg)
     }
 }
 
 @Composable
-private fun BoardingTag(text: String) {
+private fun BoardingTag(text: String, color: Color? = null, background: Color? = null) {
     val hw = LocalHw.current
     Text(
         text,
         style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
-        color = hw.text,
-        modifier = Modifier.clip(CircleShape).background(hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+        color = color ?: hw.text,
+        maxLines = 1,
+        modifier = Modifier.clip(CircleShape).background(background ?: hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }
 

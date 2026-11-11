@@ -9,6 +9,7 @@ Headway is for people who ride the same route every day. Save where you board an
 - **Routes:** one card per saved route, always open.
   - The next train is shown big with a live countdown, then the next few departures (3, 5 or 8, set in Settings), each with its arrival time.
   - The swap button on a card flips the route in place, so the morning route becomes the ride home with one tap.
+  - **Delay:** the route's ⋯ menu has a slider from −5 to +5 min. If your trains reliably leave early or late, it shifts that route's times, so the countdown, the times listed, the last-train warning and the Android widget all use the shifted times. A small tag on the card shows the delay, e.g. "2 min late".
   - Only direct trains count. Short loops and Green Line trains via CMBT are included when they stop at your destination.
 - **States:** last trains (an amber label, plus the first train tomorrow), "No more trains tonight" and "Metro is closed".
 - **Countdown:** tap the bell on any train for a live countdown notification to its departure, with "I'll take the next one" and "Stop". It counts to the train itself; there's no walking-time offset.

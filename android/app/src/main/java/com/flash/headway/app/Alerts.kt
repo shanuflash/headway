@@ -35,6 +35,7 @@ object Alerts {
     private const val EXTRA_FROM = "from"
     private const val EXTRA_TO = "to"
     private const val EXTRA_DEP = "dep"
+    private const val EXTRA_DELAY = "delay"
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -51,11 +52,12 @@ object Alerts {
         Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    fun startCountdown(context: Context, route: SavedRoute, dep: Long) {
+    /** [dep] is already moved by the route's static delay of [delayMin]; the next train gets the same. */
+    fun startCountdown(context: Context, route: SavedRoute, dep: Long, delayMin: Int = 0) {
         // Clear any set-off alarm an older version scheduled.
         context.getSystemService(AlarmManager::class.java).cancel(broadcast(context, ACTION_FIRE, null, 0))
-        val following = Schedule().routeDepartures(route.from, route.to, dep + 1, 1).firstOrNull()
-        postCountdown(context, route, dep, following?.dep)
+        val following = Schedule().delayedDepartures(route, dep + 1, 1, delayMin).firstOrNull()
+        postCountdown(context, route, dep, following?.dep, delayMin)
     }
 
     fun stopCountdown(context: Context) {
@@ -63,7 +65,7 @@ object Alerts {
         context.getSystemService(NotificationManager::class.java).cancel(ID_COUNTDOWN)
     }
 
-    private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?) {
+    private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?, delayMin: Int) {
         if (!canNotify(context)) return
         val text = buildString {
             append("${Network.name(route.from)} to ${Network.name(route.to)}.")
@@ -84,17 +86,17 @@ object Alerts {
             .setTimeoutAfter((dep - Clock.now() + 60_000L).coerceAtLeast(60_000L))
         if (following != null) {
             builder.addAction(
-                Notification.Action.Builder(null, "I'll take the ${clock(following)}", broadcast(context, ACTION_NEXT, route, dep)).build(),
+                Notification.Action.Builder(null, "I'll take the ${clock(following)}", broadcast(context, ACTION_NEXT, route, dep, delayMin)).build(),
             )
         }
         builder.addAction(Notification.Action.Builder(null, "Stop", broadcast(context, ACTION_STOP, route, dep)).build())
         context.getSystemService(NotificationManager::class.java).notify(ID_COUNTDOWN, builder.build())
     }
 
-    private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long): PendingIntent {
+    private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long, delayMin: Int = 0): PendingIntent {
         val intent = Intent(context, AlertReceiver::class.java).setAction(action)
         if (route != null) intent.putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to)
-        intent.putExtra(EXTRA_DEP, dep)
+        intent.putExtra(EXTRA_DEP, dep).putExtra(EXTRA_DELAY, delayMin)
         val code = when (action) {
             ACTION_FIRE -> 1
             ACTION_NEXT -> 2
@@ -118,6 +120,8 @@ object Alerts {
     }
 
     internal fun depFrom(intent: Intent): Long = intent.getLongExtra(EXTRA_DEP, 0L)
+
+    internal fun delayFrom(intent: Intent): Int = intent.getIntExtra(EXTRA_DELAY, 0)
 }
 
 class AlertReceiver : BroadcastReceiver() {
@@ -130,8 +134,9 @@ class AlertReceiver : BroadcastReceiver() {
                 updatePrefs(context) { it.copy(reminder = null) }
             }
             Alerts.ACTION_NEXT -> if (route != null) {
-                val following = Schedule().routeDepartures(route.from, route.to, dep + 1, 1).firstOrNull() ?: return
-                Alerts.startCountdown(context, route, following.dep)
+                val delayMin = Alerts.delayFrom(intent)
+                val following = Schedule().delayedDepartures(route, dep + 1, 1, delayMin).firstOrNull() ?: return
+                Alerts.startCountdown(context, route, following.dep, delayMin)
                 updatePrefs(context) { it.copy(reminder = Reminder(route.id, following.dep)) }
             }
             // ACTION_FIRE came from the removed set-off alarm; nothing to do.

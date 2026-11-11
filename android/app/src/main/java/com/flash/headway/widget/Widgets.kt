@@ -17,6 +17,8 @@ import com.flash.headway.R
 import com.flash.headway.app.Clock
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.SavedRoute
+import com.flash.headway.app.decodeDelays
+import com.flash.headway.app.encodeDelays
 import com.flash.headway.app.routeStatus
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Line
@@ -45,6 +47,7 @@ object Widgets {
         store(context).edit()
             .putString("routes", p.routes.joinToString(";") { "${it.from}>${it.to}" })
             .putBoolean("lastWarn", p.lastWarn)
+            .putString("delays", encodeDelays(p.delays))
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
             .putLong("mock", p.mockOffset)
             .apply()
@@ -109,7 +112,8 @@ object Widgets {
         }
 
         val lastWarn = store(context).getBoolean("lastWarn", true)
-        val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1)
+        val delayMin = decodeDelays(store(context).getString("delays", null))[route.id] ?: 0
+        val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1, delayMin)
         val next = status.next
         val line = routeGroup(route.from, route.to)?.line ?: Line.BLUE
         val ring = when (line) {

@@ -65,7 +65,8 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     val now = Clock.now()
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
-                        p.routes.map { routeStatus(s, it, now, p.lastWarn, p.count) } to pv?.let { routeStatus(s, it, now, p.lastWarn, p.count) }
+                        p.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayOf(it.id)) } to
+                            pv?.let { routeStatus(s, it, now, p.lastWarn, p.count) }
                     }
                     _statuses.value = list
                     _previewStatus.value = previewNow
@@ -155,6 +156,27 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(coaches = if (coach == null) p.coaches - routeId else p.coaches + (routeId to coach))
     }
 
+    /**
+     * Sets a route's static delay. A countdown running on that route follows its train to the
+     * new time, so it keeps pointing at the same train.
+     */
+    fun setDelay(routeId: String, minutes: Int) {
+        val p = prefs.value ?: return
+        val d = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
+        val before = p.delayOf(routeId)
+        if (d == before) return
+        val moved = (d - before) * MINUTE
+        val reminder = p.reminder?.takeIf { it.routeId == routeId }?.let { Reminder(routeId, it.dep + moved) }
+        val route = p.routes.firstOrNull { it.id == routeId }
+        if (reminder != null && route != null) Alerts.startCountdown(getApplication(), route, reminder.dep, d)
+        update { q ->
+            q.copy(
+                delays = if (d == 0) q.delays - routeId else q.delays + (routeId to d),
+                reminder = if (reminder != null && q.reminder?.routeId == routeId) reminder else q.reminder,
+            )
+        }
+    }
+
     fun setCount(n: Int) = update { it.copy(count = n) }
 
     fun showPreview(from: String, to: String) {
@@ -180,7 +202,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             update { it.copy(reminder = null) }
             return
         }
-        Alerts.startCountdown(ctx, route, dep)
+        Alerts.startCountdown(ctx, route, dep, p.delayOf(route.id))
         update { it.copy(reminder = Reminder(route.id, dep)) }
     }
 
