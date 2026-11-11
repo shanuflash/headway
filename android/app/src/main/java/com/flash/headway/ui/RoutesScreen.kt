@@ -30,7 +30,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreditCard
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.MoreTime
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Search
@@ -51,6 +53,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -322,7 +326,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: Long, actions: RouteAct
             )
         } else {
             Hero(s, shown, index, prefs, now, actions)
-            Boarding(platformFor(r), prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id))
+            Boarding(platformFor(r), prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
             Chips(s, index, now) { picked = it }
         }
 
@@ -417,26 +421,42 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: L
 
 /** "Platform 2 · Front coach · 2 min late": where to wait, and the rider's delay. Hidden when none is set. */
 @Composable
-private fun Boarding(platform: String?, coach: Coach?, delay: Int) {
+private fun Boarding(platform: String?, coach: Coach?, delay: Int, onDelayTap: () -> Unit) {
     if (platform == null && coach == null && delay == 0) return
     val hw = LocalHw.current
     Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (platform != null) BoardingTag(platform)
         if (coach != null) BoardingTag("${coach.label.replaceFirstChar { it.uppercase() }} coach")
-        if (delay != 0) BoardingTag(delayText(delay), color = hw.warn, background = hw.warnBg)
+        if (delay != 0) DelayTag(delay, onDelayTap)
     }
 }
 
 @Composable
-private fun BoardingTag(text: String, color: Color? = null, background: Color? = null) {
+private fun BoardingTag(text: String) {
     val hw = LocalHw.current
     Text(
         text,
         style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
-        color = color ?: hw.text,
+        color = hw.text,
         maxLines = 1,
-        modifier = Modifier.clip(CircleShape).background(background ?: hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+        modifier = Modifier.clip(CircleShape).background(hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
     )
+}
+
+/** "3 min late" in amber or "2 min early" in blue; tap to change it in the route menu. */
+@Composable
+private fun DelayTag(delay: Int, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    val (fg, bg) = if (delay > 0) hw.warn to hw.warnBg else hw.info to hw.infoBg
+    Row(
+        Modifier.press(onClick = onClick).clip(CircleShape).background(bg).padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "${delayText(delay)}, change" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(if (delay > 0) Icons.Rounded.MoreTime else Icons.Rounded.History, null, tint = fg, modifier = Modifier.size(16.dp))
+        Text(delayText(delay), style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1)
+    }
 }
 
 /** Every upcoming departure as a chip; the picked one is ringed and shown in the hero. */

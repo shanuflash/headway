@@ -156,6 +156,14 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(coaches = if (coach == null) p.coaches - routeId else p.coaches + (routeId to coach))
     }
 
+    /** The next train on [route] at [delayMin]: timetabled and shown departure, for the delay card. */
+    fun delayPreview(route: SavedRoute, delayMin: Int): com.flash.headway.ui.DelayPreview? {
+        val p = prefs.value ?: return null
+        val off = delayMin * MINUTE
+        val next = engine(p).delayedDepartures(route, Clock.now(), 1, delayMin).firstOrNull() ?: return null
+        return com.flash.headway.ui.DelayPreview(timetabled = next.dep - off, shown = next.dep)
+    }
+
     /**
      * Sets a route's static delay. A countdown running on that route follows its train to the
      * new time, so it keeps pointing at the same train.

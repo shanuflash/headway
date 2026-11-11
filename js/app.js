@@ -199,7 +199,7 @@ function boardingTags(r) {
   const d = delayOf(r.id);
   if (!p && !c && !d) return '';
   return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}${
-    d ? `<span class="delay">${ic('schedule')}${delayText(d)}</span>` : ''
+    d ? `<button class="delay ${d > 0 ? 'late' : 'early'}" data-act="route-menu" data-route="${r.id}" aria-label="${delayText(d)}, change">${ic(d > 0 ? 'more_time' : 'history')}${delayText(d)}</button>` : ''
   }</div>`;
 }
 
@@ -1109,12 +1109,7 @@ function openRouteMenu(id) {
           .join('')}</div>
         <span class="sub" style="font-size: 13px; line-height: 18px">Where to stand so you get off near the exit or stairs you use. Shown on the route card.</span>
       </div>
-      <div class="card set">
-        <span class="delay-head"><span>Delay</span><output class="delay-val" for="delay-${esc(id)}">${delaySign(delayOf(id))}</output></span>
-        <input type="range" class="delay-range" id="delay-${esc(id)}" data-act="delay" data-route="${esc(id)}" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${delayOf(id)}" aria-label="Delay in minutes" aria-valuetext="${delayText(delayOf(id))}" />
-        <span class="delay-ticks" aria-hidden="true"><span>${-DELAY_MAX} early</span><span>0</span><span>late +${DELAY_MAX}</span></span>
-        <span class="sub" style="font-size: 13px; line-height: 18px">If trains on this route reliably leave early or late, shift their times by a few minutes. The countdown and times on the card use it.</span>
-      </div>
+      ${delayCard(r)}
       <div class="card list">
         <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
         <button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>
@@ -1125,8 +1120,68 @@ function openRouteMenu(id) {
   sheetRoot.querySelector('.sheet').classList.add('short', 'fit');
 }
 
-/** "+2 min" for the slider readout. */
-const delaySign = (d) => (d > 0 ? `+${d} min` : d < 0 ? `−${-d} min` : 'On time');
+const delayTone = (d) => (d > 0 ? 'late' : d < 0 ? 'early' : 'zero');
+
+/** The next train on `r` at delay `d`: its timetabled time and the time the card will show. */
+function delayPreview(r, d) {
+  const now = clockNow();
+  const x = schedule.routeDepartures(r.from, r.to, now - d * MIN, 1)[0];
+  return x ? { timetabled: x.dep, shown: x.dep + d * MIN } : null;
+}
+
+function delayPreviewHtml(r, d) {
+  const p = delayPreview(r, d);
+  if (!p) return '<span class="sub">No direct trains on this route.</span>';
+  if (!d) return `<span class="dl-cell"><span class="k">Next train</span><span class="v">${clock(p.shown)}</span></span><span class="dl-note">as timetabled</span>`;
+  return `<span class="dl-cell"><span class="k">Timetable</span><span class="v was">${clock(p.timetabled)}</span></span>${ic(
+    'arrow_forward',
+    'dl-arrow',
+  )}<span class="dl-cell"><span class="k">You'll see</span><span class="v now">${clock(p.shown)}</span></span>`;
+}
+
+/** Route-menu card: how early or late this route's trains run, from DELAY_MAX early to DELAY_MAX late. */
+function delayCard(r) {
+  const d = delayOf(r.id);
+  const ticks = Array.from({ length: DELAY_MAX * 2 + 1 }, (_, k) => `<i class="${k === DELAY_MAX ? 'mid' : ''}" style="--k:${k}"></i>`).join('');
+  return `
+      <div class="card dl" data-delay-card="${esc(r.id)}" data-tone="${delayTone(d)}" style="--v:${d}">
+        <div class="dl-head">
+          <span class="dl-icon">${ic('schedule')}</span>
+          <span class="grow"><span class="t">Running early or late?</span><span class="s">Shift this route's train times</span></span>
+        </div>
+        <div class="dl-read" aria-hidden="true"><span class="dl-num">${d ? Math.abs(d) : ''}</span><span class="dl-unit">${d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time'}</span></div>
+        <div class="dl-ctrl">
+          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="-1" aria-label="One minute earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
+          <div class="dl-slider">
+            <div class="dl-track" aria-hidden="true"><b class="dl-fill"></b>${ticks}</div>
+            <input type="range" data-act="delay" data-route="${esc(r.id)}" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="How early or late trains run, in minutes" aria-valuetext="${delayText(d)}" />
+          </div>
+          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="1" aria-label="One minute later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
+        </div>
+        <div class="dl-scale"><span>Early</span><button data-act="delay-reset" data-route="${esc(r.id)}" ${d ? '' : 'disabled'}>On time</button><span>Late</span></div>
+        <div class="dl-preview">${delayPreviewHtml(r, d)}</div>
+      </div>`;
+}
+
+/** Redraws the delay card in place, so the slider under the finger is never replaced. */
+function paintDelayCard(id) {
+  const card = sheetRoot.querySelector(`[data-delay-card="${CSS.escape(id)}"]`);
+  const r = prefs.routes.find((x) => x.id === id);
+  if (!card || !r) return;
+  const d = delayOf(id);
+  card.dataset.tone = delayTone(d);
+  card.style.setProperty('--v', d);
+  card.querySelector('.dl-num').textContent = d ? Math.abs(d) : '';
+  card.querySelector('.dl-unit').textContent = d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time';
+  const input = card.querySelector('input');
+  if (Number(input.value) !== d) input.value = d;
+  input.setAttribute('aria-valuetext', delayText(d));
+  const [less, more] = card.querySelectorAll('.dl-step');
+  less.disabled = d <= -DELAY_MAX;
+  more.disabled = d >= DELAY_MAX;
+  card.querySelector('.dl-scale button').disabled = !d;
+  card.querySelector('.dl-preview').innerHTML = delayPreviewHtml(r, d);
+}
 
 /** Saves a route's delay, keeping an active countdown on the same train it was set for. */
 function setDelay(id, d) {
@@ -1141,6 +1196,7 @@ function setDelay(id, d) {
   // The picked chip keys on departure time, so move it with the train too.
   if (picked.has(id)) picked.set(id, picked.get(id) + moved);
   save({ delays, reminder });
+  paintDelayCard(id);
   render({ force: true });
 }
 
@@ -1284,6 +1340,15 @@ const ACTIONS = {
     openRouteMenu(el.dataset.route);
     render({ force: true });
   },
+  'delay-step': (el) => {
+    buzz();
+    const id = el.dataset.route;
+    setDelay(id, Math.max(-DELAY_MAX, Math.min(DELAY_MAX, delayOf(id) + Number(el.dataset.d))));
+  },
+  'delay-reset': (el) => {
+    buzz();
+    setDelay(el.dataset.route, 0);
+  },
   'remove-route': (el) => {
     const r = routeOf(el);
     history.back();
@@ -1358,9 +1423,6 @@ document.addEventListener('input', (e) => {
   const el = e.target;
   if (el.dataset?.act !== 'delay') return;
   const d = Number(el.value);
-  el.setAttribute('aria-valuetext', delayText(d));
-  const out = el.closest('.card')?.querySelector('.delay-val');
-  if (out) out.textContent = delaySign(d);
   if (d !== delayOf(el.dataset.route)) buzz(6);
   setDelay(el.dataset.route, d);
 });

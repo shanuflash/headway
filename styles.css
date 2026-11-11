@@ -903,15 +903,68 @@ button.hero:active { transform: scale(0.985); }
 .big .n.flow.is-now .now { display: inline; }
 
 .boarding { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -6px; }
-.boarding > span { font-size: 13px; line-height: 18px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--pill); box-shadow: var(--edge); }
-.boarding > .delay { display: inline-flex; align-items: center; gap: 4px; padding-left: 9px; color: var(--warn); background: var(--warn-bg); }
+.boarding > span, .boarding > .delay { font-size: 13px; line-height: 18px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--pill); box-shadow: var(--edge); }
+.boarding > .delay { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px 6px 9px; transition: transform 0.2s var(--spring); }
+.boarding > .delay:active { transform: scale(0.95); }
+.boarding > .delay.late { color: var(--warn); background: var(--warn-bg); }
+.boarding > .delay.early { color: var(--info); background: var(--info-bg); }
 .boarding > .delay .ms { font-size: 16px; }
 
-/* Per-route delay slider in the route menu: -5 (early) to +5 (late), one notch a minute. */
-.delay-head { display: flex; justify-content: space-between; align-items: baseline; }
-.delay-val { font-size: 15px; font-weight: 600; color: var(--tint); font-variant-numeric: tabular-nums; }
-.delay-range { width: 100%; margin: 4px 0 0; accent-color: var(--tint); height: 28px; cursor: pointer; touch-action: pan-y; }
-.delay-ticks { display: flex; justify-content: space-between; font-size: 12px; line-height: 16px; color: var(--sub); margin-top: -4px; }
+/* Per-route delay card in the route menu: DELAY_MAX early to DELAY_MAX late, one notch a minute.
+   --v is the delay; the tone colours everything that moves with it. */
+.card.dl { --tone: var(--sub); --tone-bg: var(--pill); padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 4px; }
+.card.dl[data-tone='late'] { --tone: var(--warn); --tone-bg: var(--warn-bg); }
+.card.dl[data-tone='early'] { --tone: var(--tint); --tone-bg: var(--tint-soft); }
+.dl-head { display: flex; align-items: center; gap: 12px; padding: 0 4px; }
+.dl-head .t { display: block; font-size: 17px; line-height: 22px; font-weight: 600; }
+.dl-head .s { display: block; font-size: 13px; line-height: 18px; color: var(--sub); }
+.dl-icon { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--tone); background: var(--tone-bg); transition: color 0.25s, background 0.25s; }
+.dl-icon .ms { font-size: 20px; }
+.dl-read { display: flex; justify-content: center; align-items: baseline; gap: 6px; height: 52px; margin-top: 8px; color: var(--tone); transition: color 0.25s; }
+.dl-num { font-size: 44px; line-height: 52px; font-weight: 700; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.dl-num:empty { display: none; }
+.dl-unit { font-size: 17px; font-weight: 600; }
+.card.dl[data-tone='zero'] .dl-unit { font-size: 28px; line-height: 52px; font-weight: 700; letter-spacing: -0.4px; }
+
+.dl-ctrl { display: flex; align-items: center; gap: 6px; }
+.dl-step { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--pill); transition: transform 0.2s var(--spring), opacity 0.2s; }
+.dl-step:active:not(:disabled) { transform: scale(0.88); }
+.dl-step:disabled { opacity: 0.35; cursor: default; }
+.dl-step .ms { font-size: 20px; }
+
+/* A native range for touch, keys and screen readers, drawn over a custom track. The thumb is
+   28px wide, so the track's ticks sit 14px in from each end to line up with its centre. */
+.dl-slider { position: relative; flex: 1; height: 44px; --thumb-r: 14px; }
+.dl-track { position: absolute; left: var(--thumb-r); right: var(--thumb-r); top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: var(--pill); }
+.dl-track i { position: absolute; top: 50%; left: calc(var(--k) * 10%); width: 2px; height: 6px; margin: -3px 0 0 -1px; border-radius: 1px; background: var(--chev); opacity: 0.55; }
+.dl-track i.mid { height: 16px; margin-top: -8px; opacity: 1; background: var(--sub); }
+/* Fill grows from the centre (on time) out to the value, either way. */
+.dl-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--tone);
+  left: calc(50% + min(0, var(--v)) * 10%); width: calc(max(var(--v), -1 * var(--v)) * 10%); transition: left 0.18s var(--ease), width 0.18s var(--ease), background 0.25s; }
+.dl-slider input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; touch-action: pan-y; }
+.dl-slider input:focus { outline: none; }
+.dl-slider input::-webkit-slider-runnable-track { height: 44px; background: transparent; }
+.dl-slider input::-moz-range-track { height: 44px; background: transparent; }
+.dl-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; margin-top: 8px; border-radius: 50%; background: #fff; border: 0;
+  box-shadow: 0 0.5px 4px rgba(0, 0, 0, 0.12), 0 6px 13px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); transition: transform 0.2s var(--spring); }
+.dl-slider input::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 0.5px 4px rgba(0, 0, 0, 0.12), 0 6px 13px rgba(0, 0, 0, 0.12); }
+.dl-slider input:active::-webkit-slider-thumb { transform: scale(1.12); }
+.dl-slider input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--tint-soft), 0 0 0 1.5px var(--tint); }
+.dl-slider input:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--tint-soft), 0 0 0 1.5px var(--tint); }
+
+.dl-scale { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin: -6px 56px 0; font-size: 12px; line-height: 16px; color: var(--sub); }
+.dl-scale span:last-child { text-align: right; }
+.dl-scale button { padding: 4px 10px; border-radius: 999px; font-weight: 600; color: var(--tint); }
+.dl-scale button:disabled { color: var(--sub); font-weight: 400; cursor: default; }
+
+.dl-preview { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 52px; margin-top: 10px; padding: 8px 14px; border-radius: 14px; background: var(--fill); font-size: 13px; }
+.dl-cell { display: flex; flex-direction: column; align-items: center; }
+.dl-cell .k { font-size: 12px; line-height: 16px; color: var(--sub); }
+.dl-cell .v { font-size: 17px; line-height: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dl-cell .v.was { color: var(--sub); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.dl-cell .v.now { color: var(--tone); }
+.dl-arrow { color: var(--sub); font-size: 20px; }
+.dl-note { color: var(--sub); }
 
 /* ---------- map tab ---------- */
 .map-card { position: relative; padding: 0; overflow: hidden; border-radius: 30px; }

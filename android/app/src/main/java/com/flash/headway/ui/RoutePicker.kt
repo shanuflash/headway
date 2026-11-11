@@ -37,13 +37,10 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,19 +51,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.flash.headway.app.Coach
-import com.flash.headway.app.DELAY_MAX
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.engine.directDestinations
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
-import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 /** Station first, then a destination reachable without changing trains. */
@@ -233,7 +225,9 @@ fun RouteMenu(
     onRemove: () -> Unit,
     coach: Coach?,
     onCoach: (Coach?) -> Unit,
+    routeId: String,
     delay: Int,
+    delayPreview: (Int) -> DelayPreview?,
     onDelay: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -256,7 +250,7 @@ fun RouteMenu(
                 )
                 Text("Where to stand so you get off near the exit or stairs you use. Shown on the route card.", style = HwType.footnote, color = hw.sub)
             }
-            DelayCard(delay, onDelay)
+            DelayCard(routeId, delay, delayPreview, onDelay)
             val danger = Color(0xFFD70015)
             ListCard(
                 listOf<@Composable () -> Unit>(
@@ -268,58 +262,6 @@ fun RouteMenu(
             )
         }
     }
-}
-
-/** A slider from [DELAY_MAX] min early to [DELAY_MAX] min late, one notch a minute. */
-@Composable
-private fun DelayCard(delay: Int, onDelay: (Int) -> Unit) {
-    val hw = LocalHw.current
-    var value by remember(delay) { mutableFloatStateOf(delay.toFloat()) }
-    val shown = value.roundToInt()
-    Column(
-        Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Delay", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-            Text(delaySign(shown), style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
-        }
-        Slider(
-            value = value,
-            onValueChange = {
-                value = it
-                val d = it.roundToInt()
-                if (d != delay) onDelay(d)
-            },
-            valueRange = -DELAY_MAX.toFloat()..DELAY_MAX.toFloat(),
-            steps = DELAY_MAX * 2 - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = hw.tint,
-                activeTrackColor = hw.tint,
-                inactiveTrackColor = hw.fill2,
-                activeTickColor = hw.card.copy(alpha = 0.6f),
-                inactiveTickColor = hw.sub.copy(alpha = 0.5f),
-            ),
-            modifier = Modifier.semantics { stateDescription = delayText(shown) },
-        )
-        Row {
-            Text("-$DELAY_MAX early", style = HwType.caption, color = hw.sub, modifier = Modifier.weight(1f))
-            Text("0", style = HwType.caption, color = hw.sub)
-            Text("late +$DELAY_MAX", style = HwType.caption, color = hw.sub, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
-        }
-        Text(
-            "If trains on this route reliably leave early or late, shift their times by a few minutes. The countdown, times on the card and the widget use it.",
-            style = HwType.footnote,
-            color = hw.sub,
-        )
-    }
-}
-
-/** "+2 min" for the slider readout. */
-private fun delaySign(d: Int) = when {
-    d > 0 -> "+$d min"
-    d < 0 -> "−${-d} min"
-    else -> "On time"
 }
 
 @Composable
