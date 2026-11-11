@@ -320,7 +320,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                     tint = if (auto != null) hw.tint else null,
                 ) { actions.swap(r.id) }
                 if (isPreview) {
-                    PillIcon(Icons.Rounded.Close, "Close quick look", actions.closePreview)
+                    PillIcon(Icons.Rounded.Close, "Close quick look", onClick = actions.closePreview)
                 } else {
                     PillIcon(Icons.Rounded.MoreHoriz, "Route options") { actions.menu(r.id) }
                 }
