@@ -153,7 +153,6 @@ private fun chipSpan(ms: Long): String {
     }
 }
 
-@Composable
 /**
  * The routes tab as lazy list items: only the cards on screen are composed, so a long list of
  * routes stays smooth. Each card is keyed by its route, so it keeps its picked train as you scroll.
