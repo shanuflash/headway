@@ -33,9 +33,49 @@ data class DayOverride(val date: LocalDate, val type: DayType)
 
 data class DayInfo(val date: LocalDate, val type: DayType, val reason: String)
 
-fun dayTypeFor(date: LocalDate, override: DayOverride?): DayInfo {
+/**
+ * The advisory feed (advisories.json; the shape is documented in js/live.js), as far as the
+ * timetable cares: holidays, and adjustments that change a day's timetable, extend service past
+ * the last train, or delay trains in a window.
+ */
+data class Feed(
+    val updated: String? = null,
+    val holidays: Map<LocalDate, String> = emptyMap(),
+    val notices: List<Notice> = emptyList(),
+    val adjustments: List<Adjustment> = emptyList(),
+)
+
+data class Notice(
+    val id: String,
+    val level: String,
+    val title: String,
+    val body: String? = null,
+    val link: String? = null,
+    val from: Long? = null,
+    val to: Long? = null,
+)
+
+/** One of: [dayType] for [date]; [extendUntil] (minutes past midnight) on [date]; or [delay] minutes from [from] to [to]. */
+data class Adjustment(
+    val date: LocalDate? = null,
+    val dayType: DayType? = null,
+    val extendUntil: Int? = null,
+    val headway: Int? = null,
+    val from: Long? = null,
+    val to: Long? = null,
+    val delay: Int? = null,
+    val lines: Set<Line>? = null,
+    val reason: String? = null,
+)
+
+/** Notices to show at [nowMs]. */
+fun activeNotices(feed: Feed?, nowMs: Long): List<Notice> =
+    feed?.notices.orEmpty().filter { (it.from == null || nowMs >= it.from) && (it.to == null || nowMs <= it.to) }
+
+fun dayTypeFor(date: LocalDate, override: DayOverride?, feed: Feed? = null): DayInfo {
     if (override != null && override.date == date) return DayInfo(date, override.type, "Set by you")
-    Timetable.holidays[date]?.let { return DayInfo(date, DayType.SUNDAY, it) }
+    feed?.adjustments?.firstOrNull { it.date == date && it.dayType != null }?.let { return DayInfo(date, it.dayType!!, it.reason ?: "CMRL advisory") }
+    (feed?.holidays?.get(date) ?: Timetable.holidays[date])?.let { return DayInfo(date, DayType.SUNDAY, it) }
     return when (date.dayOfWeek) {
         DayOfWeek.SUNDAY -> DayInfo(date, DayType.SUNDAY, "Sunday")
         DayOfWeek.SATURDAY -> DayInfo(date, DayType.SATURDAY, "Saturday")
@@ -163,12 +203,12 @@ private class Window(val trips: List<Trip>, val conns: Array<Conn>)
  * then answers routing questions with the Connection Scan Algorithm.
  * Not thread-safe: confine each instance to one thread.
  */
-class Schedule(private val override: DayOverride? = null) {
+class Schedule(private val override: DayOverride? = null, private val feed: Feed? = null) {
     private val days = HashMap<LocalDate, List<Trip>>()
     private val windows = HashMap<LocalDate, Window>()
     private val lastCache = HashMap<String, Journey?>()
 
-    fun today(nowMs: Long): DayInfo = dayTypeFor(serviceDate(nowMs), override)
+    fun today(nowMs: Long): DayInfo = dayTypeFor(serviceDate(nowMs), override, feed)
 
     fun day(date: LocalDate): List<Trip> = days.getOrPut(date) { buildDay(date) }
 
@@ -202,7 +242,7 @@ class Schedule(private val override: DayOverride? = null) {
     }
 
     private fun buildDay(date: LocalDate): List<Trip> {
-        val spec = Timetable.day(dayTypeFor(date, override).type)
+        val spec = Timetable.day(dayTypeFor(date, override, feed).type)
         val base = startOfDay(date)
         fun abs(minutes: Double) = base + (minutes * MINUTE).roundToLong()
         val trips = ArrayList<Trip>()
@@ -215,7 +255,7 @@ class Schedule(private val override: DayOverride? = null) {
         for ((routeId, lineSpec) in patterns) {
             val route = Network.routes.getValue(routeId)
             for (dir in Dir.entries) {
-                for (dep in originTimes(lineSpec, dir)) {
+                for (dep in originTimes(lineSpec, dir) + extensionTimes(date, route.line, lineSpec, dir)) {
                     val stops = stopsFor(route, dir, dep.toDouble()).map { (s, t) -> Stop(s, abs(t)) }
                     trips += Trip(routeId, route.line, dir, stops, date, bandAt(lineSpec.bands, dep))
                 }
@@ -237,7 +277,33 @@ class Schedule(private val override: DayOverride? = null) {
             }
             trips += loops
         }
-        return trips
+        return applyDelays(trips)
+    }
+
+    /** Feed "extendUntil" adjustments add trains past the published last train (event nights). */
+    private fun extensionTimes(date: LocalDate, line: Line, spec: LineSpec, dir: Dir): List<Int> {
+        val ext = feed?.adjustments?.firstOrNull { it.date == date && it.extendUntil != null && (it.lines == null || line in it.lines) }
+            ?: return emptyList()
+        var until = ext.extendUntil!!
+        if (until < ROLLOVER_HOUR * 60) until += 24 * 60
+        val step = ext.headway ?: 15
+        val last = if (dir == Dir.FWD) spec.lastFwd else spec.lastRev
+        return generateSequence(last + step) { it + step }.takeWhile { it <= until }.toList()
+    }
+
+    /** Feed "delay" adjustments shift trains running inside a window, per line. */
+    private fun applyDelays(trips: List<Trip>): List<Trip> {
+        val delays = feed?.adjustments?.filter { it.delay != null && it.from != null && it.to != null }.orEmpty()
+        if (delays.isEmpty()) return trips
+        return trips.map { trip ->
+            var shift = 0L
+            for (d in delays) {
+                if (d.lines != null && trip.line !in d.lines) continue
+                if (trip.stops.last().at < d.from!! || trip.stops.first().at > d.to!!) continue
+                shift += d.delay!! * MINUTE
+            }
+            if (shift == 0L) trip else Trip(trip.route, trip.line, trip.dir, trip.stops.map { Stop(it.station, it.at + shift) }, trip.serviceDate, trip.band)
+        }
     }
 
     private fun window(nowMs: Long): Window {

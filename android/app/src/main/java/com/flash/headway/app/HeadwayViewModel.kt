@@ -7,6 +7,7 @@ import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.DayOverride
+import com.flash.headway.engine.Feed
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
 import com.flash.headway.engine.dayTypeFor
@@ -49,21 +50,28 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private val _previewStatus = MutableStateFlow<RouteStatus?>(null)
     val previewStatus: StateFlow<RouteStatus?> = _previewStatus.asStateFlow()
 
+    /** The advisory feed: the cached copy straight away, then refreshed while the app is open. */
+    private val _feed = MutableStateFlow(Advisories.cached(app))
+    val feed: StateFlow<Feed?> = _feed.asStateFlow()
+
     // Only touched on the engine thread.
     private var schedule = Schedule()
     private var scheduleOverride: DayOverride? = null
+    private var scheduleFeed: Feed? = null
 
     private fun engine(p: Prefs): Schedule {
-        if (p.override != scheduleOverride) {
+        val f = _feed.value
+        if (p.override != scheduleOverride || f !== scheduleFeed) {
             scheduleOverride = p.override
-            schedule = Schedule(p.override)
+            scheduleFeed = f
+            schedule = Schedule(p.override, f)
         }
         return schedule
     }
 
     init {
         viewModelScope.launch {
-            combine(prefs.filterNotNull(), _preview, _plan) { p, pv, plan -> Triple(p, pv, plan) }.collectLatest { (p, pv, plan) ->
+            combine(prefs.filterNotNull(), _preview, _plan, _feed) { p, pv, plan, _ -> Triple(p, pv, plan) }.collectLatest { (p, pv, plan) ->
                 Clock.offset = p.mockOffset
                 var flipping = false
                 while (true) {
@@ -90,6 +98,18 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch {
+            // CMRL advisories: check on open, then every half hour. A failed check keeps the last copy.
+            while (true) {
+                Advisories.refresh(getApplication())?.let { fresh ->
+                    if (fresh != _feed.value) {
+                        _feed.value = fresh
+                        Widgets.updateAll(getApplication())
+                    }
+                }
+                delay(30 * 60_000L)
+            }
+        }
+        viewModelScope.launch {
             // Keep the widgets' copy of the routes current and redraw them when anything changes.
             prefs.filterNotNull().collectLatest { p ->
                 Widgets.mirror(getApplication(), p)
@@ -113,7 +133,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun todayInfo(): DayInfo = dayTypeFor(serviceDate(Clock.now()), prefs.value?.override)
+    fun todayInfo(): DayInfo = dayTypeFor(serviceDate(Clock.now()), prefs.value?.override, _feed.value)
 
     // ---------- actions ----------
 

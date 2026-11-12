@@ -14,6 +14,7 @@ import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import com.flash.headway.MainActivity
 import com.flash.headway.R
+import com.flash.headway.app.Advisories
 import com.flash.headway.app.Clock
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.SavedRoute
@@ -89,12 +90,12 @@ object Widgets {
         val ids = manager.getAppWidgetIds(ComponentName(context, HeadwayWidget::class.java))
         if (ids.isEmpty()) return
         Clock.offset = store(context).getLong("mock", 0L)
-        val schedule = Schedule(override(context))
+        val schedule = Schedule(override(context), Advisories.cached(context))
         for (id in ids) manager.updateAppWidget(id, render(context, id, schedule))
         scheduleTick(context)
     }
 
-    fun render(context: Context, widgetId: Int, schedule: Schedule = Schedule(override(context))): RemoteViews {
+    fun render(context: Context, widgetId: Int, schedule: Schedule = Schedule(override(context), Advisories.cached(context))): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_1x1)
         val routes = routes(context)
         val (assignedId, label) = assigned(context, widgetId)

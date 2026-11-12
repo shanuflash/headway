@@ -56,7 +56,7 @@ object Alerts {
     fun startCountdown(context: Context, route: SavedRoute, dep: Long, delayMin: Int = 0) {
         // Clear any set-off alarm an older version scheduled.
         context.getSystemService(AlarmManager::class.java).cancel(broadcast(context, ACTION_FIRE, null, 0))
-        val following = Schedule().delayedDepartures(route, dep + 1, 1, delayMin).firstOrNull()
+        val following = Schedule(feed = Advisories.cached(context)).delayedDepartures(route, dep + 1, 1, delayMin).firstOrNull()
         postCountdown(context, route, dep, following?.dep, delayMin)
     }
 
@@ -135,7 +135,7 @@ class AlertReceiver : BroadcastReceiver() {
             }
             Alerts.ACTION_NEXT -> if (route != null) {
                 val delayMin = Alerts.delayFrom(intent)
-                val following = Schedule().delayedDepartures(route, dep + 1, 1, delayMin).firstOrNull() ?: return
+                val following = Schedule(feed = Advisories.cached(context)).delayedDepartures(route, dep + 1, 1, delayMin).firstOrNull() ?: return
                 Alerts.startCountdown(context, route, following.dep, delayMin)
                 updatePrefs(context) { it.copy(reminder = Reminder(route.id, following.dep)) }
             }

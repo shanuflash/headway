@@ -115,6 +115,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var whenOpen by remember { mutableStateOf(false) }
     val plan by vm.plan.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
+    val feed by vm.feed.collectAsStateWithLifecycle()
     var stationFor by remember { mutableStateOf<String?>(null) }
     var pickFrom by remember { mutableStateOf<String?>(null) }
     var topUp by remember { mutableStateOf(false) }
@@ -176,6 +177,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         statuses = statuses,
                         preview = previewStatus,
                         prefs = prefs,
+                        feed = feed,
                         now = now,
                         actions = RouteActions(
                             add = { picker = Picker.ADD },

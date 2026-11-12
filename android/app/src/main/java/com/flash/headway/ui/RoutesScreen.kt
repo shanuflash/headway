@@ -1,5 +1,7 @@
 package com.flash.headway.ui
 
+import android.net.Uri
+import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -82,6 +84,8 @@ import com.flash.headway.engine.DestinationGroup
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.engine.routeGroup
+import com.flash.headway.engine.Feed
+import com.flash.headway.engine.activeNotices
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 
@@ -158,6 +162,7 @@ fun LazyListScope.routesScreen(
     statuses: List<RouteStatus>?,
     preview: RouteStatus?,
     prefs: Prefs,
+    feed: Feed?,
     now: () -> Long,
     actions: RouteActions,
 ) {
@@ -176,6 +181,7 @@ fun LazyListScope.routesScreen(
             // In this column a hidden banner takes no space (a lazy item would leave a gap).
             if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
             LoadCardBanner(now)
+            Notices(feed, now)
         }
     }
 
@@ -186,6 +192,41 @@ fun LazyListScope.routesScreen(
         return
     }
     items(statuses, key = { it.route.id }, contentType = { "card" }) { s -> RouteCard(s, prefs, now, actions, isPreview = false) }
+}
+
+/** CMRL advisories in force now (extended hours, holiday timings, disruptions). Tap for the announcement. */
+@Composable
+private fun Notices(feed: Feed?, now: () -> Long) {
+    val notices = activeNotices(feed, now())
+    if (notices.isEmpty()) return
+    val hw = LocalHw.current
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        notices.forEach { n ->
+            val (fg, bg) = if (n.level == "info") hw.info to hw.infoBg else hw.warn to hw.warnBg
+            val link = n.link
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(bg)
+                    .then(
+                        if (link != null) {
+                            Modifier.press(scaleTo = 0.98f) {
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(n.title, style = HwType.subheadStrong, color = fg)
+                n.body?.let { Text(it, style = HwType.footnote, color = fg, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+    }
 }
 
 /** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */

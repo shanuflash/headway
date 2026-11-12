@@ -66,11 +66,17 @@ Terminal departures are exact to the timetable. Times at intermediate stations a
 - **chennaimetrorail.org.** The `wp-json` API exposes only station posts; there are no timetable or fare endpoints.
 - **GTFS-realtime.** None is published. The CMRL and Chennai One apps claim live updates, but neither has a public API.
 
-So "live" here means the advisory feed. A small scheduled worker can maintain that feed by watching the timetable PDF and CMRL's announcements, then write `advisories.json`. Its format is documented in `js/live.js`.
+So "live" here means the advisory feed, `advisories.json` (its format is documented in `js/live.js`). A scheduled GitHub Action keeps it current:
+
+- `.github/workflows/advisories.yml` runs `tools/advisories.mjs` every 2 hours (and on demand from the Actions tab). It reads CMRL's announcements (WordPress posts, or the RSS feed) and the timetable PDF.
+- Service announcements become notices on the Routes screen. Clear-cut ones also change the timetable: "services extended till 12 midnight on 15.11.2026" adds late trains that night, and "Sunday timetable on <date>" switches that day.
+- When the timetable PDF changes, riders see a notice and the job opens an issue, because the times themselves live in `js/timetable.js` and the Android `Timetable.kt`.
+- It commits only when something changed, and keeps entries written by hand (anything without `"auto": true`). A source it can't read is skipped, never wiped.
+- The web app and the Android app (and its widget) download the committed file from `main`, so updates reach riders without an app release. That URL only works while the repository is public.
 
 ## Roadmap to native
 
 1. **Package the PWA.** Wrap it with a TWA (Android) or Capacitor. Then use local notifications for reminders that fire with the app closed.
 2. **Nearest station.** Use GPS with the station coordinates from GTFS `stops.txt` to suggest the closest station.
 3. **Home-screen widget.** Show the next train, the same way NightShift's Glance widget does.
-4. **Advisory worker.** Run it as a Cloudflare Worker or GitHub Action that diffs the timetable PDF and publishes `advisories.json`.
+4. **Advisory worker.** Done: a scheduled GitHub Action (see above).

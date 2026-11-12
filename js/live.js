@@ -23,13 +23,30 @@ async function fetchJson(url) {
   return res.json();
 }
 
+/**
+ * The always-current feed: advisories.json as committed on main, which a scheduled job keeps up
+ * to date from CMRL (tools/advisories.mjs). The copy bundled with the site can lag behind it.
+ */
+export const LIVE_FEED_URL = 'https://raw.githubusercontent.com/shanuflash/headway/main/advisories.json';
+
 function merge(feeds) {
   const out = { updated: null, holidays: {}, notices: [], adjustments: [], sources: [] };
+  // The bundled and live copies are usually the same file: take each entry once, or a delay
+  // would be applied twice.
+  const seenNotices = new Set();
+  const seenAdjustments = new Set();
   for (const f of feeds) {
     if (!f) continue;
     Object.assign(out.holidays, f.holidays);
-    out.notices.push(...(f.notices ?? []));
-    out.adjustments.push(...(f.adjustments ?? []));
+    for (const n of f.notices ?? []) {
+      const key = n.id ?? JSON.stringify(n);
+      if (!seenNotices.has(key)) seenNotices.add(key) && out.notices.push(n);
+    }
+    for (const a of f.adjustments ?? []) {
+      const { source, auto, ...rest } = a;
+      const key = JSON.stringify(rest);
+      if (!seenAdjustments.has(key)) seenAdjustments.add(key) && out.adjustments.push(a);
+    }
     if (f.updated && (!out.updated || f.updated > out.updated)) out.updated = f.updated;
     if (f.source) out.sources.push(f.source);
   }
@@ -49,7 +66,7 @@ export function createFeed({ remoteUrl, onChange }) {
   }
 
   async function refresh() {
-    const urls = ['./advisories.json', remoteUrl].filter(Boolean);
+    const urls = ['./advisories.json', LIVE_FEED_URL, remoteUrl].filter(Boolean);
     const results = await Promise.allSettled(urls.map(fetchJson));
     const ok = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
     if (!ok.length) {
@@ -59,7 +76,8 @@ export function createFeed({ remoteUrl, onChange }) {
       try {
         localStorage.setItem(CACHE_KEY, JSON.stringify(feed));
       } catch {}
-      const remoteOk = remoteUrl && results[results.length - 1].status === 'fulfilled';
+      // Live: the always-current copy (or your own feed) came through, not just the bundled one.
+      const remoteOk = results.slice(1).some((r) => r.status === 'fulfilled');
       state = { status: remoteOk ? 'live' : 'official', feed, error: null };
     }
     onChange(state);
