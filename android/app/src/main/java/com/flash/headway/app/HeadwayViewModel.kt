@@ -149,7 +149,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         val p = prefs.value ?: return@withContext emptyList()
         val s = engine(p)
         val now = Clock.now()
-        return com.flash.headway.engine.directDestinations(id).map { g ->
+        com.flash.headway.engine.directDestinations(id).map { g ->
             val trains = g.terminals
                 .flatMap { t -> s.routeDepartures(id, t, now, 4).map { it to t } }
                 .sortedBy { it.first.dep }
