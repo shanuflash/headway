@@ -146,13 +146,18 @@ test('every station is reachable, directly or with a change', () => {
   assert.deepEqual(transferDestinations('guindy').get('porur-junction'), { changes: 2, via: ['alandur', 'vadapalani'] });
 });
 
-test('an extra change is not worth leaving a couple of minutes later', () => {
+test('the fastest trip wins; fewer changes only settle equally fast ones', () => {
   const s = new Schedule();
   const js = s.journeys('airport', 'poonamallee-bypass', at(2026, 11, 12, 8, 0), 8);
-  // 8:42 Blue + Green + Yellow arrives with the 8:40 Inter-corridor + Yellow: keep the one change.
   const by = (hhmmArr) => js.find((j) => hhmm(j.arr) === hhmmArr);
-  assert.equal(by('09:40').legs.length, 2);
-  assert.equal(by('09:50').legs.length, 2);
-  // Only the 9:30 arrival needs two changes: the 8:40 Inter-corridor misses the 9:00 Yellow.
-  assert.equal(by('09:30').legs.length, 3);
+  // Arriving 9:40: the 8:42 Blue + Green + Yellow takes 58 min, the 8:40 Inter-corridor + Yellow 60.
+  assert.equal(hhmm(by('09:40').dep), '08:42');
+  assert.equal(by('09:40').legs.length, 3);
+  // Arriving 9:20: the 8:28 Inter-corridor + Yellow (52 min) is the quickest way.
+  assert.equal(by('09:20').legs.length, 2);
+  // Every trip listed is the latest start for its arrival, so the quickest one.
+  for (const j of js) {
+    const later = s.plan('airport', 'poonamallee-bypass', j.dep + 60_000);
+    assert.ok(!later || later.arr > j.arr, `${hhmm(j.dep)} is the quickest way to ${hhmm(j.arr)}`);
+  }
 });

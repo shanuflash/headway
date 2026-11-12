@@ -317,8 +317,9 @@ export class Schedule {
       }
       const en = enter.get(c.trip);
       if (!en) continue;
+      // Earliest arrival first; arriving at the same time, the way with fewer changes.
       const cur = earliest.get(c.to);
-      if (cur === undefined || c.arr < cur) {
+      if (cur === undefined || c.arr < cur || (c.arr === cur && en.legs + 1 < legCount.get(c.to))) {
         earliest.set(c.to, c.arr);
         legCount.set(c.to, en.legs + 1);
         ptr.set(c.to, { enter: en.conn, exit: c });
@@ -344,14 +345,17 @@ export class Schedule {
   journeys(from, to, startMs, count = 4) {
     const out = [];
     let t = startMs;
-    // A later start that arrives just as early replaces the earlier one, unless it takes more
-    // changes: leaving 2 minutes later isn't worth an extra change. Allow plenty of steps.
-    for (let n = 0; n < count * 20 && out.length < count; n++) {
+    // Fastest first: a later start that arrives just as early is the quicker trip, so it replaces
+    // the earlier one, even with more changes. (Equally quick ways are settled in scan(): fewer
+    // changes.) Later starts can replace earlier ones, so allow plenty of steps.
+    // Stop only at a trip that arrives after the last one listed, so that one is settled too.
+    for (let n = 0; n < count * 20; n++) {
       const j = this.plan(from, to, t);
       if (!j) break;
       const same = out.findIndex((o) => o.arr === j.arr);
-      if (same < 0) out.push(j);
-      else if (j.legs.length <= out[same].legs.length) out[same] = j;
+      if (same >= 0) out[same] = j;
+      else if (out.length < count) out.push(j);
+      else break;
       t = j.dep + 1;
     }
     return out;

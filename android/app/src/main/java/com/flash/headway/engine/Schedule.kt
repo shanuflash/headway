@@ -406,8 +406,9 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
                 if (ready <= c.dep && sameDay && (cur == null || legs <= cur.second)) enter[c.trip] = c to legs
             }
             val en = enter[c.trip] ?: continue
+            // Earliest arrival first; arriving at the same time, the way with fewer changes.
             val cur = earliest[c.to]
-            if (cur == null || c.arr < cur) {
+            if (cur == null || c.arr < cur || (c.arr == cur && en.second + 1 < legCount.getValue(c.to))) {
                 earliest[c.to] = c.arr
                 legCount[c.to] = en.second + 1
                 ptr[c.to] = en.first to c
@@ -434,12 +435,20 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
         val out = ArrayList<Journey>()
         var t = startMs
         var n = 0
-        while (n++ < count * 20 && out.size < count) {
+        // Stop only at a trip that arrives after the last one listed, so that one is settled too.
+        while (n++ < count * 20) {
             val j = plan(from, to, t) ?: break
-            // A later start that arrives just as early replaces the earlier one, unless it takes
-            // more changes: leaving 2 minutes later isn't worth an extra change.
+            // Fastest first: a later start that arrives just as early is the quicker trip, so it
+            // replaces the earlier one, even with more changes. (Equally quick ways are settled in
+            // scan(): fewer changes.)
             val same = out.indexOfFirst { it.arr == j.arr }
-            if (same < 0) out += j else if (j.legs.size <= out[same].legs.size) out[same] = j
+            if (same >= 0) {
+                out[same] = j
+            } else if (out.size < count) {
+                out += j
+            } else {
+                break
+            }
             t = j.dep + 1
         }
         return out

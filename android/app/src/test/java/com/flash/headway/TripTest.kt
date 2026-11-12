@@ -99,4 +99,20 @@ class TripTest {
             assertNull(leave.nextChange)
         }
     }
+
+    @Test
+    fun theFastestTripWinsAndFewerChangesSettleTies() {
+        val s = Schedule()
+        val start = LocalDateTime.of(2026, 11, 12, 8, 0).atZone(IST).toInstant().toEpochMilli()
+        val js = s.journeys("airport", "poonamallee-bypass", start, 8)
+        assertEquals(8, js.size)
+        // Each trip is the latest start for its arrival, so the quickest way to it, the last one too.
+        for (j in js) {
+            val later = s.plan("airport", "poonamallee-bypass", j.dep + MINUTE)
+            assertTrue(later == null || later.arr > j.arr)
+        }
+        // Arriving 9:40, the 8:42 with two changes (58 min) beats the 8:40 with one (60 min).
+        val at940 = js.first { java.time.Instant.ofEpochMilli(it.arr).atZone(IST).let { z -> z.hour == 9 && z.minute == 40 } }
+        assertEquals(3, at940.legs.size)
+    }
 }
