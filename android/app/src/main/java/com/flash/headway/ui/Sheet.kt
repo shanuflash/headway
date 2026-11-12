@@ -72,8 +72,13 @@ fun HwSheet(
         anim?.cancel()
         anim = scope.launch {
             val spec: AnimationSpec<Float> = if (target == 0f) spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow) else tween(220)
-            animate(hidden, target, animationSpec = spec) { v, _ -> hidden = v }
-            then?.invoke()
+            // A close must always finish (run its action and dismiss), even if interrupted:
+            // a sheet left half-closed would keep its scrim over the screen.
+            try {
+                animate(hidden, target, animationSpec = spec) { v, _ -> hidden = v }
+            } finally {
+                then?.invoke()
+            }
         }
     }
 
@@ -94,6 +99,8 @@ fun HwSheet(
     BackHandler { close(onDismiss) }
 
     fun dragBy(dy: Float) {
+        // Closing already: a drag or scroll now mustn't cancel the close.
+        if (closing) return
         anim?.cancel()
         hidden = (hidden + dy / heightPx).coerceIn(0f, 1f)
     }

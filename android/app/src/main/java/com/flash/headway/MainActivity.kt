@@ -31,7 +31,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Alerts.createChannels(this)
-        openRoute.value = intent?.getStringExtra(EXTRA_ROUTE)
+        // Only on a fresh start: after a rotation or theme change the route was already shown.
+        if (savedInstanceState == null) openRoute.value = intent?.getStringExtra(EXTRA_ROUTE)
+        intent?.removeExtra(EXTRA_ROUTE)
         enableEdgeToEdge()
         setContent {
             val vm: HeadwayViewModel = viewModel()

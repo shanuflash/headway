@@ -87,6 +87,9 @@ import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 
 enum class Tab { ROUTES, LINES, MAP }
 
@@ -122,17 +125,27 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var pickFrom by remember { mutableStateOf<String?>(null) }
     var topUp by remember { mutableStateOf(false) }
 
-    // A widget tap opens the app on that route.
+    // The routes list, kept here so its place survives tab switches and a widget tap can scroll it.
+    val routesList = rememberLazyListState()
+
+    // A widget tap opens the app on that route (it may have flipped since), scrolled to its card.
     LaunchedEffect(openRoute) {
-        if (openRoute != null) {
-            vm.closePreview()
-            settings = false
-            tab = Tab.ROUTES
-            onRouteOpened()
-        }
+        val id = openRoute ?: return@LaunchedEffect
+        vm.closePreview()
+        settings = false
+        tab = Tab.ROUTES
+        val i = prefs.routes.indexOfFirst { it.id == id || it.id == reverseId(id) }
+        // Item 0 is the title and banners; the cards follow in saved order.
+        if (i >= 0) routesList.animateScrollToItem(i + 1)
+        onRouteOpened()
     }
 
     BackHandler(enabled = settings) { settings = false }
+    // Back closes a quick look before it leaves the app. (Sheets, composed later, go first.)
+    BackHandler(enabled = !settings && previewStatus != null) { vm.closePreview() }
+
+    // Each screen keeps its saved state (picked trains, scroll) while another is showing.
+    val screens = rememberSaveableStateHolder()
 
     // The bell asks for permission and saves the countdown at once; it can only be posted once
     // allowed. Refused, there's no countdown, so the bell goes out rather than pretend.
@@ -153,7 +166,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
 
     fun remind(s: RouteStatus, dep: Long) {
-        if (previewStatus?.route?.id == s.route.id) {
+        if (s.isPreview) {
             toast("Save the route to set a reminder")
             return
         }
@@ -181,9 +194,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             },
             label = "screens",
         ) { key ->
+            screens.SaveableStateProvider(key) {
             if (key == Tab.ROUTES.name) {
                 // A lazy list, so only the route cards on screen are composed and drawn.
-                ScreenLazy {
+                ScreenLazy(routesList) {
                     routesScreen(
                         statuses = statuses,
                         preview = previewStatus,
@@ -206,6 +220,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             },
                             whenOpen = { whenOpen = true },
                             trainDelay = { id, at -> trainDelayFor = id to at },
+                            swapPreview = vm::swapPreview,
                         ),
                     )
                 }
@@ -235,6 +250,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         ),
                     )
                 }
+            }
             }
         }
 
@@ -381,11 +397,12 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 }
 
 @Composable
-private fun ScreenLazy(content: LazyListScope.() -> Unit) {
+private fun ScreenLazy(state: LazyListState, content: LazyListScope.() -> Unit) {
     // The same frame as ScreenColumn, as a lazy list.
     Box(Modifier.fillMaxSize().background(LocalHw.current.bg), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
-            Modifier
+            state = state,
+            modifier = Modifier
                 .widthIn(max = 560.dp)
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars),

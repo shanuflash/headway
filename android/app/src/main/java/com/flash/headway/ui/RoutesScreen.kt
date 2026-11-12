@@ -89,6 +89,8 @@ import com.flash.headway.engine.Feed
 import com.flash.headway.engine.activeNotices
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 
 class RouteActions(
     val add: () -> Unit,
@@ -105,6 +107,8 @@ class RouteActions(
     val whenOpen: () -> Unit = {},
     /** Opens one train's own delay: the route id and the train's timetabled departure. */
     val trainDelay: (String, Long) -> Unit = { _, _ -> },
+    /** Flips the quick look (not a saved card with the same stations). */
+    val swapPreview: () -> Unit = {},
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -393,7 +397,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                     Icons.Rounded.SwapVert,
                     if (auto != null) "Switch direction (switches by itself at ${minutesLabel(auto.at)})" else "Switch direction",
                     tint = if (auto != null) hw.tint else null,
-                ) { actions.swap(r.id) }
+                ) { if (isPreview) actions.swapPreview() else actions.swap(r.id) }
                 if (isPreview) {
                     PillIcon(Icons.Rounded.Close, "Close quick look", onClick = actions.closePreview)
                 } else {
@@ -650,7 +654,10 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
     val scroll = rememberScrollState()
     // A planned card may start on a chip off to the right (arrive by: the last one).
     LaunchedEffect(s.plan, s.departures.size) {
-        if (s.plan != null && s.departures.size > 1) scroll.scrollTo(scroll.maxValue * selected / (s.departures.size - 1))
+        if (s.plan == null || s.departures.size < 2) return@LaunchedEffect
+        // maxValue is Int.MAX_VALUE until the row is laid out: wait for the real one.
+        val max = snapshotFlow { scroll.maxValue }.first { it != Int.MAX_VALUE }
+        if (max > 0) scroll.scrollTo((max.toLong() * selected / (s.departures.size - 1)).toInt())
     }
     Row(
         Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 20.dp),

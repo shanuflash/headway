@@ -26,6 +26,8 @@ data class RouteStatus(
     val plan: PlanTime? = null,
     /** The option shown first: the next train, or for "arrive by", the latest one that makes it. */
     val best: Int = 0,
+    /** A quick look, not a saved route (it may be the same stations as one). */
+    val isPreview: Boolean = false,
 ) {
     val next: RouteDeparture? get() = departures.firstOrNull()
 

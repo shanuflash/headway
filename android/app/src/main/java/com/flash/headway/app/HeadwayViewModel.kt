@@ -91,7 +91,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                             pv?.let { if (plan != null) planStatus(s, it, plan, p.count) else routeStatus(s, it, now, p.lastWarn, p.count) }
                     }
                     _statuses.value = list
-                    _previewStatus.value = previewNow
+                    _previewStatus.value = previewNow?.copy(isPreview = true)
                     // Recompute the moment a shown train leaves, else every 15 s.
                     val boundary = (list + listOfNotNull(previewNow)).mapNotNull { it.nextChange }.minOrNull()
                     val wait = boundary?.let { (it - Clock.now() + 300).coerceIn(300L, 15_000L) } ?: 15_000L
@@ -152,20 +152,34 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Flips a route to the other direction in place, keeping its spot in the list. */
     fun swapRoute(id: String) {
-        val pv = _preview.value
-        if (pv != null && pv.id == id) {
-            _preview.value = SavedRoute(pv.to, pv.from)
-            return
-        }
-        if (prefs.value?.reminder?.routeId == id) Alerts.stopCountdown(getApplication())
+        val p0 = prefs.value ?: return
+        val r0 = p0.routes.firstOrNull { it.id == id } ?: return
+        val reverseSaved = p0.routes.any { it.id == reverseId(id) }
+        // Flipping in place changes the route, so its countdown ends; trading places doesn't.
+        if (!reverseSaved && p0.reminder?.routeId == id) Alerts.stopCountdown(getApplication())
         update { p ->
-            val r = p.routes.firstOrNull { it.id == id } ?: return@update p
-            val flipped = SavedRoute(r.to, r.from)
+            val i = p.routes.indexOfFirst { it.id == id }
+            if (i < 0) return@update p
+            val j = p.routes.indexOfFirst { it.id == reverseId(id) }
+            if (j >= 0) {
+                // Both directions are saved: trade places, so this spot shows the return trip and
+                // neither card is lost.
+                val routes = p.routes.toMutableList()
+                routes[i] = p.routes[j]
+                routes[j] = p.routes[i]
+                return@update p.copy(routes = routes)
+            }
             p.copy(
-                routes = p.routes.filterNot { it.id == flipped.id }.map { if (it.id == id) flipped else it },
+                routes = p.routes.map { if (it.id == id) SavedRoute(r0.to, r0.from) else it },
                 reminder = p.reminder?.takeIf { it.routeId != id },
             )
         }
+    }
+
+    /** Flips the quick look to the other direction. */
+    fun swapPreview() {
+        val pv = _preview.value ?: return
+        _preview.value = SavedRoute(pv.to, pv.from)
     }
 
     fun addReturn(id: String) {
@@ -176,9 +190,16 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     fun removeRoute(id: String) {
         if (prefs.value?.reminder?.routeId == id) Alerts.stopCountdown(getApplication())
         update { p ->
+            val routes = p.routes.filterNot { it.id == id }
+            val pair = p.routes.firstOrNull { it.id == id }?.let(::pairKey)
+            // Its settings go with it, so adding it again starts fresh.
             p.copy(
-                routes = p.routes.filterNot { it.id == id },
+                routes = routes,
                 reminder = p.reminder?.takeIf { it.routeId != id },
+                coaches = p.coaches - id,
+                delays = p.delays - id,
+                trainDelays = p.trainDelays - id,
+                flips = if (pair != null && routes.none { pairKey(it) == pair }) p.flips - pair else p.flips,
             )
         }
     }
