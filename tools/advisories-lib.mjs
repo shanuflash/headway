@@ -22,7 +22,10 @@ export const LOOKBACK_DAYS = 10;
 const RELEVANT =
   /\b(trains?|train services?|metro (rail )?services?|services will|timings?|time ?table|extended|extension of (metro )?services|frequency|holiday|sunday (time ?table|timings?)|disrupt\w*|suspend\w*|delay\w*|closed|closure|technical (glitch|issue|snag|fault)|maintenance work|shuttle|first train|last train)\b/i;
 const IRRELEVANT =
-  /\b(tenders?|recruit\w*|careers?|vacanc\w*|corrigendum|e-?auction|awards?|csr|bids?|rfp|eoi|walk-?in|results?|examination|interview|empanelment|quotation|procurement|contract)\b/i;
+  /\b(tenders?|recruit\w*|careers?|vacanc\w*|corrigendum|e-?auction|awards?|csr|bids?|rfp|eoi|walk-?in|results?|examination|interview|empanelment|quotation|procurement|contract|deadline|applications?|registration)\b/i;
+/** A title that is plainly about trains running (or not): relevant whatever else it mentions. */
+const SERVICE_TITLE =
+  /\b(trains?|train services?|metro (rail )?services?|services)\b[^.]*\b(delay\w*|suspend\w*|extend\w*|resum\w*|disrupt\w*|cancel\w*|halted|stopped|curtail\w*|short[- ]terminat\w*)\b|\b(delay\w*|suspend\w*|extend\w*|disrupt\w*|cancel\w*|halted|stopped)\b[^.]*\b(trains?|services?)\b/i;
 const ALERT = /\b(suspend\w*|disrupt\w*|cancel\w*|closed|closure|not (be )?(available|operational)|technical (glitch|issue|snag|fault)|halted|stopped)\b/i;
 const WARN = /\b(extend\w*|delay\w*|holiday|sunday (time ?table|timings?|schedule)|revised|maintenance|divert\w*|reduced|change in|modified)\b/i;
 
@@ -64,8 +67,10 @@ export function linesIn(text) {
 /** Whether a post is about running trains, and how serious it is. */
 export function classify({ title, text }) {
   const all = `${title}\n${text}`;
-  const relevant = RELEVANT.test(title) || (RELEVANT.test(all) && !IRRELEVANT.test(title));
-  if (!relevant || IRRELEVANT.test(title)) return { relevant: false };
+  // A disruption in the title always counts ("services suspended due to contract staff strike");
+  // otherwise tenders, recruitment and the like are out, and the rest must be about trains.
+  const relevant = ALERT.test(title) || SERVICE_TITLE.test(title) || (!IRRELEVANT.test(title) && (RELEVANT.test(title) || RELEVANT.test(all)));
+  if (!relevant) return { relevant: false };
   const level = ALERT.test(all) ? 'alert' : WARN.test(all) ? 'warn' : 'info';
   return { relevant: true, level, lines: linesIn(all) };
 }
@@ -81,20 +86,26 @@ export function datesIn(text, postIso) {
   const add = (y, m, d) => {
     if (m < 1 || m > 12 || d < 1 || d > 31) return;
     if (!y) {
-      y = post.getUTCFullYear();
-      // "5 January" in a December post is next year.
-      if (Date.UTC(y, m - 1, d) < post.getTime() - 7 * DAY) y += 1;
+      // No year: the one that puts the date nearest the post ("5 January" in a December post is
+      // next year; "31 December" in a January post is last year).
+      const py = post.getUTCFullYear();
+      y = [py - 1, py, py + 1].reduce((best, c) =>
+        Math.abs(Date.UTC(c, m - 1, d) - post.getTime()) < Math.abs(Date.UTC(best, m - 1, d) - post.getTime()) ? c : best,
+      );
     }
     if (y < 100) y += 2000;
     out.add(isoDate(y, m, d));
   };
   for (const [, d, m, y] of text.matchAll(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/g)) add(Number(y), Number(m), Number(d));
-  const month = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
-  for (const [, d, mo, y] of text.matchAll(new RegExp(`\\b(\\d{1,2})(?!\\d)(?:st|nd|rd|th)?\\s+${month}\\.?,?\\s*(\\d{4})?`, 'gi'))) {
-    add(y ? Number(y) : 0, MONTHS.indexOf(mo.slice(0, 3).toLowerCase()) + 1, Number(d));
+  // Whole words only ("Gate 3 marked" is not 3 March). "may" is a month only with a year, an
+  // ordinal or a capital M ("Line 2 may be affected" is not 2 May).
+  const month = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\b';
+  const real = (mo, ord, y) => mo.toLowerCase() !== 'may' || Boolean(y || ord) || mo[0] === 'M';
+  for (const [, d, ord, mo, y] of text.matchAll(new RegExp(`\\b(\\d{1,2})(?!\\d)(st|nd|rd|th)?\\s+${month}\\.?,?\\s*(\\d{4})?`, 'gi'))) {
+    if (real(mo, ord, y)) add(y ? Number(y) : 0, MONTHS.indexOf(mo.slice(0, 3).toLowerCase()) + 1, Number(d));
   }
-  for (const [, mo, d, y] of text.matchAll(new RegExp(`\\b${month}\\.?\\s+(\\d{1,2})(?!\\d)(?:st|nd|rd|th)?,?\\s*(\\d{4})?`, 'gi'))) {
-    add(y ? Number(y) : 0, MONTHS.indexOf(mo.slice(0, 3).toLowerCase()) + 1, Number(d));
+  for (const [, mo, d, ord, y] of text.matchAll(new RegExp(`\\b${month}\\.?\\s+(\\d{1,2})(?!\\d)(st|nd|rd|th)?,?\\s*(\\d{4})?`, 'gi'))) {
+    if (real(mo, ord, y)) add(y ? Number(y) : 0, MONTHS.indexOf(mo.slice(0, 3).toLowerCase()) + 1, Number(d));
   }
   return [...out].sort();
 }
@@ -105,7 +116,9 @@ export function datesIn(text, postIso) {
  */
 export function untilTimeIn(text) {
   if (/\b(till|until|up ?to)\s+(12\s*)?midnight\b/i.test(text)) return '00:00';
-  const m = text.match(/\b(?:till|until|up ?to)\s+(\d{1,2})(?:[.:](\d{2}))?\s*(a\.?\s?m\.?|p\.?\s?m\.?|hrs|hours)?/i);
+  // Not part of a date ("till 23.11.2026"); of the rest, one marked am/pm/hrs beats a bare 23:30.
+  const all = [...text.matchAll(/\b(?:till|until|up ?to)\s+(\d{1,2})(?:[.:](\d{2}))?(?![./-]?\d)\s*(a\.?\s?m\.?|p\.?\s?m\.?|hrs|hours)?/gi)];
+  const m = all.find((x) => x[3]) ?? all.find((x) => x[2]);
   if (!m) return null;
   let h = Number(m[1]);
   const min = Number(m[2] ?? 0);
@@ -119,14 +132,23 @@ export function untilTimeIn(text) {
 
 /** Timetable changes a post states plainly. Anything less clear stays a notice only. */
 export function adjustmentsFrom(post) {
-  const text = `${post.title}\n${post.text}`;
-  const dates = datesIn(text, post.date);
-  const lines = linesIn(text);
   const out = [];
-  if (!dates.length) return out;
+  if (!classify(post).relevant) return out;
+  const text = `${post.title}\n${post.text}`;
+  const lines = linesIn(text);
+  // Sentences, so a change applies only to the dates it's announced with ("Sunday timetable on
+  // the 15th. Regular service resumes on the 16th" changes the 15th only).
+  const sentences = text.split(/\n+|(?<=[.!?])\s+(?=[A-Z])/);
+  const datesWith = (phrase) => {
+    const own = sentences.filter((x) => phrase.test(x)).flatMap((x) => datesIn(x, post.date));
+    if (own.length) return [...new Set(own)].sort();
+    // The phrase is in the title and the date elsewhere: any date not about going back to normal.
+    return [...new Set(sentences.filter((x) => !/\b(resum\w*|regular|normal|usual)\b/i.test(x)).flatMap((x) => datesIn(x, post.date)))].sort();
+  };
   // Extended hours: "services will be extended till 12 midnight on 15.11.2026".
   if (/\bextend\w*\b/i.test(text) && /\b(trains?|services?|metro)\b/i.test(text)) {
     const until = untilTimeIn(text);
+    const dates = datesWith(/\bextend\w*\b/i);
     const [h] = (until ?? '').split(':').map(Number);
     if (until && (h >= 21 || h < 3)) {
       const every = text.match(/\b(?:every|frequency of|interval of|headway of)\s+(\d{1,2})\s*min/i);
@@ -144,8 +166,9 @@ export function adjustmentsFrom(post) {
     }
   }
   // Holiday running: "Sunday timetable will be followed on <date>".
-  if (/\b(sunday|holiday)\s+(time ?table|timings?|schedule)\b/i.test(text)) {
-    for (const date of dates) out.push({ date, dayType: 'sunday', reason: post.title, auto: true, source: post.link });
+  const holiday = /\b(sunday|holiday)\s+(time ?table|timings?|schedule)\b/i;
+  if (holiday.test(text)) {
+    for (const date of datesWith(holiday)) out.push({ date, dayType: 'sunday', reason: post.title, auto: true, source: post.link });
   }
   return out;
 }
@@ -257,7 +280,7 @@ export function nextFeed(prev, { posts, timetable }, nowMs) {
   if (timetable) {
     const seen = prev.watch?.timetables ?? {};
     const was = seen[timetable.url];
-    const newUpload = !was && Object.keys(seen).length > 0 && timetable.fromLibrary;
+    const newUpload = !was && Object.keys(seen).length > 0 && timetable.fromLibrary && !Object.values(seen).includes(timetable.sha256);
     if ((was && was !== timetable.sha256) || newUpload) {
       timetableChanged = true;
       feed.notices = feed.notices.filter((n) => !n.id.startsWith('timetable-'));
@@ -273,7 +296,8 @@ export function nextFeed(prev, { posts, timetable }, nowMs) {
       });
     }
     // The newest few addresses are enough.
-    const kept = Object.entries({ ...seen, [timetable.url]: timetable.sha256 }).slice(-5);
+    const rest = Object.entries(seen).filter(([url]) => url !== timetable.url);
+    const kept = [...rest, [timetable.url, timetable.sha256]].slice(-5);
     feed.watch = { ...(feed.watch ?? {}), timetables: Object.fromEntries(kept) };
   }
 

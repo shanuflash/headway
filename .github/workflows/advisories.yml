@@ -13,6 +13,7 @@ name: Advisories
 permissions:
   contents: write # commits advisories.json
   issues: write # opens an issue when the timetable PDF changes
+  actions: write # keeps this schedule switched on (see the last step)
 
 concurrency:
   group: advisories
@@ -32,18 +33,8 @@ jobs:
       - name: Check CMRL for updates
         run: node tools/advisories.mjs
 
-      - name: Commit advisories.json if it changed
-        run: |
-          if git diff --quiet -- advisories.json; then
-            echo "No change."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add advisories.json
-          git commit -m "Advisories: update from CMRL"
-          git push
-
+      # Before the commit: if opening the issue fails, the new timetable fingerprint isn't saved
+      # either, so the next run sees the change again and retries instead of losing it.
       - name: Open an issue when the timetable changes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,3 +46,30 @@ jobs:
           else
             gh issue create --title "$title" --body-file "$RUNNER_TEMP/timetable-issue.md"
           fi
+
+      - name: Commit advisories.json if it changed
+        run: |
+          if git diff --quiet -- advisories.json; then
+            echo "No change."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add advisories.json
+          git commit -m "Advisories: update from CMRL"
+          # Someone may have pushed during the run: rebase onto it and try again.
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            sleep $((attempt * 5))
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+          done
+          echo "Could not push advisories.json." >&2
+          exit 1
+
+      # GitHub turns off schedules in repositories with no activity for 60 days, and this job only
+      # commits when CMRL posts something. Enabling it each run keeps the schedule on.
+      - name: Keep the schedule switched on
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/advisories.yml/enable" || true

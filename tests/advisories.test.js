@@ -110,3 +110,37 @@ test('the engine runs extra trains on a night the feed extends', () => {
   const extended = new Schedule({ feed }).day('2026-11-15').trips.length;
   assert.ok(extended > plain, `${extended} > ${plain}`);
 });
+
+test('dates are whole words, and "may" the verb is not May', () => {
+  const P = '2026-11-13T00:00:00Z';
+  assert.deepEqual(datesIn('Gate 3 marked for exit; 2 separate queues at exit 2 junction', P), []);
+  assert.deepEqual(datesIn('Line 2 may be affected for may 15 minutes', P), []);
+  assert.deepEqual(datesIn('on 2nd May and on 3 May 2027', P), ['2027-05-02', '2027-05-03']);
+  assert.deepEqual(datesIn('closed on 31st December', '2027-01-02T00:00:00Z'), ['2026-12-31'], 'the year nearest the post');
+});
+
+test('a date is never read as the time services run till', () => {
+  assert.equal(untilTimeIn('from 21.11.2026 till 23.11.2026, trains until 11 PM'), '23:00');
+  assert.equal(untilTimeIn('till 22.11.2026'), null);
+});
+
+test('a change applies only to the dates it is announced with', () => {
+  const p = post(201, '2026-11-13T00:00:00Z', 'Train timings', 'Sunday timetable on 15.11.2026. Regular weekday timetable resumes on 16.11.2026.');
+  assert.deepEqual(adjustmentsFrom(p).map((a) => `${a.date}:${a.dayType}`), ['2026-11-15:sunday']);
+});
+
+test('only posts about running trains change the timetable; disruptions always count', () => {
+  const tender = post(202, '2026-11-13T00:00:00Z', 'Tender: bid submission extended', 'Bid submission extended till 11.30 PM on 20.11.2026. Holiday schedule on 21.11.2026.');
+  assert.deepEqual(adjustmentsFrom(tender), []);
+  assert.equal(classify(post(203, '2026-11-13T00:00:00Z', 'Train services suspended due to contract staff strike')).relevant, true);
+  assert.equal(classify(post(204, '2026-11-13T00:00:00Z', 'Blue Line trains delayed; exam results day rush')).relevant, true);
+  assert.equal(classify(post(205, '2026-11-13T00:00:00Z', 'Deadline extended for student travel card applications')).relevant, false);
+});
+
+test('the same PDF at a new address is not a new timetable', () => {
+  const a = { url: 'https://example.org/Time-Table.pdf', sha256: 'a'.repeat(64), bytes: 10 };
+  const base = nextFeed(empty, { posts: [], timetable: a }, NOW);
+  const moved = nextFeed(base.feed, { posts: [], timetable: { ...a, url: 'https://example.org/2026/12/Time-Table.pdf', fromLibrary: true } }, NOW);
+  assert.equal(moved.timetableChanged, false);
+  assert.equal(Object.keys(moved.feed.watch.timetables).at(-1), 'https://example.org/2026/12/Time-Table.pdf');
+});
