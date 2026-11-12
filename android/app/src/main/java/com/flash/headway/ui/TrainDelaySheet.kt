@@ -19,6 +19,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,7 +48,9 @@ fun TrainDelaySheet(
     onDismiss: () -> Unit,
 ) {
     val hw = LocalHw.current
-    val d = own ?: routeDelay
+    // Its own value while dragging, so the thumb never waits on the saved setting.
+    var d by remember(title) { mutableIntStateOf(own ?: routeDelay) }
+    var following by remember(title) { mutableStateOf(own == null) }
     val tone by animateColorAsState(
         when {
             d > 0 -> hw.warn
@@ -53,7 +59,13 @@ fun TrainDelaySheet(
         },
         label = "train delay tone",
     )
-    fun set(v: Int) = onChange(v.coerceIn(-DELAY_MAX, DELAY_MAX))
+    fun set(v: Int) {
+        val c = v.coerceIn(-DELAY_MAX, DELAY_MAX)
+        if (c == d && !following) return
+        d = c
+        following = false
+        onChange(c)
+    }
 
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -81,7 +93,7 @@ fun TrainDelaySheet(
                     StepButton(Icons.Rounded.Add, "One minute later", enabled = d < DELAY_MAX) { set(d + 1) }
                 }
                 Text(
-                    if (own != null) {
+                    if (!following) {
                         "Just this train, every day. Other trains on this route: ${delayText(routeDelay).lowercase()}."
                     } else {
                         "Following the route (${delayText(routeDelay).lowercase()}). Change it here for just this train."
@@ -90,14 +102,18 @@ fun TrainDelaySheet(
                     color = hw.sub,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
-                if (own != null) {
+                if (!following) {
                     Row(
                         Modifier
                             .padding(top = 4.dp)
                             .height(40.dp)
                             .clip(RoundedCornerShapeFull)
                             .background(hw.tintSoft)
-                            .press(scaleTo = 0.96f) { onChange(null) }
+                            .press(scaleTo = 0.96f) {
+                                d = routeDelay
+                                following = true
+                                onChange(null)
+                            }
                             .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),

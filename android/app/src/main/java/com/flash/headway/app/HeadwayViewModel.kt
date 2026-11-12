@@ -76,6 +76,8 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                 var flipping = false
                 while (true) {
                     val now = Clock.now()
+                    // A countdown whose train has left is over: clear it so nothing brings it back.
+                    if (p.reminder != null && p.reminder.dep < now - 60_000L) update { q -> if (q.reminder?.dep == p.reminder.dep) q.copy(reminder = null) else q }
                     // A route that switches direction by time is due to flip: show it flipped
                     // straight away, and save it once (the saved prefs then restart this loop).
                     val shown = applyFlips(p, now)
@@ -103,7 +105,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                 Advisories.refresh(getApplication())?.let { fresh ->
                     if (fresh != _feed.value) {
                         _feed.value = fresh
-                        Widgets.updateAll(getApplication())
+                        Widgets.updateAllAsync(getApplication())
                     }
                 }
                 delay(30 * 60_000L)
@@ -111,16 +113,18 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             // Keep the widgets' copy of the routes current and redraw them when anything changes.
+            // The redraw waits a moment, so dragging a slider redraws once, not on every step.
             prefs.filterNotNull().collectLatest { p ->
                 Widgets.mirror(getApplication(), p)
-                Widgets.updateAll(getApplication())
+                delay(400)
+                Widgets.updateAllAsync(getApplication())
             }
         }
     }
 
-    /** Next trains each way from a station, for the map's station sheet. */
-    fun stationBoard(id: String): List<com.flash.headway.ui.StationBoard> {
-        val p = prefs.value ?: return emptyList()
+    /** Next trains each way from a station, for the map's station sheet. On the engine thread. */
+    suspend fun stationBoard(id: String): List<com.flash.headway.ui.StationBoard> = withContext(engineThread) {
+        val p = prefs.value ?: return@withContext emptyList()
         val s = engine(p)
         val now = Clock.now()
         return com.flash.headway.engine.directDestinations(id).map { g ->
@@ -188,12 +192,29 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(coaches = if (coach == null) p.coaches - routeId else p.coaches + (routeId to coach))
     }
 
-    /** The next train on [route] at [delayMin]: timetabled and shown departure, for the delay card. */
-    fun delayPreview(route: SavedRoute, delayMin: Int): com.flash.headway.ui.DelayPreview? {
-        val p = prefs.value ?: return null
-        val off = delayMin * MINUTE
-        val next = engine(p).delayedDepartures(route, Clock.now(), 1, delayMin).firstOrNull() ?: return null
-        return com.flash.headway.ui.DelayPreview(timetabled = next.dep - off, shown = next.dep)
+    /**
+     * The next train on [route] if its delay were [delayMin] (trains with their own keep theirs):
+     * timetabled and shown departure, for the delay card. On the engine thread.
+     */
+    suspend fun delayPreview(route: SavedRoute, delayMin: Int): com.flash.headway.ui.DelayPreview? = withContext(engineThread) {
+        val p = prefs.value ?: return@withContext null
+        val rule = DelayRule(delayMin, p.trainDelays[route.id].orEmpty())
+        val next = engine(p).delayedDepartures(route, Clock.now(), 1, rule).firstOrNull() ?: return@withContext null
+        com.flash.headway.ui.DelayPreview(timetabled = next.timetabled ?: next.dep, shown = next.dep)
+    }
+
+    /** After notifications are allowed: post the countdown that was set while they weren't. */
+    fun repostReminder() {
+        val p = prefs.value ?: return
+        val rem = p.reminder ?: return
+        val route = p.routes.firstOrNull { it.id == rem.routeId } ?: return
+        if (rem.dep > Clock.now()) Alerts.startCountdown(getApplication(), route, rem.dep, p.delayRule(route.id))
+    }
+
+    /** Notifications were refused: no countdown can show, so don't pretend one is running. */
+    fun clearReminder() {
+        Alerts.stopCountdown(getApplication())
+        update { it.copy(reminder = null) }
     }
 
     /**

@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -77,7 +78,7 @@ private val StepGap = 6.dp
  * waits on the saved preference; [onDelay] saves each change.
  */
 @Composable
-fun DelayCard(routeId: String, delay: Int, preview: (Int) -> DelayPreview?, onDelay: (Int) -> Unit) {
+fun DelayCard(routeId: String, delay: Int, preview: suspend (Int) -> DelayPreview?, onDelay: (Int) -> Unit) {
     val hw = LocalHw.current
     var d by remember(routeId) { mutableIntStateOf(delay) }
     fun change(v: Int) {
@@ -158,7 +159,9 @@ fun DelayCard(routeId: String, delay: Int, preview: (Int) -> DelayPreview?, onDe
             Text("Late", style = HwType.caption, color = hw.sub, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
         }
 
-        DelayPreviewRow(preview(d), d, tone)
+        // Planned off the main thread, once per value (not on every frame of the colour fade).
+        val next by produceState<DelayPreview?>(null, d) { value = preview(d) }
+        DelayPreviewRow(next, d, tone)
     }
 }
 
@@ -280,7 +283,7 @@ private fun DelayPreviewRow(p: DelayPreview?, d: Int, tone: Color) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when {
-            p == null -> Text("No direct trains on this route.", style = HwType.footnote, color = hw.sub)
+            p == null -> Text("No trains on this route.", style = HwType.footnote, color = hw.sub)
             d == 0 -> {
                 PreviewCell("Next train", clock(p.shown), hw.text)
                 Text("as timetabled", style = HwType.footnote, color = hw.sub)

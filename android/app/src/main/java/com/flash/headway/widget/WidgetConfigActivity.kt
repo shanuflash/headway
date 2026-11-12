@@ -63,7 +63,7 @@ class WidgetConfigActivity : ComponentActivity() {
                     initialLabel = currentLabel,
                     onDone = { routeId, label ->
                         Widgets.assign(this, widgetId, routeId, label)
-                        Widgets.updateAll(this)
+                        Widgets.updateAllAsync(applicationContext)
                         setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
                         finish()
                     },

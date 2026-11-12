@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -14,8 +15,8 @@ import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import com.flash.headway.MainActivity
 import com.flash.headway.R
-import com.flash.headway.app.Advisories
 import com.flash.headway.app.Clock
+import com.flash.headway.app.SharedEngine
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.app.DelayRule
@@ -84,22 +85,39 @@ object Widgets {
         store(context).edit().remove("w_$widgetId").remove("label_$widgetId").apply()
     }
 
-    private fun override(context: Context): DayOverride? = runCatching {
+    /** The rider's timetable override, as mirrored from the app. */
+    internal fun override(context: Context): DayOverride? = runCatching {
         val (d, t) = store(context).getString("override", null)!!.split('|')
         DayOverride(LocalDate.parse(d), DayType.valueOf(t))
     }.getOrNull()
 
+    /**
+     * Redraws every widget. Heavy (it plans trips), so call it off the main thread: the receiver
+     * below hands it to [SharedEngine.post], the app calls it on a background dispatcher.
+     */
     fun updateAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, HeadwayWidget::class.java))
         if (ids.isEmpty()) return
         Clock.offset = store(context).getLong("mock", 0L)
-        val schedule = Schedule(override(context), Advisories.cached(context))
-        for (id in ids) manager.updateAppWidget(id, render(context, id, schedule))
+        SharedEngine.with(context) { schedule ->
+            for (id in ids) manager.updateAppWidget(id, render(context, id, schedule))
+        }
         scheduleTick(context)
     }
 
-    fun render(context: Context, widgetId: Int, schedule: Schedule = Schedule(override(context), Advisories.cached(context))): RemoteViews {
+    /** Redraws every widget on the background thread, keeping a receiver alive until it's done. */
+    fun updateAllAsync(context: Context, pending: BroadcastReceiver.PendingResult? = null) {
+        SharedEngine.post {
+            try {
+                updateAll(context)
+            } finally {
+                pending?.finish()
+            }
+        }
+    }
+
+    fun render(context: Context, widgetId: Int, schedule: Schedule): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_1x1)
         val routes = routes(context)
         val (assignedId, label) = assigned(context, widgetId)
@@ -191,8 +209,14 @@ object Widgets {
     fun scheduleTick(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
         val pi = tickIntent(context)
-        // Next minute boundary on the app clock (which may be mocked), as a real alarm time.
-        val next = (Clock.now() / MINUTE + 1) * MINUTE + 500 - Clock.offset
+        // Next minute boundary on the app clock (which may be mocked), as a real alarm time. No
+        // trains run 1:30 to 4:30 AM (even on extended nights), so then wait until 4:30.
+        val now = Clock.now()
+        val z = java.time.Instant.ofEpochMilli(now).atZone(com.flash.headway.engine.IST)
+        val minute = z.hour * 60 + z.minute
+        val quiet = minute in (90 until 270)
+        val nextApp = if (quiet) z.toLocalDate().atTime(4, 30).atZone(com.flash.headway.engine.IST).toInstant().toEpochMilli() else (now / MINUTE + 1) * MINUTE + 500
+        val next = nextApp - Clock.offset
         if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
             am.setExact(AlarmManager.RTC, next, pi)
         } else {
@@ -216,14 +240,14 @@ object Widgets {
 class HeadwayWidget : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Widgets.ACTION_TICK) {
-            Widgets.updateAll(context)
+            Widgets.updateAllAsync(context, goAsync())
             return
         }
         super.onReceive(context, intent)
     }
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        Widgets.updateAll(context)
+        Widgets.updateAllAsync(context, goAsync())
     }
 
     override fun onDeleted(context: Context, ids: IntArray) {

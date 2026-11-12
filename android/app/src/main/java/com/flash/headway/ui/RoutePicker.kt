@@ -278,7 +278,7 @@ fun RouteMenu(
     onCoach: (Coach?) -> Unit,
     routeId: String,
     delay: Int,
-    delayPreview: (Int) -> DelayPreview?,
+    delayPreview: suspend (Int) -> DelayPreview?,
     onDelay: (Int) -> Unit,
     flipCard: @Composable () -> Unit,
     onDismiss: () -> Unit,

@@ -15,11 +15,11 @@ import androidx.core.content.ContextCompat
 import com.flash.headway.MainActivity
 import com.flash.headway.R
 import com.flash.headway.data.Network
-import com.flash.headway.engine.Schedule
 import com.flash.headway.ui.clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * The train countdown: a live notification that counts down to the moment the train leaves,
@@ -27,7 +27,12 @@ import kotlinx.coroutines.launch
  */
 object Alerts {
     private const val CHANNEL_COUNTDOWN = "countdown"
+    private const val CHANNEL_SOON = "leaving_soon"
     private const val ID_COUNTDOWN = 2
+    private const val ID_SOON = 3
+
+    /** The countdown buzzes this many minutes before the train leaves. */
+    const val SOON_MIN = 3
 
     const val ACTION_FIRE = "com.flash.headway.FIRE"
     const val ACTION_NEXT = "com.flash.headway.NEXT"
@@ -44,6 +49,14 @@ object Alerts {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_COUNTDOWN, "Train countdown", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "A live countdown to the train you're catching"
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_SOON, "Train leaving soon", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "A buzz $SOON_MIN minutes before the train you're counting down to leaves"
+                enableVibration(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
         )
     }
@@ -52,17 +65,62 @@ object Alerts {
         Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** [dep] is already moved by the route's static delay of [delayMin]; the next train gets the same. */
+    /**
+     * Posts the countdown to [dep] (already moved by the route's delays, which the next train gets
+     * too) and sets the buzz [SOON_MIN] minutes before. Runs on the background thread, in order
+     * with [stopCountdown], using the timetable as the rider sees it (their override, the feed).
+     */
     fun startCountdown(context: Context, route: SavedRoute, dep: Long, rule: DelayRule = DelayRule()) {
-        // Clear any set-off alarm an older version scheduled.
-        context.getSystemService(AlarmManager::class.java).cancel(broadcast(context, ACTION_FIRE, null, 0))
-        val following = Schedule(feed = Advisories.cached(context)).delayedDepartures(route, dep + 1, 1, rule).firstOrNull()
-        postCountdown(context, route, dep, following?.dep, rule)
+        val app = context.applicationContext
+        SharedEngine.post {
+            val following = SharedEngine.with(app) { it.delayedDepartures(route, dep + 1, 1, rule).firstOrNull() }
+            postCountdown(app, route, dep, following?.dep, rule)
+            scheduleSoon(app, route, dep)
+        }
     }
 
     fun stopCountdown(context: Context) {
-        context.getSystemService(AlarmManager::class.java).cancel(broadcast(context, ACTION_FIRE, null, 0))
-        context.getSystemService(NotificationManager::class.java).cancel(ID_COUNTDOWN)
+        val app = context.applicationContext
+        SharedEngine.post {
+            app.getSystemService(AlarmManager::class.java).cancel(broadcast(app, ACTION_FIRE, null, 0))
+            val nm = app.getSystemService(NotificationManager::class.java)
+            nm.cancel(ID_COUNTDOWN)
+            nm.cancel(ID_SOON)
+        }
+    }
+
+    /** An alarm [SOON_MIN] minutes before [dep] that buzzes with [postSoon]. */
+    private fun scheduleSoon(context: Context, route: SavedRoute, dep: Long) {
+        val am = context.getSystemService(AlarmManager::class.java)
+        val pi = broadcast(context, ACTION_FIRE, route, dep)
+        // The app clock may be mocked; alarms run on the real one.
+        val at = dep - SOON_MIN * 60_000L - Clock.offset
+        if (at <= System.currentTimeMillis()) {
+            am.cancel(pi)
+            return
+        }
+        if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        } else {
+            am.setWindow(AlarmManager.RTC_WAKEUP, at, 60_000L, pi)
+        }
+    }
+
+    /** "The 8:14 leaves in 3 min": a buzz, so the countdown isn't missed in a pocket. */
+    internal fun postSoon(context: Context, route: SavedRoute, dep: Long) {
+        if (!canNotify(context)) return
+        val left = ((dep - Clock.now()) / 60_000L).coerceAtLeast(0)
+        val n = Notification.Builder(context, CHANNEL_SOON)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("The ${clock(dep)} leaves in ${if (left <= 0) "under a minute" else "$left min"}")
+            .setContentText("${Network.name(route.from)} to ${Network.name(route.to)}")
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(context))
+            .setTimeoutAfter((dep - Clock.now() + 60_000L).coerceAtLeast(60_000L))
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(ID_SOON, n)
     }
 
     private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?, rule: DelayRule) {
@@ -82,7 +140,10 @@ object Alerts {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_REMINDER)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(openApp(context))
+            // Swiping it away (Android 14 lets you) stops the countdown, so the bell goes out too.
+            .setDeleteIntent(broadcast(context, ACTION_STOP, route, dep))
             .setTimeoutAfter((dep - Clock.now() + 60_000L).coerceAtLeast(60_000L))
         if (following != null) {
             builder.addAction(
@@ -135,11 +196,21 @@ class AlertReceiver : BroadcastReceiver() {
             }
             Alerts.ACTION_NEXT -> if (route != null) {
                 val rule = Alerts.ruleFrom(intent)
-                val following = Schedule(feed = Advisories.cached(context)).delayedDepartures(route, dep + 1, 1, rule).firstOrNull() ?: return
-                Alerts.startCountdown(context, route, following.dep, rule)
-                updatePrefs(context) { it.copy(reminder = Reminder(route.id, following.dep)) }
+                val app = context.applicationContext
+                val pending = goAsync()
+                SharedEngine.post {
+                    try {
+                        val following = SharedEngine.with(app) { it.delayedDepartures(route, dep + 1, 1, rule).firstOrNull() }
+                        if (following != null) {
+                            Alerts.startCountdown(app, route, following.dep, rule)
+                            runBlocking { PrefsStore(app).update { it.copy(reminder = Reminder(route.id, following.dep)) } }
+                        }
+                    } finally {
+                        pending.finish()
+                    }
+                }
             }
-            // ACTION_FIRE came from the removed set-off alarm; nothing to do.
+            Alerts.ACTION_FIRE -> if (route != null) Alerts.postSoon(context, route, dep)
         }
     }
 

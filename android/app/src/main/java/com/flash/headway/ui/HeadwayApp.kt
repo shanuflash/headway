@@ -134,7 +134,16 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
     BackHandler(enabled = settings) { settings = false }
 
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    // The bell asks for permission and saves the countdown at once; it can only be posted once
+    // allowed. Refused, there's no countdown, so the bell goes out rather than pretend.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            vm.repostReminder()
+        } else {
+            vm.clearReminder()
+            Toast.makeText(context, "Allow notifications to get the countdown", Toast.LENGTH_LONG).show()
+        }
+    }
     fun askNotifications() {
         if (Build.VERSION.SDK_INT >= 33 && !Alerts.canNotify(context)) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -300,7 +309,13 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
         stationFor?.let { id ->
             StationSheet(
                 id = id,
-                boards = remember(id) { vm.stationBoard(id) },
+                // Worked out on the engine thread, and again every half minute while it's open.
+                boards = produceState(emptyList<StationBoard>(), id) {
+                    while (true) {
+                        value = vm.stationBoard(id)
+                        delay(30_000)
+                    }
+                }.value,
                 now = now,
                 onRouteFrom = {
                     stationFor = null
