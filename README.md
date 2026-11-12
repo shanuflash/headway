@@ -55,6 +55,7 @@ GitHub Actions (`.github/workflows/android.yml`) runs the engine unit tests and 
 | Wimco Nagar Depot and Tiruvottiyur Theradi offsets | Interpolated, because they are missing from the GTFS feed | Estimate |
 | Yellow Line run times | End-to-end of about 30 min (press reports), split by hand | Estimate |
 | Festival holidays in `HOLIDAYS` | Check against the Tamil Nadu holiday G.O. | Verify yearly |
+| Interchange walk times (minimum time to change lines) | Vadapalani 6 min timed by a rider; Alandur 3 and Chennai Central 5 are estimates | Estimate |
 
 Terminal departures are exact to the timetable. Times at intermediate stations are estimates, so treat them as ±1–2 min.
 

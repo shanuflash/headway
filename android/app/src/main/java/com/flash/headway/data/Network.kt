@@ -64,7 +64,8 @@ object Network {
         Station("koyambedu", "Koyambedu", null, listOf(Line.GREEN), 4),
         Station("cmbt", "CMBT", "Puratchi Thalaivi Dr. J. Jayalalithaa CMBT", listOf(Line.GREEN), 4),
         Station("arumbakkam", "Arumbakkam", null, listOf(Line.GREEN), 4),
-        Station("vadapalani", "Vadapalani", null, listOf(Line.GREEN, Line.YELLOW), 8),
+        // Green to Yellow Line walk: 5-6 min, timed by a rider (was an 8 min guess).
+        Station("vadapalani", "Vadapalani", null, listOf(Line.GREEN, Line.YELLOW), 6),
         Station("ashok-nagar", "Ashok Nagar", null, listOf(Line.GREEN), 4),
         Station("ekkattuthangal", "Ekkattuthangal", null, listOf(Line.GREEN), 4),
         Station("st-thomas-mount", "St. Thomas Mount", null, listOf(Line.GREEN), 4),

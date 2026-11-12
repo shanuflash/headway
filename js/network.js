@@ -53,7 +53,8 @@ export const STATIONS = {
   koyambedu: { name: 'Koyambedu', lines: ['green'] },
   cmbt: { name: 'CMBT', long: 'Puratchi Thalaivi Dr. J. Jayalalithaa CMBT', lines: ['green'] },
   arumbakkam: { name: 'Arumbakkam', lines: ['green'] },
-  vadapalani: { name: 'Vadapalani', lines: ['green', 'yellow'], transfer: 8 },
+  // Green to Yellow Line walk: 5-6 min, timed by a rider (was an 8 min guess). The planner uses it as the least time to change.
+  vadapalani: { name: 'Vadapalani', lines: ['green', 'yellow'], transfer: 6 },
   'ashok-nagar': { name: 'Ashok Nagar', lines: ['green'] },
   ekkattuthangal: { name: 'Ekkattuthangal', lines: ['green'] },
   'st-thomas-mount': { name: 'St. Thomas Mount', lines: ['green'] },
