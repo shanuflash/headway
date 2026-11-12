@@ -184,3 +184,34 @@ export function directDestinations(from) {
     stations: [...g.stations.entries()].sort((a, b) => a[1] - b[1]).map(([id, minutes]) => ({ id, minutes })),
   }));
 }
+
+/**
+ * Stations that need a change from `from`, with the fewest changes (up to 2) and, among those,
+ * the least riding: id -> { changes, via: [interchange ids] }. Direct destinations are left out.
+ * A quick structural guess for the picker; the timetable planner picks the real interchange.
+ */
+export function transferDestinations(from) {
+  const best = new Map();
+  for (const g of directDestinations(from)) for (const s of g.stations) best.set(s.id, { changes: 0, minutes: s.minutes, via: [] });
+  let frontier = [...best.entries()].filter(([id]) => STATIONS[id].lines.length > 1).map(([id, b]) => ({ at: id, minutes: b.minutes, via: [id] }));
+  for (let changes = 1; changes <= 2 && frontier.length; changes++) {
+    const next = [];
+    for (const f of frontier) {
+      for (const g of directDestinations(f.at)) {
+        for (const s of g.stations) {
+          if (s.id === from) continue;
+          const minutes = f.minutes + s.minutes;
+          const cur = best.get(s.id);
+          if (cur && (cur.changes < changes || (cur.changes === changes && cur.minutes <= minutes))) continue;
+          best.set(s.id, { changes, minutes, via: f.via });
+          if (STATIONS[s.id].lines.length > 1) next.push({ at: s.id, minutes, via: [...f.via, s.id] });
+        }
+      }
+    }
+    frontier = next;
+  }
+  const out = new Map();
+  for (const [id, b] of best) if (b.changes > 0 && id !== from) out.set(id, { changes: b.changes, via: b.via });
+  return out;
+}
+

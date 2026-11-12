@@ -299,15 +299,22 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("${Network.name(shown.from)} → ${Network.name(shown.to)}", style = HwType.cardTitle, color = hw.text)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        val inter = shown == r && interOnly(s)
-                        val label = remember(shown, inter) { routeLabel(shown, inter) }
-                        val line = remember(shown) { routeLine(shown) }
-                        Box(
-                            Modifier.size(8.dp).clip(CircleShape).then(
-                                if (inter) Modifier.background(Brush.verticalGradient(listOf(hw.green, hw.blue))) else Modifier.background(hw.line(line)),
-                            ),
-                        )
-                        Text(label, style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // A trip with changes names where you change, with a dot in each line's colour.
+                        val legs = if (shown == r) s.next?.legs else null
+                        if (legs != null) {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(legsBrush(legs, hw)))
+                            Text(changesLabel(legs), style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else {
+                            val inter = shown == r && interOnly(s)
+                            val label = remember(shown, inter) { routeLabel(shown, inter) }
+                            val line = remember(shown) { routeLine(shown) }
+                            Box(
+                                Modifier.size(8.dp).clip(CircleShape).then(
+                                    if (inter) Modifier.background(Brush.verticalGradient(listOf(hw.green, hw.blue))) else Modifier.background(hw.line(line)),
+                                ),
+                            )
+                            Text(label, style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }
@@ -330,15 +337,17 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         val shown = s.departures.getOrNull(index)
         if (shown == null) {
             Text(
-                "No direct trains between these stations.",
+                "No trains between these stations.",
                 style = HwType.subhead,
                 color = hw.sub,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         } else {
             Hero(s, shown, index, prefs, now, actions)
-            Boarding(remember(r) { platformFor(r) }, prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
+            val directPlatform = remember(r) { platformFor(r) }
+            Boarding(shown.legs?.let { legPlatform(it.first()) } ?: directPlatform, prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
             Chips(s, index, now) { picked = it }
+            shown.legs?.let { TripTimeline(it, Modifier.padding(horizontal = 20.dp)) }
         }
 
         val last = s.last
@@ -386,7 +395,7 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         tomorrow -> hw.sub
         else -> hw.tint
     }
-    val note = trainNote(d)?.let { " · $it" }.orEmpty()
+    val note = if (d.legs != null) " · ${span(d.arr - d.dep)}" else trainNote(d)?.let { " · $it" }.orEmpty()
     val line = when {
         s.closed && i == 0 -> "First train · arrives ${clock(d.arr)}"
         tomorrow -> "Arrives ${clock(d.arr)}$note"

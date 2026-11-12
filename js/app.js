@@ -1,5 +1,5 @@
 import { Schedule, serviceDateKey, bandAt, hm } from './engine.js';
-import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations } from './network.js';
+import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations, transferDestinations } from './network.js';
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
 import { PLATFORMS, platformText } from './platforms.js';
@@ -194,14 +194,74 @@ function platformAt(from, g) {
   return p ? platformText(p) : null;
 }
 
-function boardingTags(r) {
-  const p = platformFor(r);
+function boardingTags(r, shown) {
+  const p = shown?.legs ? legPlatform(shown.legs[0]) : platformFor(r);
   const c = prefs.coaches?.[r.id];
   const d = delayOf(r.id);
   if (!p && !c && !d) return '';
   return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}${
     d ? `<button class="delay ${d > 0 ? 'late' : 'early'}" data-act="route-menu" data-route="${r.id}" aria-label="${delayText(d)}, change">${ic(d > 0 ? 'more_time' : 'history')}${delayText(d)}</button>` : ''
   }</div>`;
+}
+
+/* ----- trips with changes ----- */
+
+/** The colour key of a leg: its line, or the inter-corridor service. */
+const legLine = (leg) => (leg.trip.route === 'inter' ? 'inter' : leg.trip.line);
+const legColor = (leg) => (legLine(leg) === 'inter' ? 'var(--green)' : lineColor[leg.trip.line]);
+const legLineName = (leg) => (legLine(leg) === 'inter' ? 'Inter-corridor' : lineName(leg.trip.line));
+
+/** A dot that shows every line of the trip, in order. */
+function legsGradient(legs) {
+  const cols = legs.map(legColor);
+  return cols.length > 1 ? `linear-gradient(135deg, ${cols.join(', ')})` : cols[0];
+}
+
+/** "1 change at Alandur", "2 changes at Alandur and Vadapalani". */
+function changesLabel(d) {
+  const at = d.legs.slice(1).map((l) => name(l.from));
+  return `${plural(at.length, 'change')} at ${at.length > 1 ? `${at.slice(0, -1).join(', ')} and ${at.at(-1)}` : at[0]}`;
+}
+
+/** Platform for a leg at the station it's boarded, from the direction its train heads off in. */
+function legPlatform(leg) {
+  const g = directDestinations(leg.from).find((x) => x.stations.some((s) => s.id === leg.to));
+  return g ? platformAt(leg.from, g) : null;
+}
+
+/**
+ * The trip step by step: board, ride, get off, walk to the next line, and so on to arrival.
+ * A coloured rail per train, dashed while walking between lines.
+ */
+function timelineHtml(d) {
+  const stop = (time, station, sub, cls, color) =>
+    `<li class="tl-stop ${cls}" style="--c: ${color}"><span class="tl-t">${time}</span><span class="tl-dot"></span><span class="tl-x"><span class="t">${esc(
+      name(station),
+    )}</span>${sub ? `<span class="s">${sub}</span>` : ''}</span></li>`;
+  const seg = (text, cls, color) =>
+    `<li class="tl-seg ${cls}" style="--c: ${color}"><span class="tl-t"></span><span class="tl-rail"></span><span class="tl-x">${text}</span></li>`;
+  const out = [];
+  d.legs.forEach((leg, i) => {
+    const color = legColor(leg);
+    if (i > 0) {
+      const prev = d.legs[i - 1];
+      const walk = STATIONS[leg.from].transfer ?? 4;
+      const spare = Math.round((leg.dep - prev.arr) / MIN) - walk;
+      out.push(
+        seg(
+          `${ic('directions_walk')}<span>Change to ${legLine(leg) === 'inter' ? 'an Inter-corridor train' : `the ${esc(legLineName(leg))}`}, ${walk} min walk${spare > 0 ? ` · ${spare} min to spare` : ''}</span>`,
+          'walk',
+          'var(--sub)',
+        ),
+      );
+    }
+    const plat = legPlatform(leg);
+    out.push(stop(clock(leg.dep), leg.from, `${esc(legLineName(leg))} toward ${esc(name(leg.trip.dest))}${plat ? ` · ${esc(plat)}` : ''}`, 'board', color));
+    out.push(seg(`${plural(leg.stops.length - 1, 'stop')} · ${span(leg.arr - leg.dep)}`, 'ride', color));
+    const lastLeg = i === d.legs.length - 1;
+    out.push(stop(clock(leg.arr), leg.to, lastLeg ? 'Arrive' : 'Get off', lastLeg ? 'end' : 'off', color));
+  });
+  return `<ol class="tl rc-pad" aria-label="Trip steps">${out.join('')}</ol>`;
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
@@ -221,6 +281,23 @@ function delayOf(id) {
 }
 
 const delayText = (d) => (d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 'On time');
+
+/** Whether a train runs straight from `r.from` to `r.to`, so the route needs no change. */
+const directCache = new Map();
+function isDirect(r) {
+  const k = `${r.from}>${r.to}`;
+  if (!directCache.has(k)) directCache.set(k, directDestinations(r.from).some((g) => g.stations.some((s) => s.id === r.to)));
+  return directCache.get(k);
+}
+
+/**
+ * A planned journey as a route departure: the first train's trip (for the service day), the
+ * whole journey's dep and arr, and its legs. The delay moves every leg.
+ */
+function fromJourney(j, off) {
+  if (!j) return null;
+  return { trip: j.legs[0].trip, dep: j.dep + off, arr: j.arr + off, legs: j.legs.map((l) => ({ ...l, dep: l.dep + off, arr: l.arr + off })) };
+}
 
 /** A departure moved by the route's delay; the trip itself is shared, so only dep and arr change. */
 const shifted = (x, off) => (x && off ? { ...x, dep: x.dep + off, arr: x.arr + off } : x);
@@ -343,13 +420,20 @@ function routeModel(r, now) {
   // Trains that run `delay` min late leave `delay` min after their timetabled time, so look
   // that much further back in the timetable for the ones still to come.
   const off = delayOf(r.id) * MIN;
-  const deps = schedule.routeDepartures(r.from, r.to, now - off, prefs.count).map((x) => shifted(x, off));
+  // A route with no direct train is a trip with changes: its options come from the planner.
+  const direct = isDirect(r);
+  const deps = direct
+    ? schedule.routeDepartures(r.from, r.to, now - off, prefs.count).map((x) => shifted(x, off))
+    : schedule.journeys(r.from, r.to, now - off, prefs.count).map((j) => fromJourney(j, off));
   const next = deps[0] ?? null;
-  if (!next) return { r, kind: 'none' };
-  const last = shifted(schedule.lastRouteDeparture(r.from, r.to, now - off), off);
+  if (!next) return { r, kind: 'none', direct };
+  const last = direct
+    ? shifted(schedule.lastRouteDeparture(r.from, r.to, now - off), off)
+    : fromJourney(schedule.lastJourney(r.from, r.to, now - off), off);
   const closed = next.trip.serviceDate !== today;
   return {
     r,
+    direct,
     kind: closed ? 'closed' : 'open',
     now,
     deps,
@@ -430,7 +514,11 @@ function routeCard(m, isPreview) {
     <div class="rc-head">
       <span class="grow">
         <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
-        <span class="s"><i class="dot ${interOnly(m) ? 'inter' : line}"></i>${esc(routeLabel(r, interOnly(m)))}</span>
+        ${
+          m.direct === false && m.next
+            ? `<span class="s"><i class="dot" style="background: ${legsGradient(m.next.legs)}"></i>${esc(changesLabel(m.next))}</span>`
+            : `<span class="s"><i class="dot ${interOnly(m) ? 'inter' : line}"></i>${esc(routeLabel(r, interOnly(m)))}</span>`
+        }
       </span>
       <span class="pillgroup">
         <button data-act="swap" data-route="${r.id}" class="${!isPreview && flipOf(r) && !bothSaved(r) ? 'auto' : ''}" aria-label="${
@@ -462,7 +550,7 @@ function routeCard(m, isPreview) {
     else if (tomorrow) [label, tone] = [i === m.tomorrowFrom ? 'First train tomorrow' : 'Tomorrow', 'sub'];
     else if (i === lastIdx) [label, tone] = ['Last train', 'warn'];
     else if (m.late && lastIdx > i) [label, tone] = [`Last ${lastIdx - i + 1} trains`, 'warn'];
-    const note = trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
+    const note = d.legs ? ` · ${span(d.arr - d.dep)}` : trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
     const lineText =
       closed && i === 0
         ? `First train · arrives ${clock(d.arr)}`
@@ -495,8 +583,9 @@ function routeCard(m, isPreview) {
           on ? 'Stop the countdown' : 'Count down to this train'
         }">${ic('notifications', on ? 'fill' : '')}</button>
       </div>
-      ${boardingTags(r)}
+      ${boardingTags(r, d)}
       <div class="tchips">${chips}</div>
+      ${d.legs ? timelineHtml(d) : ''}
       ${m.late && m.last ? `<div class="note rc-pad">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight.</span></div>` : ''}`;
   }
 
@@ -1140,51 +1229,86 @@ function openStationStep(mode, initial = false) {
         </div>`,
       ).join('')}
     </div>`;
-  const mount = (sheet) => {
-    const input = sheet.querySelector('input');
-    const body = sheet.querySelector('.sheet-body');
-    input.addEventListener('input', () => {
-      const q = input.value.trim().toLowerCase();
-      body.querySelectorAll('.group').forEach((g) => {
-        let any = false;
-        g.querySelectorAll('[data-search]').forEach((row) => {
-          const hit = !q || row.dataset.search.includes(q);
-          row.hidden = !hit;
-          any ||= hit;
-        });
-        g.hidden = !any;
+  if (initial) openSheet(html, mountSearch);
+  else replaceSheet(html, mountSearch);
+}
+
+/** Filters a picker's rows (data-search) as you type, hiding groups and sections left empty. */
+function mountSearch(sheet) {
+  const input = sheet.querySelector('.search input');
+  const body = sheet.querySelector('.sheet-body');
+  if (!input || !body) return;
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    body.querySelectorAll('.group').forEach((g) => {
+      let any = false;
+      g.querySelectorAll('[data-search]').forEach((row) => {
+        const hit = !q || row.dataset.search.includes(q);
+        row.hidden = !hit;
+        any ||= hit;
       });
+      g.hidden = !any;
     });
-  };
-  if (initial) openSheet(html, mount);
-  else replaceSheet(html, mount);
+    body.querySelectorAll('.pick-section').forEach((sec) => {
+      sec.hidden = ![...sec.querySelectorAll('.group')].some((g) => !g.hidden);
+    });
+  });
 }
 
 function openDestinationStep(from) {
   const groups = directDestinations(from);
-  const html = `
-    ${sheetHead(`Where to from ${name(from)}?`, 'Direct trains only', 'pick-back')}
-    <div class="sheet-body">
-      ${groups
-        .map(
-          (g) => `
-        <div style="display: flex; flex-direction: column; gap: 8px">
+  const changes = transferDestinations(from);
+  const searchOf = (st) => esc(`${st.name} ${st.long ?? ''}`.toLowerCase());
+  const tagsOf = (st, line) =>
+    st.lines
+      .filter((l) => l !== line)
+      .map((l) => `<span class="pill-tag ${l}">${LINES[l].name}</span>`)
+      .join('');
+  const direct = groups
+    .map(
+      (g) => `
+        <div class="group" style="display: flex; flex-direction: column; gap: 8px">
           <div class="dir-head"><span class="dot ${g.line}"></span><span class="t">Toward ${esc(g.terminals.map(name).join(' or '))}</span></div>
           <div class="card list">${g.stations
-            .map((s) => {
-              const st = STATIONS[s.id];
-              const tags = st.lines
-                .filter((l) => l !== g.line)
-                .map((l) => `<span class="pill-tag ${l}">${LINES[l].name}</span>`)
-                .join('');
-              return `<button class="row tap plain" data-dest="${s.id}" data-from="${from}"><span class="grow"><span class="t">${esc(st.name)}</span></span>${tags}<span class="v light">${s.minutes} min</span></button>`;
+            .map((x) => {
+              const st = STATIONS[x.id];
+              return `<button class="row tap plain" data-dest="${x.id}" data-from="${from}" data-search="${searchOf(st)}"><span class="grow"><span class="t">${esc(
+                st.name,
+              )}</span></span>${tagsOf(st, g.line)}<span class="v light">${x.minutes} min</span></button>`;
             })
             .join('')}</div>
         </div>`,
-        )
-        .join('')}
+    )
+    .join('');
+  // Everything else, by line, with where you'd change.
+  const shown = new Set();
+  const viaText = (c) => `<span class="via">${ic('transfer_within_a_station')}Change at ${c.via.map(name).map(esc).join(', then ')}</span>`;
+  const others = PICKER_GROUPS.map((g) => {
+    const rows = g.stations
+      .filter((id) => changes.has(id) && !shown.has(id) && shown.add(id))
+      .map((id) => {
+        const st = STATIONS[id];
+        return `<button class="row tap plain" data-dest="${id}" data-from="${from}" data-search="${searchOf(st)}"><span class="grow"><span class="t">${esc(
+          st.name,
+        )}</span>${viaText(changes.get(id))}</span>${tagsOf(st, g.line)}</button>`;
+      })
+      .join('');
+    return rows
+      ? `<div class="group" style="display: flex; flex-direction: column; gap: 8px"><div class="dir-head"><span class="dot ${g.line}"></span><span class="t">${LINES[g.line].name}</span></div><div class="card list">${rows}</div></div>`
+      : '';
+  }).join('');
+  const html = `
+    ${sheetHead(`Where to from ${name(from)}?`, changes.size ? 'Direct trains first, then with a change' : 'Direct trains', 'pick-back')}
+    <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
+    <div class="sheet-body">
+      <div class="pick-section" style="display: flex; flex-direction: column; gap: 20px">${direct}</div>
+      ${
+        others
+          ? `<div class="pick-section" style="display: flex; flex-direction: column; gap: 14px"><span class="section-title">With a change</span>${others}</div>`
+          : ''
+      }
     </div>`;
-  replaceSheet(html);
+  replaceSheet(html, mountSearch);
 }
 
 sheetRoot.addEventListener('click', (e) => {

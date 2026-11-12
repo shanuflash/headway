@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.TransferWithinAStation
 import androidx.compose.material.icons.rounded.VerticalAlignTop
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +58,7 @@ import com.flash.headway.app.Coach
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.engine.directDestinations
+import com.flash.headway.engine.transferDestinations
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlinx.coroutines.launch
@@ -88,10 +90,17 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
                     SearchField(query) { query = it }
                     StationList(query) { from = it }
                 } else {
-                    SheetHeader("Where to from ${Network.name(station)}?", "Direct trains only", Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back") {
+                    var destQuery by remember(station) { mutableStateOf("") }
+                    SheetHeader(
+                        "Where to from ${Network.name(station)}?",
+                        "Direct trains first, then with a change",
+                        Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                        "Back",
+                    ) {
                         from = null
                     }
-                    DestinationList(station) { to -> close { onPick(station, to) } }
+                    SearchField(destQuery) { destQuery = it }
+                    DestinationList(station, destQuery) { to -> close { onPick(station, to) } }
                 }
             }
         }
@@ -174,26 +183,66 @@ private fun StationList(query: String, onPick: (String) -> Unit) {
     }
 }
 
+/** Direct trains first, by direction; then every other station, by line, with where to change. */
 @Composable
-private fun DestinationList(from: String, onPick: (String) -> Unit) {
+private fun DestinationList(from: String, query: String, onPick: (String) -> Unit) {
     val hw = LocalHw.current
+    val q = query.trim().lowercase()
+    fun matches(id: String): Boolean {
+        val st = Network.stations.getValue(id)
+        return q.isEmpty() || st.name.lowercase().contains(q) || st.long.orEmpty().lowercase().contains(q)
+    }
+    val direct = remember(from) { directDestinations(from) }
+    val changes = remember(from) { transferDestinations(from) }
     Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(16.dp).navigationBarsPadding().padding(bottom = 24.dp),
+        Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        directDestinations(from).forEach { g ->
+        direct.forEach { g ->
+            val shown = g.stations.filter { matches(it.first) }
+            if (shown.isEmpty()) return@forEach
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(g.line)))
                 Text("Toward ${g.terminals.joinToString(" or ") { Network.name(it) }}", style = HwType.section, color = hw.text)
             }
             ListCard(
-                g.stations.map { (id, minutes) ->
+                shown.map { (id, minutes) ->
                     @Composable {
                         val st = Network.stations.getValue(id)
                         ListRow(onClick = { onPick(id) }) {
                             Text(st.name, style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
                             st.lines.filter { it != g.line }.forEach { LineTag(it) }
                             Text("$minutes min", style = HwType.body, color = hw.sub)
+                        }
+                    }
+                },
+                inset = 16.dp,
+            )
+        }
+
+        // Each station once, under its first line.
+        val listed = HashSet<String>()
+        val groups = Network.pickerGroups.map { (line, ids) -> line to ids.filter { it in changes && matches(it) && listed.add(it) } }.filter { it.second.isNotEmpty() }
+        if (groups.isNotEmpty()) SectionTitle("With a change")
+        groups.forEach { (line, ids) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(line)))
+                Text(line.label, style = HwType.section, color = hw.text)
+            }
+            ListCard(
+                ids.map { id ->
+                    @Composable {
+                        val st = Network.stations.getValue(id)
+                        val via = changes.getValue(id).via.joinToString(", then ") { Network.name(it) }
+                        ListRow(onClick = { onPick(id) }) {
+                            Column(Modifier.weight(1f)) {
+                                Text(st.name, style = HwType.body, color = hw.text)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(Icons.Rounded.TransferWithinAStation, null, tint = hw.sub, modifier = Modifier.size(15.dp))
+                                    Text("Change at $via", style = HwType.footnote, color = hw.sub)
+                                }
+                            }
+                            st.lines.filter { it != line }.forEach { LineTag(it) }
                         }
                     }
                 },

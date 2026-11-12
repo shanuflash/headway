@@ -11,10 +11,11 @@ Headway is for people who ride the same route every day. Save where you board an
   - The swap button on a card flips the route in place, so the morning route becomes the ride home with one tap.
   - **Switch by time:** in the same menu, a route can flip itself to the ride home at a set time (5 PM by default, in 30-minute steps) and back for the morning trip. A swap by hand still works and lasts until the next change-over; the swap icon turns blue on routes that switch by themselves.
   - **Delay:** the route's ⋯ menu has a slider from −10 to +10 min. If your trains reliably leave early or late, it shifts that route's times, so the countdown, the times listed, the last-train warning and the Android widget all use the shifted times. A small tag on the card shows the delay, e.g. "2 min late".
-  - Only direct trains count. Short loops and Green Line trains via CMBT are included when they stop at your destination.
+  - Short loops and Green Line trains via CMBT are included when they stop at your destination.
+  - **Trips with changes:** after picking where you board, direct trains come first, then every other station under "With a change", with where you'd change. A saved trip works like any route card: each chip is a whole journey, and the card shows its timeline, from boarding through each change (walk time and minutes to spare) to arrival, with lines, directions and platforms.
 - **States:** last trains (an amber label, plus the first train tomorrow), "No more trains tonight" and "Metro is closed".
 - **Countdown:** tap the bell on any train for a live countdown notification to its departure, with "I'll take the next one" and "Stop". It counts to the train itself; there's no walking-time offset.
-- **Quick look:** the search button checks any pair of stations without saving them.
+- **Quick look:** the search button checks any pair of stations without saving them, with changes if needed.
 - **Lines:** today's official first and last trains and frequency bands.
 - **Settings:** today's timetable override, trains shown per route, last-train warning, and appearance.
 

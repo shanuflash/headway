@@ -77,7 +77,11 @@ data class Journey(val from: String, val to: String, val legs: List<Leg>) {
 
 data class Departure(val trip: Trip, val at: Long)
 
-data class RouteDeparture(val trip: Trip, val dep: Long, val arr: Long)
+/** A way from one station to another: a direct train, or with [legs] when it takes a change. */
+data class RouteDeparture(val trip: Trip, val dep: Long, val arr: Long, val legs: List<Leg>? = null)
+
+/** A planned journey as a route departure: its first train, overall dep and arr, and its legs. */
+fun Journey.asDeparture(): RouteDeparture = RouteDeparture(legs.first().trip, dep, arr, legs)
 
 data class DestinationGroup(val next: String, val line: Line, val terminals: List<String>, val stations: List<Pair<String, Int>>)
 
@@ -113,6 +117,42 @@ fun directDestinations(from: String): List<DestinationGroup> {
 /** The group a saved route belongs to, which names its line and direction. */
 fun routeGroup(from: String, to: String): DestinationGroup? =
     directDestinations(from).firstOrNull { g -> g.stations.any { it.first == to } }
+
+/** How a station that needs a change is reached: the number of changes and where. */
+data class Transfer(val changes: Int, val via: List<String>)
+
+/**
+ * Stations that need a change from [from], with the fewest changes (up to 2) and, among those,
+ * the least riding. Direct destinations are left out. A quick structural guess for the picker;
+ * the timetable planner picks the real interchange.
+ */
+fun transferDestinations(from: String): Map<String, Transfer> {
+    class Best(val changes: Int, val minutes: Int, val via: List<String>)
+    class Front(val at: String, val minutes: Int, val via: List<String>)
+    val isInterchange = { id: String -> Network.stations.getValue(id).lines.size > 1 }
+    val best = HashMap<String, Best>()
+    for (g in directDestinations(from)) for ((id, m) in g.stations) best[id] = Best(0, m, emptyList())
+    var frontier = best.filter { isInterchange(it.key) }.map { Front(it.key, it.value.minutes, listOf(it.key)) }
+    var changes = 1
+    while (changes <= 2 && frontier.isNotEmpty()) {
+        val next = ArrayList<Front>()
+        for (f in frontier) {
+            for (g in directDestinations(f.at)) {
+                for ((id, m) in g.stations) {
+                    if (id == from) continue
+                    val minutes = f.minutes + m
+                    val cur = best[id]
+                    if (cur != null && (cur.changes < changes || (cur.changes == changes && cur.minutes <= minutes))) continue
+                    best[id] = Best(changes, minutes, f.via)
+                    if (isInterchange(id)) next += Front(id, minutes, f.via + id)
+                }
+            }
+        }
+        frontier = next
+        changes++
+    }
+    return best.filter { it.value.changes > 0 && it.key != from }.mapValues { Transfer(it.value.changes, it.value.via) }
+}
 
 private class Conn(val trip: Trip, val from: String, val to: String, val dep: Long, val arr: Long)
 

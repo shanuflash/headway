@@ -3,6 +3,9 @@ package com.flash.headway.app
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.engine.Schedule
+import com.flash.headway.engine.asDeparture
+import com.flash.headway.engine.routeGroup
+import java.util.concurrent.ConcurrentHashMap
 
 /** The next departures on a saved route, plus what's needed for last-train and closed states. */
 data class RouteStatus(
@@ -33,17 +36,31 @@ data class RouteStatus(
  */
 fun Schedule.delayedDepartures(route: SavedRoute, nowMs: Long, limit: Int, delayMin: Int): List<RouteDeparture> {
     val off = delayMin * MINUTE
-    return routeDepartures(route.from, route.to, nowMs - off, limit).map { it.shifted(off) }
+    val raw = if (isDirect(route)) {
+        routeDepartures(route.from, route.to, nowMs - off, limit)
+    } else {
+        // No direct train: a trip with changes, planned as whole journeys.
+        journeys(route.from, route.to, nowMs - off, limit).map { it.asDeparture() }
+    }
+    return raw.map { it.shifted(off) }
 }
 
-private fun RouteDeparture.shifted(off: Long) = if (off == 0L) this else copy(dep = dep + off, arr = arr + off)
+private val directCache = ConcurrentHashMap<String, Boolean>()
+
+/** Whether a train runs straight from the route's start to its end, so it needs no change. */
+fun isDirect(route: SavedRoute): Boolean = directCache.getOrPut(route.id) { routeGroup(route.from, route.to) != null }
+
+/** Moved by the route's delay; every leg of a trip with changes moves with it. */
+private fun RouteDeparture.shifted(off: Long) =
+    if (off == 0L) this else copy(dep = dep + off, arr = arr + off, legs = legs?.map { it.copy(dep = it.dep + off, arr = it.arr + off) })
 
 fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, count: Int, delayMin: Int = 0): RouteStatus {
     val today = s.today(now).date
     val off = delayMin * MINUTE
     val deps = s.delayedDepartures(route, now, count, delayMin)
     val next = deps.firstOrNull()
-    val last = s.lastRouteDeparture(route.from, route.to, now - off)?.shifted(off)
+    val last = (if (isDirect(route)) s.lastRouteDeparture(route.from, route.to, now - off) else s.lastJourney(route.from, route.to, now - off)?.asDeparture())
+        ?.shifted(off)
     val closed = next != null && next.trip.serviceDate != today
     return RouteStatus(
         route = route,

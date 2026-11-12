@@ -125,7 +125,8 @@ object Widgets {
         val delayMin = decodeDelays(store(context).getString("delays", null))[route.id] ?: 0
         val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1, delayMin)
         val next = status.next
-        val line = routeGroup(route.from, route.to)?.line ?: Line.BLUE
+        // A trip with changes takes the colour of its first train.
+        val line = routeGroup(route.from, route.to)?.line ?: next?.legs?.first()?.trip?.line ?: Line.BLUE
         val ring = when (line) {
             Line.BLUE -> R.drawable.widget_bg_blue
             Line.GREEN -> R.drawable.widget_bg_green

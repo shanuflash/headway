@@ -168,12 +168,14 @@ export class Schedule {
     this.ctx = ctx;
     this.days = new Map();
     this.windows = new Map();
+    this.lasts = new Map();
   }
 
   setContext(ctx) {
     this.ctx = ctx;
     this.days.clear();
     this.windows.clear();
+    this.lasts.clear();
   }
 
   day(key) {
@@ -352,6 +354,32 @@ export class Schedule {
       t = j.dep + 1;
     }
     return out;
+  }
+
+  /**
+   * The last journey of the current service day from `from` to `to`, with changes if needed:
+   * the latest start that still gets there tonight. Binary search over plan(), cached per day.
+   */
+  lastJourney(from, to, nowMs) {
+    const date = serviceDateKey(nowMs);
+    const key = `${from}|${to}|${date}`;
+    if (this.lasts.has(key)) return this.lasts.get(key);
+    let best = this.plan(from, to, nowMs);
+    if (best && best.legs[0].trip.serviceDate !== date) best = null;
+    if (best) {
+      let lo = best.dep;
+      let hi = nowMs + 30 * 60 * MIN;
+      while (hi - lo > MIN) {
+        const mid = Math.floor((lo + hi) / 2);
+        const j = this.plan(from, to, mid);
+        if (j && j.legs[0].trip.serviceDate === date) {
+          best = j;
+          lo = Math.max(mid, j.dep);
+        } else hi = mid;
+      }
+    }
+    this.lasts.set(key, best);
+    return best;
   }
 
   /** Previous departure of the same service pattern at a station, for the headway dial. */

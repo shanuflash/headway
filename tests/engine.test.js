@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Schedule, dayTypeFor } from '../js/engine.js';
+import { STATIONS, directDestinations, transferDestinations } from '../js/network.js';
 
 const at = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi).getTime();
 const hhmm = (ms) => new Date(ms).toTimeString().slice(0, 5);
@@ -116,4 +117,31 @@ test('direct destinations group stations by direction of travel', async () => {
   assert.ok(towardCentralViaCmbt.stations.some((x) => x.id === 'koyambedu'));
   const south = groups.find((g) => g.next === 'nanganallur-road');
   assert.deepEqual(south.terminals.sort(), ['airport']);
+});
+
+test('the last journey with a change is the latest start that still arrives tonight', () => {
+  const s = new Schedule();
+  const now = at(2026, 10, 12, 20, 0);
+  const last = s.lastJourney('guindy', 'porur-junction', now);
+  assert.ok(last, 'there is a last journey tonight');
+  assert.ok(last.legs.length >= 2, 'it needs a change');
+  assert.equal(last.legs[0].trip.serviceDate, '2026-10-12');
+  // A minute after it leaves, the next plan is tomorrow's.
+  const after = s.plan('guindy', 'porur-junction', last.dep + 60_000);
+  assert.ok(!after || after.legs[0].trip.serviceDate !== '2026-10-12');
+  // Direct pairs agree with the direct last train.
+  assert.equal(s.lastJourney('guindy', 'central', now).dep, s.lastRouteDeparture('guindy', 'central', now).dep);
+});
+
+test('every station is reachable, directly or with a change', () => {
+  for (const from of Object.keys(STATIONS)) {
+    const direct = new Set(directDestinations(from).flatMap((g) => g.stations.map((x) => x.id)));
+    const changes = transferDestinations(from);
+    for (const id of Object.keys(STATIONS)) {
+      if (id === from) continue;
+      assert.ok(direct.has(id) || changes.has(id), `${from} -> ${id}`);
+      if (changes.has(id)) assert.ok(!direct.has(id) && changes.get(id).via.length === changes.get(id).changes);
+    }
+  }
+  assert.deepEqual(transferDestinations('guindy').get('porur-junction'), { changes: 2, via: ['alandur', 'vadapalani'] });
 });
