@@ -29,6 +29,7 @@ const DEFAULTS = {
   upi: '', // the metro card's own UPI ID (from its "Scan to recharge" QR); stays in this browser
   coaches: {}, // route id -> 'front' | 'middle' | 'rear', set by the rider
   delays: {}, // route id -> minutes the rider's trains run off the timetable, -10 (early) to +10 (late)
+  trainDelays: {}, // route id -> { 'HH:MM' timetabled departure from the boarding station: minutes }, overrides `delays` for that train, daily
   flips: {}, // station pair -> { at, home, applied }: show the trip from `home` until `at`, the ride back after
 };
 
@@ -197,11 +198,18 @@ function platformAt(from, g) {
 function boardingTags(r, shown) {
   const p = shown?.legs ? legPlatform(shown.legs[0]) : platformFor(r);
   const c = prefs.coaches?.[r.id];
-  const d = delayOf(r.id);
-  if (!p && !c && !d) return '';
-  return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}${
-    d ? `<button class="delay ${d > 0 ? 'late' : 'early'}" data-act="route-menu" data-route="${r.id}" aria-label="${delayText(d)}, change">${ic(d > 0 ? 'more_time' : 'history')}${delayText(d)}</button>` : ''
-  }</div>`;
+  // The shown train's delay: tap to set this train's own (saved routes only).
+  const saved = r !== preview && prefs.routes.some((x) => x.id === r.id);
+  const d = shown?.delay ?? 0;
+  const own = shown?.timetabled != null && trainDelayOf(r.id, shown.timetabled) != null;
+  const tag =
+    saved && shown?.timetabled != null
+      ? `<button class="delay ${d > 0 ? 'late' : d < 0 ? 'early' : 'none'}" data-act="train-delay" data-route="${r.id}" data-train="${shown.timetabled}" aria-label="${delayText(
+          d,
+        )}${own ? ', this train' : ''}. Change">${ic(d > 0 ? 'more_time' : d < 0 ? 'history' : 'schedule')}${delayText(d)}${own ? '<em>this train</em>' : ''}</button>`
+      : '';
+  if (!p && !c && !tag) return '';
+  return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}${tag}</div>`;
 }
 
 /* ----- trips with changes ----- */
@@ -209,11 +217,14 @@ function boardingTags(r, shown) {
 /** The colour key of a leg: its line, or the inter-corridor service. */
 const legLine = (leg) => (leg.trip.route === 'inter' ? 'inter' : leg.trip.line);
 const legColor = (leg) => (legLine(leg) === 'inter' ? 'var(--green)' : lineColor[leg.trip.line]);
+/** A leg's rail: the inter-corridor runs on Green Line track and then Blue, so it fades green to blue. */
+const legRail = (leg) => (legLine(leg) === 'inter' ? 'linear-gradient(var(--green), var(--blue))' : lineColor[leg.trip.line]);
+const legShort = (leg) => (legLine(leg) === 'inter' ? 'Inter-corridor' : lineName(leg.trip.line).replace(/ Line$/, ''));
 const legLineName = (leg) => (legLine(leg) === 'inter' ? 'Inter-corridor' : lineName(leg.trip.line));
 
 /** A dot that shows every line of the trip, in order. */
 function legsGradient(legs) {
-  const cols = legs.map(legColor);
+  const cols = legs.flatMap((l) => (legLine(l) === 'inter' ? ['var(--green)', 'var(--blue)'] : [legColor(l)]));
   return cols.length > 1 ? `linear-gradient(135deg, ${cols.join(', ')})` : cols[0];
 }
 
@@ -221,6 +232,21 @@ function legsGradient(legs) {
 function changesLabel(d) {
   const at = d.legs.slice(1).map((l) => name(l.from));
   return `${plural(at.length, 'change')} at ${at.length > 1 ? `${at.slice(0, -1).join(', ')} and ${at.at(-1)}` : at[0]}`;
+}
+
+/** "Blue → Inter-corridor", each in its colour: the trains of the shown trip, in order. */
+function legsLine(d) {
+  return `<span class="line legs">${d.legs
+    .map((l) => `<span><i class="dot" style="background: ${legRail(l).replace('linear-gradient(', 'linear-gradient(135deg, ')}"></i>${esc(legShort(l))}</span>`)
+    .join('<span class="arrow">→</span>')}</span>`;
+}
+
+/** A thin bar on a chip with each train's colour, by its share of the ride, so options read at a glance. */
+function legBar(d) {
+  if (!d.legs) return '';
+  return `<span class="legbar" aria-label="${esc(d.legs.map(legShort).join(', then '))}">${d.legs
+    .map((l) => `<i style="flex: ${Math.max(1, (l.arr - l.dep) / MIN)}; background: ${legRail(l).replace('linear-gradient(', 'linear-gradient(90deg, ')}"></i>`)
+    .join('')}</span>`;
 }
 
 /** Platform for a leg at the station it's boarded, from the direction its train heads off in. */
@@ -238,8 +264,8 @@ function timelineHtml(d) {
     `<li class="tl-stop ${cls}" style="--c: ${color}"><span class="tl-t">${time}</span><span class="tl-dot"></span><span class="tl-x"><span class="t">${esc(
       name(station),
     )}</span>${sub ? `<span class="s">${sub}</span>` : ''}</span></li>`;
-  const seg = (text, cls, color) =>
-    `<li class="tl-seg ${cls}" style="--c: ${color}"><span class="tl-t"></span><span class="tl-rail"></span><span class="tl-x">${text}</span></li>`;
+  const seg = (text, cls, color, rail) =>
+    `<li class="tl-seg ${cls}" style="--c: ${color}${rail ? `; --rail: ${rail}` : ''}"><span class="tl-t"></span><span class="tl-rail"></span><span class="tl-x">${text}</span></li>`;
   const out = [];
   d.legs.forEach((leg, i) => {
     const color = legColor(leg);
@@ -257,7 +283,7 @@ function timelineHtml(d) {
     }
     const plat = legPlatform(leg);
     out.push(stop(clock(leg.dep), leg.from, `${esc(legLineName(leg))} toward ${esc(name(leg.trip.dest))}${plat ? ` · ${esc(plat)}` : ''}`, 'board', color));
-    out.push(seg(`${plural(leg.stops.length - 1, 'stop')} · ${span(leg.arr - leg.dep)}`, 'ride', color));
+    out.push(seg(`${plural(leg.stops.length - 1, 'stop')} · ${span(leg.arr - leg.dep)}`, 'ride', color, legRail(leg)));
     const lastLeg = i === d.legs.length - 1;
     out.push(stop(clock(leg.arr), leg.to, lastLeg ? 'Arrive' : 'Get off', lastLeg ? 'end' : 'off', color));
   });
@@ -281,6 +307,41 @@ function delayOf(id) {
 }
 
 const delayText = (d) => (d > 0 ? `${d} min late` : d < 0 ? `${-d} min early` : 'On time');
+
+/** "08:14": a train's timetabled departure as a daily key. */
+const timeKey = (ms) => {
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+/** The delay set for one train (by its timetabled departure), or null when it follows the route's. */
+function trainDelayOf(id, timetabled) {
+  const v = prefs.trainDelays?.[id]?.[timeKey(timetabled)];
+  return v == null ? null : Math.max(-DELAY_MAX, Math.min(DELAY_MAX, Math.round(Number(v) || 0)));
+}
+
+/** The delay a train runs with: its own if set, else the route's. */
+const delayFor = (id, timetabled) => trainDelayOf(id, timetabled) ?? delayOf(id);
+
+/** A shown departure's timetabled time, found from the delays now in force. */
+function timetabledOf(id, shown) {
+  for (let v = -DELAY_MAX; v <= DELAY_MAX; v++) if (delayFor(id, shown - v * MIN) === v) return shown - v * MIN;
+  return shown;
+}
+
+/** A departure (or a trip's legs) moved by `mins`, remembering its timetabled time and delay. */
+function withDelay(x, mins) {
+  if (!x) return null;
+  const off = mins * MIN;
+  return {
+    ...x,
+    dep: x.dep + off,
+    arr: x.arr + off,
+    timetabled: x.dep,
+    delay: mins,
+    ...(x.legs ? { legs: x.legs.map((l) => ({ ...l, dep: l.dep + off, arr: l.arr + off })) } : {}),
+  };
+}
 
 /** Whether a train runs straight from `r.from` to `r.to`, so the route needs no change. */
 const directCache = new Map();
@@ -461,19 +522,23 @@ function dayWord(ms) {
 function routeModel(r, now) {
   if (r.plan) return planModel(r);
   const today = schedule.today(now).key;
-  // Trains that run `delay` min late leave `delay` min after their timetabled time, so look
-  // that much further back in the timetable for the ones still to come.
-  const off = delayOf(r.id) * MIN;
+  // Each train runs with its own delay (or the route's). A late train leaves after its
+  // timetabled time, so look back as far as a delay can go and keep the ones still to come.
   // A route with no direct train is a trip with changes: its options come from the planner.
   const direct = isDirect(r);
-  const deps = direct
-    ? schedule.routeDepartures(r.from, r.to, now - off, prefs.count).map((x) => shifted(x, off))
-    : schedule.journeys(r.from, r.to, now - off, prefs.count).map((j) => fromJourney(j, off));
+  const want = prefs.count + 6;
+  const raw = direct
+    ? schedule.routeDepartures(r.from, r.to, now - DELAY_MAX * MIN, want)
+    : schedule.journeys(r.from, r.to, now - DELAY_MAX * MIN, want).map((j) => fromJourney(j, 0));
+  const deps = raw
+    .map((x) => withDelay(x, delayFor(r.id, x.dep)))
+    .filter((x) => x.dep >= now)
+    .sort((a, b) => a.dep - b.dep)
+    .slice(0, prefs.count);
   const next = deps[0] ?? null;
   if (!next) return { r, kind: 'none', direct };
-  const last = direct
-    ? shifted(schedule.lastRouteDeparture(r.from, r.to, now - off), off)
-    : fromJourney(schedule.lastJourney(r.from, r.to, now - off), off);
+  const lastRaw = direct ? schedule.lastRouteDeparture(r.from, r.to, now - DELAY_MAX * MIN) : fromJourney(schedule.lastJourney(r.from, r.to, now - DELAY_MAX * MIN), 0);
+  const last = lastRaw && withDelay(lastRaw, delayFor(r.id, lastRaw.dep));
   const closed = next.trip.serviceDate !== today;
   return {
     r,
@@ -548,7 +613,9 @@ function emptyState() {
 
 const reminderOn = (r, dep) => !!(prefs.reminder && prefs.reminder.routeId === r.id && prefs.reminder.dep === dep && !prefs.reminder.fired);
 
-// Picked train per route (departure ms). Falls back to the next train once the picked one leaves.
+// Picked train per route, by its timetabled departure (delays don't move it). Falls back to the
+// next train once the picked one leaves.
+const pickKey = (x) => x.timetabled ?? x.dep;
 const picked = new Map();
 
 function routeCard(m, isPreview) {
@@ -588,7 +655,7 @@ function routeCard(m, isPreview) {
     body = `<div class="rc-pad sub" style="font-size: 15px">${m.plan.mode === 'arrive' ? 'No trains get there by then.' : 'No trains after then.'}</div>`;
   } else if (m.kind === 'plan') {
     const want = picked.get(r.id);
-    const found = m.deps.findIndex((x) => x.dep === want);
+    const found = m.deps.findIndex((x) => pickKey(x) === want);
     const i = found >= 0 ? found : m.best;
     const d = m.deps[i];
     const label =
@@ -604,9 +671,9 @@ function routeCard(m, isPreview) {
     const chips = m.deps
       .map((x, k) => {
         const sel = k === i;
-        return `<button class="tchip ${sel ? 'on' : ''}" data-act="pick" data-route="${r.id}" data-dep="${x.dep}" aria-pressed="${sel}"><span class="t">${clock(
+        return `<button class="tchip ${sel ? 'on' : ''}" data-act="pick" data-route="${r.id}" data-pick="${pickKey(x)}" aria-pressed="${sel}"><span class="t">${clock(
           x.dep,
-        )}</span><span class="s">to ${clockTime(x.arr)}</span></button>`;
+        )}</span><span class="s">to ${clockTime(x.arr)}</span>${legBar(x)}</button>`;
       })
       .join('');
     body = `
@@ -615,6 +682,7 @@ function routeCard(m, isPreview) {
           <span class="label tint">${esc(label)}</span>
           ${big}
           <span class="line">Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}${note}</span>
+          ${d.legs ? legsLine(d) : ''}
         </div>
       </div>
       ${boardingTags(r, d)}
@@ -625,7 +693,7 @@ function routeCard(m, isPreview) {
   } else {
     const closed = m.kind === 'closed';
     const want = picked.get(r.id);
-    const i = Math.max(0, m.deps.findIndex((d) => d.dep === want));
+    const i = Math.max(0, m.deps.findIndex((d) => pickKey(d) === want));
     const d = m.deps[i];
     const lastIdx = closed ? -1 : m.deps.findIndex((x) => m.last && x.dep === m.last.dep);
     const isTomorrow = (k) => closed || (m.tomorrowFrom >= 0 && k >= m.tomorrowFrom);
@@ -654,9 +722,9 @@ function routeCard(m, isPreview) {
         const sel = k === i;
         const tm = isTomorrow(k);
         const sub = closed && k === 0 ? 'first' : tm ? 'tomorrow' : `<span data-at="${x.dep}" data-fmt="chip">${FORMATS.chip(x.dep - m.now)}</span>`;
-        return `<button class="tchip ${sel ? 'on' : ''} ${tm && !closed ? 'dim' : ''}" data-act="pick" data-route="${r.id}" data-dep="${x.dep}" aria-pressed="${sel}"><span class="t">${clock(
+        return `<button class="tchip ${sel ? 'on' : ''} ${tm && !closed ? 'dim' : ''}" data-act="pick" data-route="${r.id}" data-pick="${pickKey(x)}" aria-pressed="${sel}"><span class="t">${clock(
           x.dep,
-        )}</span><span class="s ${k === lastIdx ? 'warn' : ''}">${sub}</span></button>`;
+        )}</span><span class="s ${k === lastIdx ? 'warn' : ''}">${sub}</span>${legBar(x)}</button>`;
       })
       .join('');
     body = `
@@ -665,6 +733,7 @@ function routeCard(m, isPreview) {
           <span class="label ${tone}">${label}</span>
           ${big}
           <span class="line">${lineText}</span>
+          ${d.legs ? legsLine(d) : ''}
         </div>
         <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${
           on ? 'Stop the countdown' : 'Count down to this train'
@@ -1552,19 +1621,83 @@ function paintDelayCard(id) {
 
 /** Saves a route's delay, keeping an active countdown on the same train it was set for. */
 function setDelay(id, d) {
-  const before = delayOf(id);
-  if (d === before) return;
-  const delays = { ...(prefs.delays ?? {}) };
-  if (d) delays[id] = d;
-  else delete delays[id];
-  const rem = prefs.reminder;
-  const moved = (d - before) * MIN;
-  const reminder = rem && rem.routeId === id && !rem.fired ? { ...rem, dep: rem.dep + moved, at: rem.at + moved } : rem;
-  // The picked chip keys on departure time, so move it with the train too.
-  if (picked.has(id)) picked.set(id, picked.get(id) + moved);
-  save({ delays, reminder });
+  if (d === delayOf(id)) return;
+  keepingTrains(id, () => {
+    const delays = { ...(prefs.delays ?? {}) };
+    if (d) delays[id] = d;
+    else delete delays[id];
+    return { delays };
+  });
   paintDelayCard(id);
   render({ force: true });
+}
+
+/** Sets (or with null, clears) one train's own delay, by its timetabled departure. */
+function setTrainDelay(id, timetabled, d) {
+  keepingTrains(id, () => {
+    const all = { ...(prefs.trainDelays ?? {}) };
+    const mine = { ...(all[id] ?? {}) };
+    if (d == null) delete mine[timeKey(timetabled)];
+    else mine[timeKey(timetabled)] = d;
+    if (Object.keys(mine).length) all[id] = mine;
+    else delete all[id];
+    return { trainDelays: all };
+  });
+  render({ force: true });
+}
+
+/**
+ * Applies a delay change while keeping the countdown on the same train: it keys on a shown time,
+ * which moves by that train's own change. (Picked chips key on the timetabled time, which doesn't.)
+ */
+function keepingTrains(id, change) {
+  const rem = prefs.reminder;
+  const remBase = rem && rem.routeId === id && !rem.fired ? timetabledOf(id, rem.dep) : null;
+  save(change());
+  const after = (base) => base + delayFor(id, base) * MIN;
+  if (remBase != null) save({ reminder: { ...rem, dep: after(remBase), at: after(remBase) } });
+}
+
+/* ----- one train's own delay ----- */
+
+let trainDelayTarget = null;
+
+function trainDelayHtml() {
+  const { id, at } = trainDelayTarget;
+  const r = prefs.routes.find((x) => x.id === id);
+  const own = trainDelayOf(id, at);
+  const d = own ?? delayOf(id);
+  const tone = d > 0 ? 'late' : d < 0 ? 'early' : 'zero';
+  return `${sheetHead(`The ${clock(at)} train`, r ? `${name(r.from)} → ${name(r.to)} · every day` : null, null)}
+    <div class="sheet-body" style="flex: 0 1 auto">
+      <div class="card dl" data-tone="${tone}" style="--v:${d}; --max:${DELAY_MAX}">
+        <div class="dl-read"><span class="dl-num">${d ? Math.abs(d) : ''}</span><span class="dl-unit">${d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time'}</span></div>
+        <div class="dl-ctrl">
+          <button class="dl-step" data-act="tdelay-step" data-d="-1" aria-label="One minute earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
+          <div class="dl-slider"><div class="dl-track" aria-hidden="true"><b class="dl-fill"></b></div>
+            <input type="range" data-act="tdelay" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="How early or late this train runs, in minutes" aria-valuetext="${delayText(d)}" /></div>
+          <button class="dl-step" data-act="tdelay-step" data-d="1" aria-label="One minute later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
+        </div>
+        <span class="fl-foot">${
+          own != null
+            ? `Just this train, every day. Other trains on this route: ${delayText(delayOf(id)).toLowerCase()}.`
+            : `Following the route (${delayText(delayOf(id)).toLowerCase()}). Change it here for just this train.`
+        }</span>
+        ${own != null ? `<button class="cta small" data-act="tdelay-reset" style="align-self: flex-start">${ic('history')}Follow the route again</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function openTrainDelay(id, at) {
+  trainDelayTarget = { id, at };
+  openSheet(trainDelayHtml());
+  sheetRoot.querySelector('.sheet').classList.add('short', 'fit');
+}
+
+function changeTrainDelay(d) {
+  const { id, at } = trainDelayTarget;
+  setTrainDelay(id, at, d == null ? null : Math.max(-DELAY_MAX, Math.min(DELAY_MAX, d)));
+  replaceSheet(trainDelayHtml());
 }
 
 /* ----- "When?" sheet: plan a quick look for another time ----- */
@@ -1691,7 +1824,7 @@ const ACTIONS = {
   },
   pick: (el) => {
     buzz();
-    picked.set(el.dataset.route, Number(el.dataset.dep));
+    picked.set(el.dataset.route, Number(el.dataset.pick));
     render({ force: true });
   },
   mock: (el) => {
@@ -1784,6 +1917,19 @@ const ACTIONS = {
     const f = r && flipOf(r);
     if (!f) return;
     setFlip(r, { ...f, home: r.from === f.home ? r.to : r.from, applied: null }, true);
+  },
+  'train-delay': (el) => {
+    buzz();
+    openTrainDelay(el.dataset.route, Number(el.dataset.train));
+  },
+  'tdelay-step': (el) => {
+    buzz();
+    const { id, at } = trainDelayTarget;
+    changeTrainDelay(delayFor(id, at) + Number(el.dataset.d));
+  },
+  'tdelay-reset': () => {
+    buzz();
+    changeTrainDelay(null);
   },
   'delay-step': (el) => {
     buzz();
@@ -1909,6 +2055,18 @@ document.addEventListener('change', (e) => {
 // The delay slider updates the card behind the sheet as it moves.
 document.addEventListener('input', (e) => {
   const el = e.target;
+  if (el.dataset?.act === 'tdelay' && trainDelayTarget) {
+    const d = Number(el.value);
+    if (d !== delayFor(trainDelayTarget.id, trainDelayTarget.at)) buzz(6);
+    // Update the train but not the sheet, so the slider under the finger isn't replaced.
+    setTrainDelay(trainDelayTarget.id, trainDelayTarget.at, d);
+    const card = el.closest('.card.dl');
+    card.style.setProperty('--v', d);
+    card.dataset.tone = d > 0 ? 'late' : d < 0 ? 'early' : 'zero';
+    card.querySelector('.dl-num').textContent = d ? Math.abs(d) : '';
+    card.querySelector('.dl-unit').textContent = d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time';
+    return;
+  }
   if (el.dataset?.act !== 'delay') return;
   const d = Number(el.value);
   if (d !== delayOf(el.dataset.route)) buzz(6);

@@ -50,8 +50,13 @@ data class Prefs(
     val delays: Map<String, Int> = emptyMap(),
     /** Switch direction by time, by station pair ([pairKey]). */
     val flips: Map<String, AutoFlip> = emptyMap(),
+    /** Trains with their own delay, by route id, then timetabled departure ("08:14"); overrides [delays]. */
+    val trainDelays: Map<String, Map<String, Int>> = emptyMap(),
 ) {
     fun delayOf(routeId: String): Int = delays[routeId] ?: 0
+
+    /** How late a route's trains run: the route's delay, with each train's own on top. */
+    fun delayRule(routeId: String): DelayRule = DelayRule(delayOf(routeId), trainDelays[routeId].orEmpty())
 }
 
 val COUNT_CHOICES = listOf(3, 5, 8)
@@ -68,6 +73,7 @@ class PrefsStore(private val context: Context) {
         val coaches = stringPreferencesKey("coaches")
         val delays = stringPreferencesKey("delays")
         val flips = stringPreferencesKey("flips")
+        val trainDelays = stringPreferencesKey("train_delays")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -97,6 +103,7 @@ class PrefsStore(private val context: Context) {
             }.toMap(),
             delays = decodeDelays(p[Keys.delays]),
             flips = decodeFlips(p[Keys.flips]),
+            trainDelays = decodeTrainDelays(p[Keys.trainDelays]),
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -118,6 +125,7 @@ class PrefsStore(private val context: Context) {
         p[Keys.coaches] = next.coaches.entries.joinToString(";") { "${it.key}=${it.value.name}" }
         p[Keys.delays] = encodeDelays(next.delays)
         p[Keys.flips] = encodeFlips(next.flips)
+        p[Keys.trainDelays] = encodeTrainDelays(next.trainDelays)
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
@@ -172,3 +180,31 @@ fun decodeDelays(raw: String?): Map<String, Int> =
         val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: return@mapNotNull null
         (id to minutes).takeIf { minutes != 0 }
     }.toMap()
+
+/** "a>b|08:14=2;a>b|08:21=-1": each train's own delay, in DataStore and the widgets' mirror. */
+fun encodeTrainDelays(all: Map<String, Map<String, Int>>): String =
+    all.flatMap { (id, byTime) -> byTime.map { (t, d) -> "$id|$t=$d" } }.joinToString(";")
+
+private val TIME_KEY = Regex("""\d{2}:\d{2}""")
+
+fun decodeTrainDelays(raw: String?): Map<String, Map<String, Int>> {
+    val out = HashMap<String, HashMap<String, Int>>()
+    for (part in raw.orEmpty().split(';')) {
+        val (key, d) = part.split('=').takeIf { it.size == 2 } ?: continue
+        val (id, time) = key.split('|').takeIf { it.size == 2 } ?: continue
+        if (!TIME_KEY.matches(time)) continue
+        val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: continue
+        out.getOrPut(id) { HashMap() }[time] = minutes
+    }
+    return out
+}
+
+/** One route's rule as text for an intent extra: "2|08:14=3,08:21=-1". */
+fun encodeRule(rule: DelayRule): String = "${rule.route}|" + rule.byTime.entries.joinToString(",") { "${it.key}=${it.value}" }
+
+fun decodeRule(raw: String?): DelayRule {
+    val (route, times) = raw?.split('|', limit = 2)?.takeIf { it.size == 2 } ?: return DelayRule()
+    val byTime = times.split(',').mapNotNull { e -> e.split('=').takeIf { it.size == 2 }?.let { (t, d) -> d.toIntOrNull()?.let { t to it } } }.toMap()
+    return DelayRule(route.toIntOrNull() ?: 0, byTime)
+}
+

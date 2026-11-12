@@ -184,7 +184,7 @@ internal fun StepButton(icon: ImageVector, description: String, enabled: Boolean
  * and a fill that grows from the centre out to the value. Tap a notch or drag the thumb.
  */
 @Composable
-private fun DelaySlider(value: Int, tone: Color, onValue: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun DelaySlider(value: Int, tone: Color, onValue: (Int) -> Unit, modifier: Modifier = Modifier) {
     val hw = LocalHw.current
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(value)

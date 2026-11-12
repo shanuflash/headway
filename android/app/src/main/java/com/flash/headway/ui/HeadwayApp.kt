@@ -81,6 +81,7 @@ import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
+import com.flash.headway.app.timeKey
 import com.flash.headway.data.Network
 import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
@@ -113,6 +114,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var whenOpen by remember { mutableStateOf(false) }
+    var trainDelayFor by remember { mutableStateOf<Pair<String, Long>?>(null) }
     val plan by vm.plan.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val feed by vm.feed.collectAsStateWithLifecycle()
@@ -194,6 +196,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 toast("Route saved")
                             },
                             whenOpen = { whenOpen = true },
+                            trainDelay = { id, at -> trainDelayFor = id to at },
                         ),
                     )
                 }
@@ -267,6 +270,22 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
         }
 
         if (topUp) TopUpSheet(onDismiss = { topUp = false })
+
+        trainDelayFor?.let { (id, at) ->
+            val route = prefs.routes.firstOrNull { it.id == id }
+            if (route == null) {
+                trainDelayFor = null
+            } else {
+                TrainDelaySheet(
+                    title = "The ${clock(at)} train",
+                    subtitle = "${Network.name(route.from)} → ${Network.name(route.to)} · every day",
+                    own = prefs.trainDelays[id]?.get(timeKey(at)),
+                    routeDelay = prefs.delayOf(id),
+                    onChange = { vm.setTrainDelay(id, at, it) },
+                    onDismiss = { trainDelayFor = null },
+                )
+            }
+        }
 
         val planned = preview
         if (whenOpen && planned != null) {

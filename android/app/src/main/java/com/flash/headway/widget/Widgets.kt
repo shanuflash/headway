@@ -18,7 +18,10 @@ import com.flash.headway.app.Advisories
 import com.flash.headway.app.Clock
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.SavedRoute
+import com.flash.headway.app.DelayRule
 import com.flash.headway.app.decodeDelays
+import com.flash.headway.app.decodeTrainDelays
+import com.flash.headway.app.encodeTrainDelays
 import com.flash.headway.app.decodeFlips
 import com.flash.headway.app.encodeDelays
 import com.flash.headway.app.encodeFlips
@@ -53,6 +56,7 @@ object Widgets {
             .putString("routes", p.routes.joinToString(";") { "${it.from}>${it.to}" })
             .putBoolean("lastWarn", p.lastWarn)
             .putString("delays", encodeDelays(p.delays))
+            .putString("train_delays", encodeTrainDelays(p.trainDelays))
             .putString("flips", encodeFlips(p.flips))
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
             .putLong("mock", p.mockOffset)
@@ -123,8 +127,11 @@ object Widgets {
         }
 
         val lastWarn = store(context).getBoolean("lastWarn", true)
-        val delayMin = decodeDelays(store(context).getString("delays", null))[route.id] ?: 0
-        val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1, delayMin)
+        val rule = DelayRule(
+            decodeDelays(store(context).getString("delays", null))[route.id] ?: 0,
+            decodeTrainDelays(store(context).getString("train_delays", null))[route.id].orEmpty(),
+        )
+        val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1, rule)
         val next = status.next
         // A trip with changes takes the colour of its first train.
         val line = routeGroup(route.from, route.to)?.line ?: next?.legs?.first()?.trip?.line ?: Line.BLUE

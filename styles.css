@@ -1028,7 +1028,7 @@ button.hero:active { transform: scale(0.985); }
 .tl-stop.off .tl-dot, .tl-stop.end .tl-dot { background: var(--c); }
 /* The rail runs the full height of a segment and tucks under the dots either side. */
 .tl-seg { min-height: 30px; }
-.tl-rail { align-self: stretch; justify-self: center; width: 4px; margin: -4px 0; border-radius: 2px; background: var(--c); }
+.tl-rail { align-self: stretch; justify-self: center; width: 4px; margin: -4px 0; border-radius: 2px; background: var(--rail, var(--c)); }
 .tl-seg.walk .tl-rail { width: 0; border-left: 2.5px dotted var(--sub); background: none; border-radius: 0; }
 .tl-seg .tl-x { padding: 6px 0; font-size: 13px; line-height: 18px; color: var(--sub); }
 .tl-seg.walk .tl-x { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-weight: 500; }
@@ -1048,3 +1048,18 @@ button.hero:active { transform: scale(0.985); }
 .when-card { gap: 12px; }
 .when-time { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 17px; }
 .when-time input { font: inherit; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tint); background: var(--fill); border: 0; border-radius: 10px; padding: 6px 10px; min-height: 36px; }
+
+/* One train's own delay: the tag under the hero (neutral when on time), and its mark. */
+.boarding > .delay.none { color: var(--sub); background: var(--pill); }
+.boarding > .delay em { font-style: normal; font-weight: 500; opacity: 0.75; margin-left: 4px; }
+.boarding > .delay em::before { content: '· '; }
+
+/* Trips with changes: each chip's trains in their colours, by their share of the ride. */
+.legbar { display: flex; gap: 2px; width: 100%; height: 4px; margin-top: 6px; }
+.legbar i { display: block; border-radius: 2px; min-width: 6px; }
+
+/* The shown trip's trains under the hero: "● Blue → ● Inter-corridor". */
+.rc-hero .line.legs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 2px; color: var(--text); font-weight: 500; }
+.rc-hero .line.legs > span { display: inline-flex; align-items: center; gap: 5px; }
+.rc-hero .line.legs .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.rc-hero .line.legs .arrow { color: var(--sub); }

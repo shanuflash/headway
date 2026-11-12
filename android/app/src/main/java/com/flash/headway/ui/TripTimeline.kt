@@ -1,6 +1,10 @@
 package com.flash.headway.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,10 +52,47 @@ fun legColor(leg: Leg, hw: HwColors): Color = if (isInter(leg)) hw.green else hw
 
 fun legLineName(leg: Leg): String = if (isInter(leg)) "Inter-corridor" else leg.trip.line.label
 
+/** A leg's colours: its line's, or green then blue for the inter-corridor (Green Line track, then Blue). */
+fun legColors(leg: Leg, hw: HwColors): List<Color> = if (isInter(leg)) listOf(hw.green, hw.blue) else listOf(hw.line(leg.trip.line))
+
 /** A dot that shows every line of the trip, in order. */
 fun legsBrush(legs: List<Leg>, hw: HwColors): Brush {
-    val colors = legs.map { legColor(it, hw) }
+    val colors = legs.flatMap { legColors(it, hw) }
     return if (colors.size > 1) Brush.linearGradient(colors) else Brush.linearGradient(listOf(colors[0], colors[0]))
+}
+
+/** "Blue" / "Green" / "Yellow" / "Inter-corridor". */
+fun legShort(leg: Leg): String = if (isInter(leg)) "Inter-corridor" else leg.trip.line.label.removeSuffix(" Line")
+
+/** "● Blue → ● Inter-corridor": the shown trip's trains, in order and in their colours. */
+@Composable
+fun LegsLine(legs: List<Leg>) {
+    val hw = LocalHw.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 2.dp)) {
+        legs.forEachIndexed { i, leg ->
+            if (i > 0) Text("→", style = HwType.subhead, color = hw.sub)
+            Box(Modifier.size(8.dp).clip(CircleShape).background(legsBrush(listOf(leg), hw)))
+            Text(legShort(leg), style = HwType.subhead.copy(fontWeight = FontWeight.Medium), color = hw.text, maxLines = 1)
+        }
+    }
+}
+
+/** A thin bar on a chip with each train's colour, by its share of the ride, so options read at a glance. */
+@Composable
+fun LegBar(legs: List<Leg>) {
+    val hw = LocalHw.current
+    Row(Modifier.padding(top = 4.dp).width(50.dp).height(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        legs.forEach { leg ->
+            val colors = legColors(leg, hw)
+            Box(
+                Modifier
+                    .weight(((leg.arr - leg.dep) / MINUTE).coerceAtLeast(1).toFloat())
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (colors.size > 1) Brush.horizontalGradient(colors) else Brush.linearGradient(listOf(colors[0], colors[0]))),
+            )
+        }
+    }
 }
 
 /** "1 change at Alandur", "2 changes at Alandur and Vadapalani". */
@@ -65,8 +106,8 @@ fun changesLabel(legs: List<Leg>): String {
 fun legPlatform(leg: Leg): String? =
     directDestinations(leg.from).firstOrNull { g -> g.stations.any { it.first == leg.to } }?.let { platformAt(leg.from, it) }
 
-/** How the rail looks above or below a dot: a train's colour, or dotted for a walk. */
-private data class Rail(val color: Color, val walk: Boolean = false)
+/** How the rail looks above or below a dot: a train's colour (or two, faded), or dotted for a walk. */
+private data class Rail(val color: Color, val walk: Boolean = false, val fade: Color? = null)
 
 private val TimeWidth = 64.dp
 private val RailWidth = 18.dp
@@ -85,7 +126,7 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth()) {
         legs.forEachIndexed { i, leg ->
             val color = legColor(leg, hw)
-            val ride = Rail(color)
+            val ride = legColors(leg, hw).let { Rail(it.first(), fade = it.getOrNull(1)) }
             if (i > 0) {
                 val prev = legs[i - 1]
                 val walk = Network.transfer(leg.from)
@@ -186,6 +227,8 @@ private fun DrawScope.rail(rail: Rail, from: Offset, to: Offset) {
             cap = StrokeCap.Round,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(0.1f, dot * 2.2f)),
         )
+    } else if (rail.fade != null) {
+        drawLine(Brush.verticalGradient(listOf(rail.color, rail.fade), startY = from.y, endY = to.y), from, to, strokeWidth = 4.dp.toPx(), cap = StrokeCap.Butt)
     } else {
         drawLine(rail.color, from, to, strokeWidth = 4.dp.toPx(), cap = StrokeCap.Butt)
     }

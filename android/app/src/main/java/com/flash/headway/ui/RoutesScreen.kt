@@ -76,6 +76,7 @@ import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
 import com.flash.headway.app.PlanMode
 import com.flash.headway.app.PlanTime
+import com.flash.headway.app.timeKey
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.data.Platforms
@@ -102,6 +103,8 @@ class RouteActions(
     val savePreview: () -> Unit,
     /** Opens "When?" to plan the quick look for another time. */
     val whenOpen: () -> Unit = {},
+    /** Opens one train's own delay: the route id and the train's timetabled departure. */
+    val trainDelay: (String, Long) -> Unit = { _, _ -> },
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -342,7 +345,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
     val r = s.route
     // The train shown big. Tapping a chip picks another; it falls back to the next one once it leaves.
     var picked by rememberSaveable(r.id) { mutableStateOf<Long?>(null) }
-    val index = s.departures.indexOfFirst { it.dep == picked }.let { if (it < 0) s.best else it }
+    val index = s.departures.indexOfFirst { pickKey(it) == picked }.let { if (it < 0) s.best else it }
 
     Column(
         Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(top = 18.dp, bottom = 20.dp),
@@ -410,7 +413,14 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         } else {
             if (s.plan != null) PlanHero(s, shown, index) else Hero(s, shown, index, prefs, now, actions)
             val directPlatform = remember(r) { platformFor(r) }
-            Boarding(shown.legs?.let { legPlatform(it.first()) } ?: directPlatform, prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
+            val saved = !isPreview && prefs.routes.any { it.id == r.id }
+            val ownDelay = shown.timetabled?.let { prefs.trainDelays[r.id]?.get(timeKey(it)) } != null
+            Boarding(
+                shown.legs?.let { legPlatform(it.first()) } ?: directPlatform,
+                prefs.coaches[r.id],
+                delay = if (saved && shown.timetabled != null) shown.delay else null,
+                own = ownDelay,
+            ) { shown.timetabled?.let { actions.trainDelay(r.id, it) } }
             Chips(s, index, now) { picked = it }
             shown.legs?.let { TripTimeline(it, Modifier.padding(horizontal = 20.dp)) }
         }
@@ -484,6 +494,7 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
                 HeroCountdown(d.dep, now)
             }
             Text(line, style = HwType.subhead, color = hw.sub)
+            d.legs?.let { LegsLine(it) }
         }
         Box(
             Modifier
@@ -546,6 +557,7 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
             Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
         }
         Text("Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}$note", style = HwType.subhead, color = hw.sub)
+        d.legs?.let { LegsLine(it) }
     }
 }
 
@@ -563,13 +575,12 @@ private fun LiveText(text: () -> String, style: TextStyle, color: Color) {
 
 /** "Platform 2 · Front coach · 2 min late": where to wait, and the rider's delay. Hidden when none is set. */
 @Composable
-private fun Boarding(platform: String?, coach: Coach?, delay: Int, onDelayTap: () -> Unit) {
-    if (platform == null && coach == null && delay == 0) return
-    val hw = LocalHw.current
+private fun Boarding(platform: String?, coach: Coach?, delay: Int?, own: Boolean, onDelayTap: () -> Unit) {
+    if (platform == null && coach == null && delay == null) return
     Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (platform != null) BoardingTag(platform)
         if (coach != null) BoardingTag("${coach.label.replaceFirstChar { it.uppercase() }} coach")
-        if (delay != 0) DelayTag(delay, onDelayTap)
+        if (delay != null) DelayTag(delay, own, onDelayTap)
     }
 }
 
@@ -585,21 +596,41 @@ private fun BoardingTag(text: String) {
     )
 }
 
-/** "3 min late" in amber or "2 min early" in blue; tap to change it in the route menu. */
+/**
+ * The shown train's delay: "3 min late" in amber, "2 min early" in blue, "On time" in grey, with
+ * "· this train" when it has its own. Tap to set this train's delay.
+ */
 @Composable
-private fun DelayTag(delay: Int, onClick: () -> Unit) {
+private fun DelayTag(delay: Int, own: Boolean, onClick: () -> Unit) {
     val hw = LocalHw.current
-    val (fg, bg) = if (delay > 0) hw.warn to hw.warnBg else hw.info to hw.infoBg
+    val (fg, bg) = when {
+        delay > 0 -> hw.warn to hw.warnBg
+        delay < 0 -> hw.info to hw.infoBg
+        else -> hw.sub to hw.fill2
+    }
     Row(
         Modifier.press(onClick = onClick).clip(CircleShape).background(bg).padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "${delayText(delay)}, change" },
+            .semantics(mergeDescendants = true) { contentDescription = "${delayText(delay)}${if (own) ", this train" else ""}. Change" },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(if (delay > 0) Icons.Rounded.MoreTime else Icons.Rounded.History, null, tint = fg, modifier = Modifier.size(16.dp))
+        Icon(
+            when {
+                delay > 0 -> Icons.Rounded.MoreTime
+                delay < 0 -> Icons.Rounded.History
+                else -> Icons.Rounded.Schedule
+            },
+            null,
+            tint = fg,
+            modifier = Modifier.size(16.dp),
+        )
         Text(delayText(delay), style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1)
+        if (own) Text("· this train", style = HwType.footnote, color = fg.copy(alpha = 0.75f), maxLines = 1)
     }
 }
+
+/** A chip and the picked train key on the timetabled time, so a delay change doesn't move them. */
+private fun pickKey(d: RouteDeparture): Long = d.timetabled ?: d.dep
 
 /** Every upcoming departure as a chip; the picked one is ringed and shown in the hero. */
 @Composable
@@ -631,7 +662,7 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
                     .clip(shape)
                     .background(if (on) hw.tintSoft else hw.fill)
                     .then(if (on) Modifier.border(1.5.dp, hw.tint, shape) else Modifier.edge(shape))
-                    .press(scaleTo = 0.94f) { onPick(d.dep) }
+                    .press(scaleTo = 0.94f) { onPick(pickKey(d)) }
                     .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -648,6 +679,7 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
                 val subStyle = HwType.footnote.copy(fontWeight = if (i == lastIdx) FontWeight.SemiBold else FontWeight.Normal)
                 val subColor = if (i == lastIdx) hw.warn else hw.sub
                 if (fixed != null) Text(fixed, style = subStyle, color = subColor) else LiveText({ chipSpan(d.dep - now()) }, subStyle, subColor)
+                d.legs?.let { LegBar(it) }
             }
         }
     }

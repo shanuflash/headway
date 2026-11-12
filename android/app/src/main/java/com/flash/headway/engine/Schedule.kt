@@ -118,7 +118,16 @@ data class Journey(val from: String, val to: String, val legs: List<Leg>) {
 data class Departure(val trip: Trip, val at: Long)
 
 /** A way from one station to another: a direct train, or with [legs] when it takes a change. */
-data class RouteDeparture(val trip: Trip, val dep: Long, val arr: Long, val legs: List<Leg>? = null)
+data class RouteDeparture(
+    val trip: Trip,
+    val dep: Long,
+    val arr: Long,
+    val legs: List<Leg>? = null,
+    /** The timetabled departure, before the rider's delay moved it (null when it hasn't been). */
+    val timetabled: Long? = null,
+    /** Minutes this departure was moved by: its own delay, or the route's. */
+    val delay: Int = 0,
+)
 
 /** A planned journey as a route departure: its first train, overall dep and arr, and its legs. */
 fun Journey.asDeparture(): RouteDeparture = RouteDeparture(legs.first().trip, dep, arr, legs)

@@ -85,7 +85,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
-                        shown.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayOf(it.id)) } to
+                        shown.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayRule(it.id)) } to
                             pv?.let { if (plan != null) planStatus(s, it, plan, p.count) else routeStatus(s, it, now, p.lastWarn, p.count) }
                     }
                     _statuses.value = list
@@ -201,19 +201,35 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
      * new time, so it keeps pointing at the same train.
      */
     fun setDelay(routeId: String, minutes: Int) {
-        val p = prefs.value ?: return
         val d = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
-        val before = p.delayOf(routeId)
-        if (d == before) return
-        val moved = (d - before) * MINUTE
-        val reminder = p.reminder?.takeIf { it.routeId == routeId }?.let { Reminder(routeId, it.dep + moved) }
+        if (prefs.value?.delayOf(routeId) == d) return
+        keepingCountdown(routeId) { q -> q.copy(delays = if (d == 0) q.delays - routeId else q.delays + (routeId to d)) }
+    }
+
+    /** Sets one train's own delay (by its timetabled departure), or with null, lets it follow the route. */
+    fun setTrainDelay(routeId: String, timetabled: Long, minutes: Int?) = keepingCountdown(routeId) { q ->
+        val mine = q.trainDelays[routeId].orEmpty().toMutableMap()
+        if (minutes == null) mine.remove(timeKey(timetabled)) else mine[timeKey(timetabled)] = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
+        q.copy(trainDelays = if (mine.isEmpty()) q.trainDelays - routeId else q.trainDelays + (routeId to mine))
+    }
+
+    /**
+     * Applies a delay change while keeping a running countdown on the same train: it moves by
+     * that train's own change, found through its timetabled time.
+     */
+    private fun keepingCountdown(routeId: String, change: (Prefs) -> Prefs) {
+        val p = prefs.value ?: return
+        val next = change(p)
+        val rem = p.reminder?.takeIf { it.routeId == routeId }
         val route = p.routes.firstOrNull { it.id == routeId }
-        if (reminder != null && route != null) Alerts.startCountdown(getApplication(), route, reminder.dep, d)
+        val moved = rem?.let {
+            val base = p.delayRule(routeId).timetabledOf(it.dep)
+            Reminder(routeId, base + next.delayRule(routeId).forDeparture(base) * MINUTE)
+        }
+        if (moved != null && route != null) Alerts.startCountdown(getApplication(), route, moved.dep, next.delayRule(routeId))
         update { q ->
-            q.copy(
-                delays = if (d == 0) q.delays - routeId else q.delays + (routeId to d),
-                reminder = if (reminder != null && q.reminder?.routeId == routeId) reminder else q.reminder,
-            )
+            val c = change(q)
+            if (moved != null && q.reminder?.routeId == routeId) c.copy(reminder = moved) else c
         }
     }
 
@@ -295,7 +311,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             update { it.copy(reminder = null) }
             return
         }
-        Alerts.startCountdown(ctx, route, dep, p.delayOf(route.id))
+        Alerts.startCountdown(ctx, route, dep, p.delayRule(route.id))
         update { it.copy(reminder = Reminder(route.id, dep)) }
     }
 

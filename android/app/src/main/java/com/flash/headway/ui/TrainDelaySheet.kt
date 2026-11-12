@@ -1,0 +1,114 @@
+package com.flash.headway.ui
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.flash.headway.app.DELAY_MAX
+import com.flash.headway.ui.theme.HwType
+import com.flash.headway.ui.theme.LocalHw
+import kotlin.math.abs
+
+/**
+ * One train's own delay, every day: "The 8:13 AM train". [own] is its delay, or null while it
+ * follows the route's [routeDelay]. [onChange] sets it; null lets it follow the route again.
+ */
+@Composable
+fun TrainDelaySheet(
+    title: String,
+    subtitle: String,
+    own: Int?,
+    routeDelay: Int,
+    onChange: (Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val hw = LocalHw.current
+    val d = own ?: routeDelay
+    val tone by animateColorAsState(
+        when {
+            d > 0 -> hw.warn
+            d < 0 -> hw.tint
+            else -> hw.sub
+        },
+        label = "train delay tone",
+    )
+    fun set(v: Int) = onChange(v.coerceIn(-DELAY_MAX, DELAY_MAX))
+
+    HwSheet(onDismiss = onDismiss) { close ->
+        Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, style = HwType.headline, color = hw.text)
+                Text(subtitle, style = HwType.footnote, color = hw.sub)
+            }
+            Column(
+                Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
+                    if (d == 0) {
+                        Text("On time", style = HwType.title, color = tone)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("${abs(d)}", style = HwType.title.copy(fontSize = 44.sp, lineHeight = 52.sp), color = tone, modifier = Modifier.alignByBaseline())
+                            Text(if (d > 0) "min late" else "min early", style = HwType.headline, color = tone, modifier = Modifier.alignByBaseline())
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StepButton(Icons.Rounded.Remove, "One minute earlier", enabled = d > -DELAY_MAX) { set(d - 1) }
+                    DelaySlider(d, tone, ::set, Modifier.weight(1f))
+                    StepButton(Icons.Rounded.Add, "One minute later", enabled = d < DELAY_MAX) { set(d + 1) }
+                }
+                Text(
+                    if (own != null) {
+                        "Just this train, every day. Other trains on this route: ${delayText(routeDelay).lowercase()}."
+                    } else {
+                        "Following the route (${delayText(routeDelay).lowercase()}). Change it here for just this train."
+                    },
+                    style = HwType.footnote,
+                    color = hw.sub,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+                if (own != null) {
+                    Row(
+                        Modifier
+                            .padding(top = 4.dp)
+                            .height(40.dp)
+                            .clip(RoundedCornerShapeFull)
+                            .background(hw.tintSoft)
+                            .press(scaleTo = 0.96f) { onChange(null) }
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Rounded.History, null, tint = hw.tint, modifier = Modifier.size(18.dp))
+                        Text("Follow the route again", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val RoundedCornerShapeFull = androidx.compose.foundation.shape.CircleShape
