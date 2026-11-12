@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flash.headway.app.Alerts
+import com.flash.headway.app.FeedWorker
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.ThemeMode
 import com.flash.headway.ui.HeadwayApp
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Alerts.createChannels(this)
+        FeedWorker.schedule(this)
         // Only on a fresh start: after a rotation or theme change the route was already shown.
         if (savedInstanceState == null) openRoute.value = intent?.getStringExtra(EXTRA_ROUTE)
         intent?.removeExtra(EXTRA_ROUTE)

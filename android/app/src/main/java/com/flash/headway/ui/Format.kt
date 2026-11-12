@@ -1,8 +1,6 @@
 package com.flash.headway.ui
 
-import com.flash.headway.data.Network
 import com.flash.headway.engine.IST
-import com.flash.headway.engine.Journey
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -37,15 +35,6 @@ fun span(ms: Long): String {
     return if (m < 60) "$m min" else "${m / 60} h ${m % 60} min"
 }
 
-// Same rounding as the hero number, so "in 7 min" and a big "7" always agree.
-fun inSpan(ms: Long): String = when {
-    ms < 30_000 -> "now"
-    ms < 60 * 60_000 -> "in ${mins(ms)} min"
-    else -> "in ${span(ms)}"
-}
-
-fun leaveText(ms: Long): String = if (ms < 30_000) "Leave now" else "Leave in ${span(ms)}"
-
 /** Hero number and unit: whole minutes, m:ss under two minutes, h:mm past an hour. */
 fun bigParts(ms: Long): Pair<String, String> {
     if (ms < 30_000) return "Now" to ""
@@ -56,10 +45,6 @@ fun bigParts(ms: Long): Pair<String, String> {
     val m = mins(ms)
     return if (m < 60) "$m" to "min" else "${m / 60}:${"%02d".format(m % 60)}" to "h"
 }
-
-fun changesText(j: Journey): String =
-    if (j.changes == 0) "Direct"
-    else "${plural(j.changes, "change")}, at ${j.legs.drop(1).joinToString(" and ") { Network.name(it.from) }}"
 
 /** "2 min late", "1 min early" or "On time": a route's static delay in words. */
 fun delayText(d: Int): String = when {

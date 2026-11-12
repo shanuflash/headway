@@ -54,7 +54,15 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private val _feed = MutableStateFlow(Advisories.cached(app))
     val feed: StateFlow<Feed?> = _feed.asStateFlow()
 
+    /** Whether the app is on screen. The loops below only run then (the widget and FeedWorker cover the rest). */
+    private val foreground = MutableStateFlow(true)
+
+    fun setForeground(on: Boolean) {
+        foreground.value = on
+    }
+
     // Only touched on the engine thread.
+    private var planMemo: Pair<Any, RouteStatus>? = null
     private var schedule = Schedule()
     private var scheduleOverride: DayOverride? = null
     private var scheduleFeed: Feed? = null
@@ -71,7 +79,9 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            combine(prefs.filterNotNull(), _preview, _plan, _feed) { p, pv, plan, _ -> Triple(p, pv, plan) }.collectLatest { (p, pv, plan) ->
+            combine(prefs.filterNotNull(), _preview, _plan, _feed, foreground) { p, pv, plan, _, fg -> if (fg) Triple(p, pv, plan) else null }.collectLatest { state ->
+                // In the background nothing's shown, so nothing's worked out.
+                val (p, pv, plan) = state ?: return@collectLatest
                 Clock.offset = p.mockOffset
                 var flipping = false
                 while (true) {
@@ -88,7 +98,16 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
                         shown.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayRule(it.id)) } to
-                            pv?.let { if (plan != null) planStatus(s, it, plan, p.count) else routeStatus(s, it, now, p.lastWarn, p.count) }
+                            pv?.let { route ->
+                                if (plan != null) {
+                                    // A plan doesn't change as the clock runs: work it out once.
+                                    val key = listOf(route, plan, p.count, p.delayRule(route.id), s)
+                                    planMemo?.takeIf { it.first == key }?.second
+                                        ?: planStatus(s, route, plan, p.count, p.delayRule(route.id)).also { planMemo = key to it }
+                                } else {
+                                    routeStatus(s, route, now, p.lastWarn, p.count)
+                                }
+                            }
                     }
                     _statuses.value = list
                     _previewStatus.value = previewNow?.copy(isPreview = true)
@@ -100,15 +119,18 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch {
-            // CMRL advisories: check on open, then every half hour. A failed check keeps the last copy.
-            while (true) {
-                Advisories.refresh(getApplication())?.let { fresh ->
-                    if (fresh != _feed.value) {
-                        _feed.value = fresh
-                        Widgets.updateAllAsync(getApplication())
+            // CMRL advisories: check on open, then every half hour while on screen. A failed check
+            // keeps the last copy; in the background, FeedWorker checks instead.
+            foreground.collectLatest { fg ->
+                while (fg) {
+                    Advisories.refresh(getApplication())?.let { fresh ->
+                        if (fresh != _feed.value) {
+                            _feed.value = fresh
+                            Widgets.updateAllAsync(getApplication())
+                        }
                     }
+                    delay(30 * 60_000L)
                 }
-                delay(30 * 60_000L)
             }
         }
         viewModelScope.launch {
@@ -248,10 +270,18 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         keepingCountdown(routeId) { q -> q.copy(delays = if (d == 0) q.delays - routeId else q.delays + (routeId to d)) }
     }
 
-    /** Sets one train's own delay (by its timetabled departure), or with null, lets it follow the route. */
-    fun setTrainDelay(routeId: String, timetabled: Long, minutes: Int?) = keepingCountdown(routeId) { q ->
+    /**
+     * Sets one train's own delay (by its timetabled departure): for every day of its kind
+     * ([dayType]), or with [today], just this service day. Null lets it follow the route again.
+     */
+    fun setTrainDelay(routeId: String, timetabled: Long, dayType: DayType, minutes: Int?, today: Boolean) = keepingCountdown(routeId) { q ->
         val mine = q.trainDelays[routeId].orEmpty().toMutableMap()
-        if (minutes == null) mine.remove(timeKey(timetabled)) else mine[timeKey(timetabled)] = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
+        // Whatever this train had (any scope) gives way to the new setting.
+        trainKeys(timetabled, dayType).forEach { mine.remove(it) }
+        if (minutes != null) {
+            val key = if (today) "${timeKey(timetabled)}/${serviceDate(timetabled)}" else "${timeKey(timetabled)}/${dayType.name}"
+            mine[key] = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
+        }
         q.copy(trainDelays = if (mine.isEmpty()) q.trainDelays - routeId else q.trainDelays + (routeId to mine))
     }
 
@@ -265,8 +295,9 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         val rem = p.reminder?.takeIf { it.routeId == routeId }
         val route = p.routes.firstOrNull { it.id == routeId }
         val moved = rem?.let {
-            val base = p.delayRule(routeId).timetabledOf(it.dep)
-            Reminder(routeId, base + next.delayRule(routeId).forDeparture(base) * MINUTE)
+            val type = dayTypeFor(serviceDate(it.dep), p.override, _feed.value).type
+            val base = p.delayRule(routeId).timetabledOf(it.dep, type)
+            Reminder(routeId, base + next.delayRule(routeId).forDeparture(base, type) * MINUTE)
         }
         if (moved != null && route != null) Alerts.startCountdown(getApplication(), route, moved.dep, next.delayRule(routeId))
         update { q ->

@@ -1,7 +1,6 @@
 package com.flash.headway.ui
 
 import android.app.TimePickerDialog
-import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +18,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +66,9 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
     var mode by remember { mutableStateOf(if (plan?.mode == PlanMode.ARRIVE) WhenMode.ARRIVE else WhenMode.LEAVE) }
     var day by remember { mutableIntStateOf(start.second) }
     var minutes by remember { mutableIntStateOf(start.first) }
+    // The open time picker, closed with the sheet (and on rotation, so its window doesn't leak).
+    var picker by remember { mutableStateOf<TimePickerDialog?>(null) }
+    DisposableEffect(Unit) { onDispose { picker?.dismiss() } }
 
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -94,8 +97,11 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(hw.fill)
                                 .press {
-                                    TimePickerDialog(
+                                    // In the app's light or dark look, and 12-hour like every time in the app.
+                                    picker?.dismiss()
+                                    picker = TimePickerDialog(
                                         context,
+                                        if (hw.dark) android.R.style.Theme_DeviceDefault_Dialog_Alert else android.R.style.Theme_DeviceDefault_Light_Dialog_Alert,
                                         { _, h, m ->
                                             minutes = h * 60 + m
                                             // A time that's already gone today means tomorrow.
@@ -103,8 +109,8 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
                                         },
                                         minutes / 60,
                                         minutes % 60,
-                                        DateFormat.is24HourFormat(context),
-                                    ).show()
+                                        false,
+                                    ).also { it.show() }
                                 }
                                 .padding(horizontal = 14.dp),
                             contentAlignment = Alignment.Center,

@@ -304,7 +304,8 @@ fun RouteMenu(
             }
             DelayCard(routeId, delay, delayPreview, onDelay)
             flipCard()
-            val danger = Color(0xFFD70015)
+            // System red, lighter on dark so it stays readable.
+            val danger = if (hw.dark) Color(0xFFFF453A) else Color(0xFFD70015)
             ListCard(
                 listOf<@Composable () -> Unit>(
                     { MenuRow(Icons.Rounded.SwapVert, "Add the return trip", returnTitle, hw.text) { close(onReturn) } },

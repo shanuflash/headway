@@ -81,7 +81,6 @@ import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
-import com.flash.headway.app.timeKey
 import com.flash.headway.data.Network
 import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
@@ -90,6 +89,8 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import com.flash.headway.data.DayType
+import androidx.lifecycle.compose.LifecycleStartEffect
 
 enum class Tab { ROUTES, LINES, MAP }
 
@@ -117,13 +118,19 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var whenOpen by remember { mutableStateOf(false) }
-    var trainDelayFor by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    var trainDelayFor by remember { mutableStateOf<Triple<String, Long, DayType>?>(null) }
     val plan by vm.plan.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val feed by vm.feed.collectAsStateWithLifecycle()
     var stationFor by remember { mutableStateOf<String?>(null) }
     var pickFrom by remember { mutableStateOf<String?>(null) }
     var topUp by remember { mutableStateOf(false) }
+
+    // Work out trains only while the app is on screen.
+    LifecycleStartEffect(vm) {
+        vm.setForeground(true)
+        onStopOrDispose { vm.setForeground(false) }
+    }
 
     // The routes list, kept here so its place survives tab switches and a widget tap can scroll it.
     val routesList = rememberLazyListState()
@@ -219,7 +226,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 toast("Route saved")
                             },
                             whenOpen = { whenOpen = true },
-                            trainDelay = { id, at -> trainDelayFor = id to at },
+                            trainDelay = { id, at, type -> trainDelayFor = Triple(id, at, type) },
                             swapPreview = vm::swapPreview,
                         ),
                     )
@@ -296,20 +303,30 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
         if (topUp) TopUpSheet(onDismiss = { topUp = false })
 
-        trainDelayFor?.let { (id, at) ->
+        trainDelayFor?.let { (id, at, type) ->
             val route = prefs.routes.firstOrNull { it.id == id }
-            if (route == null) {
-                trainDelayFor = null
-            } else {
+            if (route != null) {
+                val own = prefs.delayRule(id).own(at, type)
                 TrainDelaySheet(
+                    key = "$id@$at",
                     title = "The ${clock(at)} train",
-                    subtitle = "${Network.name(route.from)} → ${Network.name(route.to)} · every day",
-                    own = prefs.trainDelays[id]?.get(timeKey(at)),
+                    subtitle = "${Network.name(route.from)} → ${Network.name(route.to)}",
+                    days = when (type) {
+                        DayType.WEEKDAY -> "Every weekday"
+                        DayType.SATURDAY -> "Every Saturday"
+                        DayType.SUNDAY -> "Every Sunday & holiday"
+                    },
+                    own = own?.second,
+                    ownToday = own?.first?.substringAfter('/', "")?.length == 10,
                     routeDelay = prefs.delayOf(id),
-                    onChange = { vm.setTrainDelay(id, at, it) },
+                    onChange = { minutes, today -> vm.setTrainDelay(id, at, type, minutes, today) },
                     onDismiss = { trainDelayFor = null },
                 )
             }
+        }
+        // The route went (removed, or flipped direction): its train's sheet goes with it.
+        LaunchedEffect(trainDelayFor, prefs.routes) {
+            if (trainDelayFor?.let { t -> prefs.routes.none { it.id == t.first } } == true) trainDelayFor = null
         }
 
         val planned = preview
@@ -342,14 +359,17 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             )
         }
 
+        // The route went (removed): its menu goes with it. (Not done mid-composition.)
+        LaunchedEffect(menuFor, prefs.routes) {
+            val m = menuFor ?: return@LaunchedEffect
+            if (prefs.routes.none { it.id == m || it.id == reverseId(m) }) menuFor = null
+        }
         menuFor?.let { menuId ->
             // The route may have flipped while its menu is open (its switch time, or a change
             // here): follow it to the other direction.
             val route = prefs.routes.firstOrNull { it.id == menuId } ?: prefs.routes.firstOrNull { it.id == reverseId(menuId) }
             val id = route?.id ?: menuId
-            if (route == null) {
-                menuFor = null
-            } else {
+            if (route != null) {
                 RouteMenu(
                     title = "${Network.name(route.from)} → ${Network.name(route.to)}",
                     returnTitle = "${Network.name(route.to)} → ${Network.name(route.from)}",

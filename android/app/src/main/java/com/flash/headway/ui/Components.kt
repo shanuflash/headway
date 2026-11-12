@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
+import androidx.compose.ui.semantics.clearAndSetSemantics
 
 val CardShape = RoundedCornerShape(26.dp)
 val RouteCardShape = RoundedCornerShape(30.dp)
@@ -299,7 +300,17 @@ fun BigCountdown(msLeft: Long) {
     val last = remember { mutableLongStateOf(msLeft) }
     val up = msLeft > last.longValue + 1_500
     SideEffect { last.longValue = msLeft }
-    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // Read as a whole ("5 minutes"), not digit by digit.
+    val spoken = when (unit) {
+        "min" -> "$number minutes"
+        "h" -> "$number hours"
+        else -> number
+    }
+    Row(
+        Modifier.clearAndSetSemantics { contentDescription = spoken },
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         RollingText(number, HwType.big, hw.text, up)
         if (unit.isNotEmpty()) Text(unit, style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
     }
@@ -312,7 +323,8 @@ fun BigCountdown(msLeft: Long) {
 @Composable
 fun RollingText(text: String, style: TextStyle, color: Color, up: Boolean = false) {
     val tabular = style.copy(fontFeatureSettings = "tnum")
-    Row {
+    // One string to TalkBack, though it's drawn a character at a time.
+    Row(Modifier.clearAndSetSemantics { contentDescription = text }) {
         text.forEachIndexed { i, ch ->
             key(text.length - i) {
                 AnimatedContent(

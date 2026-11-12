@@ -8,6 +8,8 @@ import com.flash.headway.engine.routeGroup
 import com.flash.headway.engine.IST
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import com.flash.headway.data.DayType
+import com.flash.headway.engine.serviceDate
 
 /** The next departures on a saved route, plus what's needed for last-train and closed states. */
 data class RouteStatus(
@@ -53,28 +55,42 @@ fun Schedule.delayedDepartures(route: SavedRoute, nowMs: Long, limit: Int, rule:
     // Every route is a journey: the planner's earliest way there for each departure, a direct
     // train or one with changes, whichever arrives first.
     val raw = journeys(route.from, route.to, nowMs - DELAY_MAX * MINUTE, limit + 6).map { it.asDeparture() }
-    return raw.map { it.delayed(rule.forDeparture(it.dep)) }.filter { it.dep >= nowMs }.sortedBy { it.dep }.take(limit)
+    return raw.map { it.delayed(rule.forDeparture(it.dep, it.trip.dayType)) }.filter { it.dep >= nowMs }.sortedBy { it.dep }.take(limit)
 }
 
 /**
  * How late a route's trains run: [route] minutes for all of them, except trains with their own
- * delay in [byTime], keyed by the timetabled departure from the boarding station ("08:14").
+ * delay in [byTime], keyed by the timetabled departure from the boarding station:
+ * "08:14/2026-11-12" just that day, "08:14/WEEKDAY" (or SATURDAY, SUNDAY) that kind of day, and
+ * "08:14" every day. The most specific one that fits wins.
  */
 data class DelayRule(val route: Int = 0, val byTime: Map<String, Int> = emptyMap()) {
-    fun forDeparture(timetabled: Long): Int = byTime[timeKey(timetabled)] ?: route
+    /** The train's own delay and its key, if it has one. */
+    fun own(timetabled: Long, dayType: DayType?): Pair<String, Int>? {
+        for (key in trainKeys(timetabled, dayType)) byTime[key]?.let { return key to it }
+        return null
+    }
+
+    fun forDeparture(timetabled: Long, dayType: DayType? = null): Int = own(timetabled, dayType)?.second ?: route
 
     /**
      * The timetabled time of a departure shown at [shown] under this rule. Trains with their own
      * delay are checked first (a shown 8:15 is the 8:13 with its own +2 before it's an 8:15 that
      * follows the route); otherwise it's the route's delay.
      */
-    fun timetabledOf(shown: Long): Long {
-        for ((key, d) in byTime) {
+    fun timetabledOf(shown: Long, dayType: DayType? = null): Long {
+        for (d in byTime.values.toSet()) {
             val t = shown - d * MINUTE
-            if (timeKey(t) == key) return t
+            if (own(t, dayType)?.second == d) return t
         }
         return shown - route * MINUTE
     }
+}
+
+/** The keys a train's own delay may be under, most specific first. */
+fun trainKeys(timetabled: Long, dayType: DayType?): List<String> {
+    val time = timeKey(timetabled)
+    return listOfNotNull("$time/${serviceDate(timetabled)}", dayType?.let { "$time/${it.name}" }, time)
 }
 
 /** "08:14": a departure as a daily key, in IST. */
@@ -105,7 +121,7 @@ fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, co
     val deps = s.delayedDepartures(route, now, count, rule)
     val next = deps.firstOrNull()
     val since = now - DELAY_MAX * MINUTE
-    val last = s.lastJourney(route.from, route.to, since)?.asDeparture()?.let { it.delayed(rule.forDeparture(it.dep)) }
+    val last = s.lastJourney(route.from, route.to, since)?.asDeparture()?.let { it.delayed(rule.forDeparture(it.dep, it.trip.dayType)) }
     val closed = next != null && next.trip.serviceDate != today
     return RouteStatus(
         route = route,
@@ -129,16 +145,16 @@ data class PlanTime(val mode: PlanMode, val at: Long)
  * the latest ones that still get there in time, found by probing the trip's length and looking
  * back from the deadline. Works for direct trains and trips with changes alike.
  */
-fun planStatus(s: Schedule, route: SavedRoute, plan: PlanTime, count: Int): RouteStatus {
+fun planStatus(s: Schedule, route: SavedRoute, plan: PlanTime, count: Int, rule: DelayRule = DelayRule()): RouteStatus {
     val deps = when (plan.mode) {
-        PlanMode.LEAVE -> s.delayedDepartures(route, plan.at, count, 0)
+        PlanMode.LEAVE -> s.delayedDepartures(route, plan.at, count, rule)
         PlanMode.ARRIVE -> {
-            val probe = s.delayedDepartures(route, plan.at - 180 * MINUTE, 1, 0).firstOrNull()
+            val probe = s.delayedDepartures(route, plan.at - 180 * MINUTE, 1, rule).firstOrNull()
             if (probe == null) {
                 emptyList()
             } else {
                 val start = plan.at - (probe.arr - probe.dep) - 45 * MINUTE
-                s.delayedDepartures(route, start, 40, 0).filter { it.arr <= plan.at }.takeLast(count)
+                s.delayedDepartures(route, start, 40, rule).filter { it.arr <= plan.at }.takeLast(count)
             }
         }
     }

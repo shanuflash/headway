@@ -35,22 +35,27 @@ import com.flash.headway.ui.theme.LocalHw
 import kotlin.math.abs
 
 /**
- * One train's own delay, every day: "The 8:13 AM train". [own] is its delay, or null while it
- * follows the route's [routeDelay]. [onChange] sets it; null lets it follow the route again.
+ * One train's own delay: "The 8:13 AM train", on every day of its kind ([days], e.g. "Every
+ * weekday") or just today. [own] is its delay, or null while it follows the route's
+ * [routeDelay]. [onChange] sets it (minutes, just today?); null minutes follow the route again.
  */
 @Composable
 fun TrainDelaySheet(
+    key: String,
     title: String,
     subtitle: String,
+    days: String,
     own: Int?,
+    ownToday: Boolean,
     routeDelay: Int,
-    onChange: (Int?) -> Unit,
+    onChange: (Int?, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val hw = LocalHw.current
     // Its own value while dragging, so the thumb never waits on the saved setting.
-    var d by remember(title) { mutableIntStateOf(own ?: routeDelay) }
-    var following by remember(title) { mutableStateOf(own == null) }
+    var d by remember(key) { mutableIntStateOf(own ?: routeDelay) }
+    var following by remember(key) { mutableStateOf(own == null) }
+    var today by remember(key) { mutableStateOf(ownToday) }
     val tone by animateColorAsState(
         when {
             d > 0 -> hw.warn
@@ -64,7 +69,7 @@ fun TrainDelaySheet(
         if (c == d && !following) return
         d = c
         following = false
-        onChange(c)
+        onChange(c, today)
     }
 
     HwSheet(onDismiss = onDismiss) { close ->
@@ -73,6 +78,15 @@ fun TrainDelaySheet(
                 Text(title, style = HwType.headline, color = hw.text)
                 Text(subtitle, style = HwType.footnote, color = hw.sub)
             }
+            // For every day like this one, or just today (a one-off: it's dropped tomorrow).
+            Segmented(
+                options = listOf(false to days, true to "Just today"),
+                selected = today,
+                onSelect = {
+                    today = it
+                    if (!following) onChange(d, it)
+                },
+            )
             Column(
                 Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -94,7 +108,7 @@ fun TrainDelaySheet(
                 }
                 Text(
                     if (!following) {
-                        "Just this train, every day. Other trains on this route: ${delayText(routeDelay).lowercase()}."
+                        "Just this train${if (today) ", today only" else ""}. Other trains on this route: ${delayText(routeDelay).lowercase()}."
                     } else {
                         "Following the route (${delayText(routeDelay).lowercase()}). Change it here for just this train."
                     },
@@ -112,7 +126,7 @@ fun TrainDelaySheet(
                             .press(scaleTo = 0.96f) {
                                 d = routeDelay
                                 following = true
-                                onChange(null)
+                                onChange(null, today)
                             }
                             .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,

@@ -99,6 +99,8 @@ class Trip(
     val stops: List<Stop>,
     val serviceDate: LocalDate,
     val band: Band,
+    /** Which timetable the day runs (weekday, Saturday, Sunday/holiday). */
+    val dayType: DayType = DayType.WEEKDAY,
 ) {
     val origin: String get() = stops.first().station
     val dest: String get() = stops.last().station
@@ -251,7 +253,8 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
     }
 
     private fun buildDay(date: LocalDate): List<Trip> {
-        val spec = Timetable.day(dayTypeFor(date, override, feed).type)
+        val type = dayTypeFor(date, override, feed).type
+        val spec = Timetable.day(type)
         val base = startOfDay(date)
         fun abs(minutes: Double) = base + (minutes * MINUTE).roundToLong()
         val trips = ArrayList<Trip>()
@@ -266,7 +269,7 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
             for (dir in Dir.entries) {
                 for (dep in originTimes(lineSpec, dir) + extensionTimes(date, route.line, lineSpec, dir)) {
                     val stops = stopsFor(route, dir, dep.toDouble()).map { (s, t) -> Stop(s, abs(t)) }
-                    trips += Trip(routeId, route.line, dir, stops, date, bandAt(lineSpec.bands, dep))
+                    trips += Trip(routeId, route.line, dir, stops, date, bandAt(lineSpec.bands, dep), type)
                 }
             }
         }
@@ -282,7 +285,7 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
                 val dep = (at.at - base).toDouble() / MINUTE + loop.offset
                 if (loop.windows.none { dep >= it.first && dep < it.last + 1 }) continue
                 val stops = stopsFor(blue, trip.dir, dep, start, end).map { (s, t) -> Stop(s, abs(t)) }
-                loops += Trip(RouteId.LOOP, Line.BLUE, trip.dir, stops, date, trip.band)
+                loops += Trip(RouteId.LOOP, Line.BLUE, trip.dir, stops, date, trip.band, type)
             }
             trips += loops
         }
@@ -311,7 +314,7 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
                 if (trip.stops.last().at < d.from!! || trip.stops.first().at > d.to!!) continue
                 shift += d.delay!! * MINUTE
             }
-            if (shift == 0L) trip else Trip(trip.route, trip.line, trip.dir, trip.stops.map { Stop(it.station, it.at + shift) }, trip.serviceDate, trip.band)
+            if (shift == 0L) trip else Trip(trip.route, trip.line, trip.dir, trip.stops.map { Stop(it.station, it.at + shift) }, trip.serviceDate, trip.band, trip.dayType)
         }
     }
 

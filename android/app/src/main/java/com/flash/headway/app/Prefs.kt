@@ -15,8 +15,17 @@ import com.flash.headway.engine.DayOverride
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import com.flash.headway.engine.serviceDate
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.emptyPreferences
+import java.io.IOException
+import kotlinx.coroutines.flow.catch
 
-private val Context.dataStore by preferencesDataStore("headway")
+// A corrupted file starts over with defaults rather than crash the app on every launch.
+private val Context.dataStore by preferencesDataStore(
+    "headway",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 enum class ThemeMode { LIGHT, DARK, AUTO }
 
@@ -83,11 +92,18 @@ class PrefsStore(private val context: Context) {
         val legacyTo = stringPreferencesKey("to")
     }
 
-    val prefs: Flow<Prefs> = context.dataStore.data.map(::decode)
+    /** The settings; if they can't be read, the defaults (rather than a crash). */
+    val prefs: Flow<Prefs> = context.dataStore.data
+        .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
+        .map(::decode)
 
-    /** Applies [transform] to the stored values atomically. */
+    /** Applies [transform] to the stored values atomically. A write that fails is dropped, not fatal. */
     suspend fun update(transform: (Prefs) -> Prefs) {
-        context.dataStore.edit { p -> write(p, transform(decode(p))) }
+        try {
+            context.dataStore.edit { p -> write(p, transform(decode(p))) }
+        } catch (e: IOException) {
+            // Storage full or unavailable: keep running with what's in memory.
+        }
     }
 
     private fun decode(p: Preferences): Prefs {
@@ -185,7 +201,7 @@ fun decodeDelays(raw: String?): Map<String, Int> =
 fun encodeTrainDelays(all: Map<String, Map<String, Int>>): String =
     all.flatMap { (id, byTime) -> byTime.map { (t, d) -> "$id|$t=$d" } }.joinToString(";")
 
-private val TIME_KEY = Regex("""\d{2}:\d{2}""")
+private val TIME_KEY = Regex("""\d{2}:\d{2}(/(WEEKDAY|SATURDAY|SUNDAY|\d{4}-\d{2}-\d{2}))?""")
 
 fun decodeTrainDelays(raw: String?): Map<String, Map<String, Int>> {
     val out = HashMap<String, HashMap<String, Int>>()
@@ -193,6 +209,9 @@ fun decodeTrainDelays(raw: String?): Map<String, Map<String, Int>> {
         val (key, d) = part.split('=').takeIf { it.size == 2 } ?: continue
         val (id, time) = key.split('|').takeIf { it.size == 2 } ?: continue
         if (!TIME_KEY.matches(time)) continue
+        // "Just today" keys end with their day.
+        val day = time.substringAfter('/', "").takeIf { it.length == 10 }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        if (day != null && day < serviceDate(Clock.now())) continue
         val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: continue
         out.getOrPut(id) { HashMap() }[time] = minutes
     }

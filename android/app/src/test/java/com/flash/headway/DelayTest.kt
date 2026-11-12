@@ -7,6 +7,9 @@ import com.flash.headway.app.decodeTrainDelays
 import com.flash.headway.app.encodeRule
 import com.flash.headway.app.encodeTrainDelays
 import com.flash.headway.app.timeKey
+import com.flash.headway.app.trainKeys
+import com.flash.headway.data.DayType
+import com.flash.headway.engine.serviceDate
 import com.flash.headway.app.decodeDelays
 import com.flash.headway.app.delayedDepartures
 import com.flash.headway.app.encodeDelays
@@ -90,5 +93,35 @@ class DelayTest {
         val rule = DelayRule(2, mapOf("08:13" to 3))
         assertEquals(rule, decodeRule(encodeRule(rule)))
         assertEquals(DelayRule(), decodeRule(null))
+    }
+
+    @Test
+    fun aTrainsDelayCanBeForItsKindOfDayOrJustToday() {
+        val s = Schedule()
+        val now = at(8, 0) // a Monday
+        val first = s.delayedDepartures(route, now, 3, 0)[1]
+        val t = first.dep
+        assertEquals(DayType.WEEKDAY, first.trip.dayType)
+        // Weekday-only: applies on this weekday...
+        val weekday = DelayRule(0, mapOf("${timeKey(t)}/WEEKDAY" to 3))
+        assertEquals(3, weekday.forDeparture(t, DayType.WEEKDAY))
+        // ...but not to a Sunday train at the same minute.
+        assertEquals(0, weekday.forDeparture(t, DayType.SUNDAY))
+        // Just today wins over the weekday setting, and only today.
+        val today = DelayRule(0, mapOf("${timeKey(t)}/WEEKDAY" to 3, "${timeKey(t)}/${serviceDate(t)}" to 7))
+        assertEquals(7, today.forDeparture(t, DayType.WEEKDAY))
+        assertEquals(3, today.forDeparture(t + 7 * 24 * 3_600_000L, DayType.WEEKDAY))
+        // Keys run from the most specific to every day.
+        assertEquals(listOf("${timeKey(t)}/${serviceDate(t)}", "${timeKey(t)}/WEEKDAY", timeKey(t)), trainKeys(t, DayType.WEEKDAY))
+        // The engine applies it to the train itself.
+        val moved = s.delayedDepartures(route, now, 3, weekday).first { it.timetabled == t }
+        assertEquals(t + 3 * MINUTE, moved.dep)
+        assertEquals(t, weekday.timetabledOf(t + 3 * MINUTE, DayType.WEEKDAY))
+    }
+
+    @Test
+    fun aJustTodayDelayIsDroppedOnceItsDayIsOver() {
+        val kept = decodeTrainDelays("a>b|08:14/WEEKDAY=2;a>b|08:21/2020-01-01=5;a>b|08:30/2999-01-01=4")
+        assertEquals(mapOf("a>b" to mapOf("08:14/WEEKDAY" to 2, "08:30/2999-01-01" to 4)), kept)
     }
 }

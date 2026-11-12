@@ -76,7 +76,6 @@ import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
 import com.flash.headway.app.PlanMode
 import com.flash.headway.app.PlanTime
-import com.flash.headway.app.timeKey
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.data.Platforms
@@ -91,6 +90,7 @@ import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
+import com.flash.headway.data.DayType
 
 class RouteActions(
     val add: () -> Unit,
@@ -106,7 +106,7 @@ class RouteActions(
     /** Opens "When?" to plan the quick look for another time. */
     val whenOpen: () -> Unit = {},
     /** Opens one train's own delay: the route id and the train's timetabled departure. */
-    val trainDelay: (String, Long) -> Unit = { _, _ -> },
+    val trainDelay: (String, Long, DayType) -> Unit = { _, _, _ -> },
     /** Flips the quick look (not a saved card with the same stations). */
     val swapPreview: () -> Unit = {},
 )
@@ -424,13 +424,13 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             if (s.plan != null) PlanHero(s, shown, index) else Hero(s, shown, index, prefs, now, actions)
             val directPlatform = remember(r) { platformFor(r) }
             val saved = !isPreview && prefs.routes.any { it.id == r.id }
-            val ownDelay = shown.timetabled?.let { prefs.trainDelays[r.id]?.get(timeKey(it)) } != null
+            val ownDelay = shown.timetabled?.let { prefs.delayRule(r.id).own(it, shown.trip.dayType) } != null
             Boarding(
                 shown.legs?.let { legPlatform(it.first()) } ?: directPlatform,
                 prefs.coaches[r.id],
                 delay = if (saved && shown.timetabled != null) shown.delay else null,
                 own = ownDelay,
-            ) { shown.timetabled?.let { actions.trainDelay(r.id, it) } }
+            ) { shown.timetabled?.let { actions.trainDelay(r.id, it, shown.trip.dayType) } }
             Chips(s, index, now) { picked = it }
             shown.legs?.takeIf { it.size > 1 }?.let { TripTimeline(it, Modifier.padding(horizontal = 20.dp)) }
         }
@@ -703,13 +703,3 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
     }
 }
 
-@Composable
-fun MiniButton(icon: ImageVector, description: String, onClick: () -> Unit) {
-    val hw = LocalHw.current
-    Box(
-        Modifier.size(36.dp).clip(CircleShape).background(hw.fill).edge(CircleShape).press(scaleTo = 0.9f, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = description, tint = hw.sub, modifier = Modifier.size(20.dp))
-    }
-}
