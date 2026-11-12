@@ -19,14 +19,25 @@ android {
         versionName = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
     }
 
-    // One fixed debug key, committed on purpose: CI otherwise signs every build with a fresh
-    // random key, and Android refuses to update an app whose signature changed.
+    // One fixed key, committed on purpose: CI otherwise signs every build with a fresh random
+    // key, and Android refuses to update an app whose signature changed. Release builds use it
+    // too, so they install over the earlier debug builds without losing saved routes.
     signingConfigs {
         getByName("debug") {
             storeFile = file("headway-debug.keystore")
             storePassword = "android"
             keyAlias = "headway"
             keyPassword = "android"
+        }
+    }
+
+    buildTypes {
+        // What CI ships: not debuggable and shrunk by R8, so Compose runs at full speed.
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

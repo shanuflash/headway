@@ -20,15 +20,17 @@ defaults:
 
 jobs:
   build:
-    name: Test and build debug APK
+    name: Test and build release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
-      contents: write # publishes the APK to the "latest" release
+      contents: write # publishes each build as a GitHub release
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the release notes list the commits since the last release
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -46,43 +48,55 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Unit tests and debug build
-        run: gradle --no-daemon testDebugUnitTest assembleDebug --stacktrace
+      - name: Unit tests and release build
+        run: gradle --no-daemon testDebugUnitTest assembleRelease --stacktrace
 
       - name: Lint (report only)
-        run: gradle --no-daemon lintDebug
+        run: gradle --no-daemon lintRelease
         continue-on-error: true
 
-      - name: Upload debug APK
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk "headway-1.0.${GITHUB_RUN_NUMBER}.apk"
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: headway-debug-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: headway-1.0.${{ github.run_number }}
+          path: android/headway-1.0.${{ github.run_number }}.apk
           if-no-files-found: error
           retention-days: 14
 
-      # Artifacts always download as .zip; a release asset is a plain .apk with a fixed link:
-      # https://github.com/<owner>/<repo>/releases/download/latest/headway.apk
-      - name: Publish APK to the "latest" release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      # Every build is a release with the plain .apk attached. The newest one is always at
+      # https://github.com/<owner>/<repo>/releases/latest/download/headway.apk
+      - name: Publish release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk headway.apk
-          notes="Debug APK built from ${GITHUB_SHA::7}: $(git log -1 --format=%s)"
-          if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest headway.apk --clobber
-            gh release edit latest --notes "$notes"
-          else
-            gh release create latest headway.apk --prerelease --target "$GITHUB_SHA" --title "Latest build" --notes "$notes"
-          fi
+          version="1.0.${GITHUB_RUN_NUMBER}"
+          tag="v${version}"
+          prev=$(git tag --list 'v1.0.*' --sort=-v:refname | head -n1)
+          {
+            echo "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}."
+            echo
+            if [ -n "$prev" ]; then
+              echo "Changes since ${prev}:"
+              git log --no-merges --format='- %s' "${prev}..${GITHUB_SHA}" -- android
+            else
+              echo "Changes:"
+              git log --no-merges --format='- %s' -n 15 "${GITHUB_SHA}" -- android
+            fi
+          } > notes.md
+          cp "headway-${version}.apk" headway.apk
+          gh release create "$tag" headway.apk "headway-${version}.apk" \
+            --target "$GITHUB_SHA" --title "Headway ${version}" --notes-file notes.md --latest
 
       - name: Upload test and lint reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: headway-reports-${{ github.sha }}
+          name: headway-reports-${{ github.run_number }}
           path: |
             android/app/build/reports/
             android/app/build/test-results/
