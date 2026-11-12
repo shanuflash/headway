@@ -56,8 +56,8 @@ class TripTest {
             assertEquals("guindy", legs.first().from)
             assertEquals("koyambedu", legs.last().to)
         }
-        // Direct routes keep their plain departures.
-        assertNull(Schedule().delayedDepartures(SavedRoute("guindy", "central"), at(8, 10), 1, 0).first().legs)
+        // A direct pair is a one-train journey.
+        assertEquals(1, Schedule().delayedDepartures(SavedRoute("guindy", "central"), at(8, 10), 1, 0).first().legs?.size)
     }
 
     @Test

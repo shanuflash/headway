@@ -48,13 +48,9 @@ fun Schedule.delayedDepartures(route: SavedRoute, nowMs: Long, limit: Int, delay
  * timetabled time, so look back as far as a delay can go and keep the ones still to come.
  */
 fun Schedule.delayedDepartures(route: SavedRoute, nowMs: Long, limit: Int, rule: DelayRule): List<RouteDeparture> {
-    val start = nowMs - DELAY_MAX * MINUTE
-    val raw = if (isDirect(route)) {
-        routeDepartures(route.from, route.to, start, limit + 6)
-    } else {
-        // No direct train: a trip with changes, planned as whole journeys.
-        journeys(route.from, route.to, start, limit + 6).map { it.asDeparture() }
-    }
+    // Every route is a journey: the planner's earliest way there for each departure, a direct
+    // train or one with changes, whichever arrives first.
+    val raw = journeys(route.from, route.to, nowMs - DELAY_MAX * MINUTE, limit + 6).map { it.asDeparture() }
     return raw.map { it.delayed(rule.forDeparture(it.dep)) }.filter { it.dep >= nowMs }.sortedBy { it.dep }.take(limit)
 }
 
@@ -98,8 +94,7 @@ fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, co
     val deps = s.delayedDepartures(route, now, count, rule)
     val next = deps.firstOrNull()
     val since = now - DELAY_MAX * MINUTE
-    val last = (if (isDirect(route)) s.lastRouteDeparture(route.from, route.to, since) else s.lastJourney(route.from, route.to, since)?.asDeparture())
-        ?.let { it.delayed(rule.forDeparture(it.dep)) }
+    val last = s.lastJourney(route.from, route.to, since)?.asDeparture()?.let { it.delayed(rule.forDeparture(it.dep)) }
     val closed = next != null && next.trip.serviceDate != today
     return RouteStatus(
         route = route,

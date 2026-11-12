@@ -28,7 +28,7 @@ class DelayTest {
     fun aDelayShiftsEveryDepartureAndArrival() {
         val s = Schedule()
         val now = at(8, 38)
-        val base = s.routeDepartures(route.from, route.to, now - 3 * MINUTE, 4)
+        val base = s.delayedDepartures(route, now - 3 * MINUTE, 4, 0)
         val late = s.delayedDepartures(route, now, 4, 3)
         assertEquals(base.map { it.dep + 3 * MINUTE }, late.map { it.dep })
         assertEquals(base.map { it.arr + 3 * MINUTE }, late.map { it.arr })
@@ -38,10 +38,10 @@ class DelayTest {
     @Test
     fun aLateTrainStillShowsAfterItsTimetabledTimeHasPassed() {
         val s = Schedule()
-        val timetabled = s.routeDepartures(route.from, route.to, at(8, 38), 1).first().dep
+        val timetabled = s.delayedDepartures(route, at(8, 38), 1, 0).first().dep
         // One minute after the timetabled time: gone on time, still to come at +2.
         val now = timetabled + MINUTE
-        assertTrue(s.routeDepartures(route.from, route.to, now, 1).first().dep > timetabled)
+        assertTrue(s.delayedDepartures(route, now, 1, 0).first().dep > timetabled)
         assertEquals(timetabled + 2 * MINUTE, s.delayedDepartures(route, now, 1, 2).first().dep)
     }
 

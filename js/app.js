@@ -291,7 +291,7 @@ function timelineHtml(d) {
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
-const interOnly = (m) => m.kind !== 'none' && m.deps.length > 0 && m.deps.every((d) => d.trip.route === 'inter');
+const interOnly = (m) => m.kind !== 'none' && m.deps.length > 0 && m.deps.every((d) => d.trip.route === 'inter' && !hasChange(d));
 
 function routeLine(r) {
   const g = directDestinations(r.from).find((x) => x.stations.some((s) => s.id === r.to));
@@ -343,13 +343,8 @@ function withDelay(x, mins) {
   };
 }
 
-/** Whether a train runs straight from `r.from` to `r.to`, so the route needs no change. */
-const directCache = new Map();
-function isDirect(r) {
-  const k = `${r.from}>${r.to}`;
-  if (!directCache.has(k)) directCache.set(k, directDestinations(r.from).some((g) => g.stations.some((s) => s.id === r.to)));
-  return directCache.get(k);
-}
+/** A trip that takes more than one train. */
+const hasChange = (d) => (d?.legs?.length ?? 1) > 1;
 
 /**
  * A planned journey as a route departure: the first train's trip (for the service day), the
@@ -484,8 +479,7 @@ function setFlip(r, f, apply) {
  * back from the deadline. Works for direct trains and trips with changes alike.
  */
 function planOptions(r, plan, count) {
-  const list = (start, n) =>
-    isDirect(r) ? schedule.routeDepartures(r.from, r.to, start, n) : schedule.journeys(r.from, r.to, start, n).map((j) => fromJourney(j, 0));
+  const list = (start, n) => schedule.journeys(r.from, r.to, start, n).map((j) => fromJourney(j, 0));
   if (plan.mode === 'leave') return list(plan.at, count);
   const probe = list(plan.at - 3 * 60 * MIN, 1)[0];
   if (!probe) return [];
@@ -498,7 +492,7 @@ function planOptions(r, plan, count) {
 function planModel(r) {
   const deps = planOptions(r, r.plan, prefs.count);
   // Arriving by a time, the best train is the last one that makes it.
-  return { r, kind: deps.length ? 'plan' : 'plan-none', direct: isDirect(r), plan: r.plan, deps, best: r.plan.mode === 'arrive' ? deps.length - 1 : 0 };
+  return { r, kind: deps.length ? 'plan' : 'plan-none', plan: r.plan, deps, best: r.plan.mode === 'arrive' ? deps.length - 1 : 0 };
 }
 
 /** "Leave at 8:00 AM tomorrow", "Arrive by 9:30 AM", or "Leaving now". */
@@ -524,25 +518,22 @@ function routeModel(r, now) {
   const today = schedule.today(now).key;
   // Each train runs with its own delay (or the route's). A late train leaves after its
   // timetabled time, so look back as far as a delay can go and keep the ones still to come.
-  // A route with no direct train is a trip with changes: its options come from the planner.
-  const direct = isDirect(r);
+  // Every route is a journey: the planner's earliest way there for each departure, a direct
+  // train or one with changes, whichever arrives first.
   const want = prefs.count + 6;
-  const raw = direct
-    ? schedule.routeDepartures(r.from, r.to, now - DELAY_MAX * MIN, want)
-    : schedule.journeys(r.from, r.to, now - DELAY_MAX * MIN, want).map((j) => fromJourney(j, 0));
+  const raw = schedule.journeys(r.from, r.to, now - DELAY_MAX * MIN, want).map((j) => fromJourney(j, 0));
   const deps = raw
     .map((x) => withDelay(x, delayFor(r.id, x.dep)))
     .filter((x) => x.dep >= now)
     .sort((a, b) => a.dep - b.dep)
     .slice(0, prefs.count);
   const next = deps[0] ?? null;
-  if (!next) return { r, kind: 'none', direct };
-  const lastRaw = direct ? schedule.lastRouteDeparture(r.from, r.to, now - DELAY_MAX * MIN) : fromJourney(schedule.lastJourney(r.from, r.to, now - DELAY_MAX * MIN), 0);
+  if (!next) return { r, kind: 'none' };
+  const lastRaw = fromJourney(schedule.lastJourney(r.from, r.to, now - DELAY_MAX * MIN), 0);
   const last = lastRaw && withDelay(lastRaw, delayFor(r.id, lastRaw.dep));
   const closed = next.trip.serviceDate !== today;
   return {
     r,
-    direct,
     kind: closed ? 'closed' : 'open',
     now,
     deps,
@@ -621,14 +612,18 @@ const picked = new Map();
 function routeCard(m, isPreview) {
   const { r } = m;
   const line = routeLine(r);
+  const lead = m.next ?? m.deps?.[0];
   const head = `
     <div class="rc-head">
       <span class="grow">
         <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
         ${
-          m.direct === false && (m.next ?? m.deps?.[0])
-            ? `<span class="s"><i class="dot" style="background: ${legsGradient((m.next ?? m.deps[0]).legs)}"></i>${esc(changesLabel(m.next ?? m.deps[0]))}</span>`
-            : `<span class="s"><i class="dot ${interOnly(m) ? 'inter' : line}"></i>${esc(routeLabel(r, interOnly(m)))}</span>`
+          // From the next trip itself: where you change, or its train and where that's heading.
+          lead?.legs
+            ? `<span class="s"><i class="dot" style="background: ${legsGradient(lead.legs)}"></i>${esc(
+                hasChange(lead) ? changesLabel(lead) : `${legLineName(lead.legs[0])} · toward ${name(lead.legs[0].trip.dest)}`,
+              )}</span>`
+            : `<span class="s"><i class="dot ${line}"></i>${esc(routeLabel(r))}</span>`
         }
       </span>
       <span class="pillgroup">
@@ -666,14 +661,14 @@ function routeCard(m, isPreview) {
         : i === 0
           ? `First after ${clock(m.plan.at)}`
           : 'Later train';
-    const note = d.legs ? '' : trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
+    const note = hasChange(d) ? '' : trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
     const big = `<div class="big clock"><span class="n flow" data-flow-at="${d.dep}" data-flow-mode="clock" data-flow-key="${r.id}"><number-flow-group><number-flow class="a"></number-flow><span class="sep">:</span><number-flow class="b"></number-flow></number-flow-group><span class="now">Now</span></span><span class="u"></span></div>`;
     const chips = m.deps
       .map((x, k) => {
         const sel = k === i;
         return `<button class="tchip ${sel ? 'on' : ''}" data-act="pick" data-route="${r.id}" data-pick="${pickKey(x)}" aria-pressed="${sel}"><span class="t">${clock(
           x.dep,
-        )}</span><span class="s">to ${clockTime(x.arr)}</span>${legBar(x)}</button>`;
+        )}</span><span class="s">to ${clockTime(x.arr)}</span>${m.deps.some(hasChange) ? legBar(x) : ''}</button>`;
       })
       .join('');
     body = `
@@ -682,12 +677,12 @@ function routeCard(m, isPreview) {
           <span class="label tint">${esc(label)}</span>
           ${big}
           <span class="line">Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}${note}</span>
-          ${d.legs ? legsLine(d) : ''}
+          ${hasChange(d) ? legsLine(d) : ''}
         </div>
       </div>
       ${boardingTags(r, d)}
       <div class="tchips" data-show-on>${chips}</div>
-      ${d.legs ? timelineHtml(d) : ''}`;
+      ${hasChange(d) ? timelineHtml(d) : ''}`;
   } else if (m.kind === 'none') {
     body = `<div class="rc-pad sub" style="font-size: 15px">No direct trains between these stations.</div>`;
   } else {
@@ -705,7 +700,7 @@ function routeCard(m, isPreview) {
     else if (tomorrow) [label, tone] = [i === m.tomorrowFrom ? 'First train tomorrow' : 'Tomorrow', 'sub'];
     else if (i === lastIdx) [label, tone] = ['Last train', 'warn'];
     else if (m.late && lastIdx > i) [label, tone] = [`Last ${lastIdx - i + 1} trains`, 'warn'];
-    const note = d.legs ? ` · ${span(d.arr - d.dep)}` : trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
+    const note = hasChange(d) ? ` · ${span(d.arr - d.dep)}` : trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
     const lineText =
       closed && i === 0
         ? `First train · arrives ${clock(d.arr)}`
@@ -724,7 +719,7 @@ function routeCard(m, isPreview) {
         const sub = closed && k === 0 ? 'first' : tm ? 'tomorrow' : `<span data-at="${x.dep}" data-fmt="chip">${FORMATS.chip(x.dep - m.now)}</span>`;
         return `<button class="tchip ${sel ? 'on' : ''} ${tm && !closed ? 'dim' : ''}" data-act="pick" data-route="${r.id}" data-pick="${pickKey(x)}" aria-pressed="${sel}"><span class="t">${clock(
           x.dep,
-        )}</span><span class="s ${k === lastIdx ? 'warn' : ''}">${sub}</span>${legBar(x)}</button>`;
+        )}</span><span class="s ${k === lastIdx ? 'warn' : ''}">${sub}</span>${m.deps.some(hasChange) ? legBar(x) : ''}</button>`;
       })
       .join('');
     body = `
@@ -733,7 +728,7 @@ function routeCard(m, isPreview) {
           <span class="label ${tone}">${label}</span>
           ${big}
           <span class="line">${lineText}</span>
-          ${d.legs ? legsLine(d) : ''}
+          ${hasChange(d) ? legsLine(d) : ''}
         </div>
         <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${
           on ? 'Stop the countdown' : 'Count down to this train'
@@ -741,7 +736,7 @@ function routeCard(m, isPreview) {
       </div>
       ${boardingTags(r, d)}
       <div class="tchips">${chips}</div>
-      ${d.legs ? timelineHtml(d) : ''}
+      ${hasChange(d) ? timelineHtml(d) : ''}
       ${m.late && m.last ? `<div class="note rc-pad">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight.</span></div>` : ''}`;
   }
 

@@ -136,7 +136,7 @@ fun platformAt(from: String, g: DestinationGroup): String? {
 }
 
 /** Only inter-corridor trains serve this route (Green Line tracks, then Blue to the Airport). */
-private fun interOnly(s: RouteStatus) = s.departures.isNotEmpty() && s.departures.all { it.trip.route == RouteId.INTER }
+private fun interOnly(s: RouteStatus) = s.departures.isNotEmpty() && s.departures.all { it.trip.route == RouteId.INTER && (it.legs?.size ?: 1) == 1 }
 
 private fun routeLine(r: SavedRoute): Line = routeGroup(r.from, r.to)?.line ?: Line.BLUE
 
@@ -361,11 +361,17 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("${Network.name(shown.from)} → ${Network.name(shown.to)}", style = HwType.cardTitle, color = hw.text)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        // A trip with changes names where you change, with a dot in each line's colour.
-                        val legs = if (shown == r) s.next?.legs else null
+                        // From the next trip itself: where you change, or its train and where that's heading.
+                        val legs = if (shown == r) (s.next ?: s.departures.firstOrNull())?.legs else null
                         if (legs != null) {
                             Box(Modifier.size(8.dp).clip(CircleShape).background(legsBrush(legs, hw)))
-                            Text(changesLabel(legs), style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                if (legs.size > 1) changesLabel(legs) else "${legLineName(legs[0])} · toward ${Network.name(legs[0].trip.dest)}",
+                                style = HwType.subhead,
+                                color = hw.sub,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         } else {
                             val inter = shown == r && interOnly(s)
                             val label = remember(shown, inter) { routeLabel(shown, inter) }
@@ -422,7 +428,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 own = ownDelay,
             ) { shown.timetabled?.let { actions.trainDelay(r.id, it) } }
             Chips(s, index, now) { picked = it }
-            shown.legs?.let { TripTimeline(it, Modifier.padding(horizontal = 20.dp)) }
+            shown.legs?.takeIf { it.size > 1 }?.let { TripTimeline(it, Modifier.padding(horizontal = 20.dp)) }
         }
 
         val last = s.last
@@ -470,7 +476,7 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         tomorrow -> hw.sub
         else -> hw.tint
     }
-    val note = if (d.legs != null) " · ${span(d.arr - d.dep)}" else trainNote(d)?.let { " · $it" }.orEmpty()
+    val note = if (d.hasChange) " · ${span(d.arr - d.dep)}" else trainNote(d)?.let { " · $it" }.orEmpty()
     val line = when {
         s.closed && i == 0 -> "First train · arrives ${clock(d.arr)}"
         tomorrow -> "Arrives ${clock(d.arr)}$note"
@@ -494,7 +500,7 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
                 HeroCountdown(d.dep, now)
             }
             Text(line, style = HwType.subhead, color = hw.sub)
-            d.legs?.let { LegsLine(it) }
+            d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
         }
         Box(
             Modifier
@@ -546,7 +552,7 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
         PlanMode.ARRIVE -> if (i == s.best) "Latest to arrive by ${clock(plan.at)}" else "Earlier train"
         PlanMode.LEAVE -> if (i == 0) "First after ${clock(plan.at)}" else "Later train"
     }
-    val note = if (d.legs == null) trainNote(d)?.let { " · $it" }.orEmpty() else ""
+    val note = if (!d.hasChange) trainNote(d)?.let { " · $it" }.orEmpty() else ""
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = HwType.subheadStrong, color = hw.tint)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -557,7 +563,7 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
             Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
         }
         Text("Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}$note", style = HwType.subhead, color = hw.sub)
-        d.legs?.let { LegsLine(it) }
+        d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
     }
 }
 
@@ -629,6 +635,9 @@ private fun DelayTag(delay: Int, own: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** A trip that takes more than one train. */
+private val RouteDeparture.hasChange: Boolean get() = (legs?.size ?: 1) > 1
+
 /** A chip and the picked train key on the timetabled time, so a delay change doesn't move them. */
 private fun pickKey(d: RouteDeparture): Long = d.timetabled ?: d.dep
 
@@ -637,6 +646,7 @@ private fun pickKey(d: RouteDeparture): Long = d.timetabled ?: d.dep
 private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long) -> Unit) {
     val hw = LocalHw.current
     val lastIdx = if (s.plan != null) -1 else lastIndex(s)
+    val anyChange = s.departures.any { it.hasChange }
     val scroll = rememberScrollState()
     // A planned card may start on a chip off to the right (arrive by: the last one).
     LaunchedEffect(s.plan, s.departures.size) {
@@ -679,7 +689,8 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
                 val subStyle = HwType.footnote.copy(fontWeight = if (i == lastIdx) FontWeight.SemiBold else FontWeight.Normal)
                 val subColor = if (i == lastIdx) hw.warn else hw.sub
                 if (fixed != null) Text(fixed, style = subStyle, color = subColor) else LiveText({ chipSpan(d.dep - now()) }, subStyle, subColor)
-                d.legs?.let { LegBar(it) }
+                // Bars only on cards that mix trips: then a direct train shows as one colour.
+                if (anyChange) d.legs?.let { LegBar(it) }
             }
         }
     }

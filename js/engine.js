@@ -344,13 +344,14 @@ export class Schedule {
   journeys(from, to, startMs, count = 4) {
     const out = [];
     let t = startMs;
-    // Later trains that arrive just as early replace earlier ones, so allow plenty of steps.
+    // A later start that arrives just as early replaces the earlier one, unless it takes more
+    // changes: leaving 2 minutes later isn't worth an extra change. Allow plenty of steps.
     for (let n = 0; n < count * 20 && out.length < count; n++) {
       const j = this.plan(from, to, t);
       if (!j) break;
       const same = out.findIndex((o) => o.arr === j.arr);
-      if (same >= 0) out[same] = j;
-      else out.push(j);
+      if (same < 0) out.push(j);
+      else if (j.legs.length <= out[same].legs.length) out[same] = j;
       t = j.dep + 1;
     }
     return out;

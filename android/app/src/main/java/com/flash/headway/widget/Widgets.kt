@@ -134,7 +134,7 @@ object Widgets {
         val status = routeStatus(schedule, route, Clock.now(), lastWarn, 1, rule)
         val next = status.next
         // A trip with changes takes the colour of its first train.
-        val line = routeGroup(route.from, route.to)?.line ?: next?.legs?.first()?.trip?.line ?: Line.BLUE
+        val line = next?.legs?.first()?.trip?.line ?: routeGroup(route.from, route.to)?.line ?: Line.BLUE
         val ring = when (line) {
             Line.BLUE -> R.drawable.widget_bg_blue
             Line.GREEN -> R.drawable.widget_bg_green

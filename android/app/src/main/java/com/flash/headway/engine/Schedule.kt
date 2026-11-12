@@ -436,8 +436,10 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
         var n = 0
         while (n++ < count * 20 && out.size < count) {
             val j = plan(from, to, t) ?: break
+            // A later start that arrives just as early replaces the earlier one, unless it takes
+            // more changes: leaving 2 minutes later isn't worth an extra change.
             val same = out.indexOfFirst { it.arr == j.arr }
-            if (same >= 0) out[same] = j else out += j
+            if (same < 0) out += j else if (j.legs.size <= out[same].legs.size) out[same] = j
             t = j.dep + 1
         }
         return out
