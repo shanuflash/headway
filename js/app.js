@@ -323,10 +323,17 @@ function trainDelayOf(id, timetabled) {
 /** The delay a train runs with: its own if set, else the route's. */
 const delayFor = (id, timetabled) => trainDelayOf(id, timetabled) ?? delayOf(id);
 
-/** A shown departure's timetabled time, found from the delays now in force. */
+/**
+ * A shown departure's timetabled time, from the delays now in force. Trains with their own delay
+ * are checked first (a shown 8:15 is the 8:13 with its own +2 before it's an 8:15 that follows
+ * the route); otherwise it's the route's delay.
+ */
 function timetabledOf(id, shown) {
-  for (let v = -DELAY_MAX; v <= DELAY_MAX; v++) if (delayFor(id, shown - v * MIN) === v) return shown - v * MIN;
-  return shown;
+  for (const [key, d] of Object.entries(prefs.trainDelays?.[id] ?? {})) {
+    const t = shown - d * MIN;
+    if (timeKey(t) === key) return t;
+  }
+  return shown - delayOf(id) * MIN;
 }
 
 /** A departure (or a trip's legs) moved by `mins`, remembering its timetabled time and delay. */

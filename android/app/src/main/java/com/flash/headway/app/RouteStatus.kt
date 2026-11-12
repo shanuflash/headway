@@ -61,9 +61,18 @@ fun Schedule.delayedDepartures(route: SavedRoute, nowMs: Long, limit: Int, rule:
 data class DelayRule(val route: Int = 0, val byTime: Map<String, Int> = emptyMap()) {
     fun forDeparture(timetabled: Long): Int = byTime[timeKey(timetabled)] ?: route
 
-    /** The timetabled time of a departure shown at [shown] under this rule. */
-    fun timetabledOf(shown: Long): Long =
-        (-DELAY_MAX..DELAY_MAX).firstOrNull { v -> forDeparture(shown - v * MINUTE) == v }?.let { shown - it * MINUTE } ?: shown
+    /**
+     * The timetabled time of a departure shown at [shown] under this rule. Trains with their own
+     * delay are checked first (a shown 8:15 is the 8:13 with its own +2 before it's an 8:15 that
+     * follows the route); otherwise it's the route's delay.
+     */
+    fun timetabledOf(shown: Long): Long {
+        for ((key, d) in byTime) {
+            val t = shown - d * MINUTE
+            if (timeKey(t) == key) return t
+        }
+        return shown - route * MINUTE
+    }
 }
 
 /** "08:14": a departure as a daily key, in IST. */
