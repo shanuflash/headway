@@ -39,6 +39,10 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private val _preview = MutableStateFlow<SavedRoute?>(null)
     val preview: StateFlow<SavedRoute?> = _preview.asStateFlow()
 
+    /** The quick look planned for another time, or null for now. */
+    private val _plan = MutableStateFlow<PlanTime?>(null)
+    val plan: StateFlow<PlanTime?> = _plan.asStateFlow()
+
     private val _statuses = MutableStateFlow<List<RouteStatus>?>(null)
     val statuses: StateFlow<List<RouteStatus>?> = _statuses.asStateFlow()
 
@@ -59,7 +63,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            combine(prefs.filterNotNull(), _preview) { p, pv -> p to pv }.collectLatest { (p, pv) ->
+            combine(prefs.filterNotNull(), _preview, _plan) { p, pv, plan -> Triple(p, pv, plan) }.collectLatest { (p, pv, plan) ->
                 Clock.offset = p.mockOffset
                 var flipping = false
                 while (true) {
@@ -74,7 +78,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
                         shown.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayOf(it.id)) } to
-                            pv?.let { routeStatus(s, it, now, p.lastWarn, p.count) }
+                            pv?.let { if (plan != null) planStatus(s, it, plan, p.count) else routeStatus(s, it, now, p.lastWarn, p.count) }
                     }
                     _statuses.value = list
                     _previewStatus.value = previewNow
@@ -241,16 +245,24 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     fun setCount(n: Int) = update { it.copy(count = n) }
 
     fun showPreview(from: String, to: String) {
+        _plan.value = null
         _preview.value = SavedRoute(from, to)
     }
 
     fun closePreview() {
         _preview.value = null
+        _plan.value = null
+    }
+
+    /** Plans the quick look for another time, or back to now with null. */
+    fun setPlan(plan: PlanTime?) {
+        _plan.value = plan
     }
 
     fun savePreview() {
         val pv = _preview.value ?: return
         _preview.value = null
+        _plan.value = null
         addRoute(pv.from, pv.to)
     }
 

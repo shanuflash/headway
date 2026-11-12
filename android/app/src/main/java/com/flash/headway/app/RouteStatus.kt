@@ -20,6 +20,10 @@ data class RouteStatus(
     val running: Boolean,
     val late: Boolean,
     val remainingToday: Int,
+    /** Set when this is planned for another time instead of now (quick look only). */
+    val plan: PlanTime? = null,
+    /** The option shown first: the next train, or for "arrive by", the latest one that makes it. */
+    val best: Int = 0,
 ) {
     val next: RouteDeparture? get() = departures.firstOrNull()
 
@@ -27,7 +31,7 @@ data class RouteStatus(
     val tomorrowFrom: Int get() = if (closed) 0 else departures.indexOfFirst { it.trip.serviceDate != departures.first().trip.serviceDate }
 
     /** When this card next changes: the shown train leaves. */
-    val nextChange: Long? get() = next?.dep
+    val nextChange: Long? get() = if (plan != null) null else next?.dep
 }
 
 /**
@@ -73,3 +77,41 @@ fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, co
         remainingToday = deps.count { it.trip.serviceDate == today },
     )
 }
+
+enum class PlanMode { LEAVE, ARRIVE }
+
+/** Plan a quick look for another time: leave at, or arrive by, [at]. */
+data class PlanTime(val mode: PlanMode, val at: Long)
+
+/**
+ * Trains for a chosen time instead of now. "Leave at": the first ones from then. "Arrive by":
+ * the latest ones that still get there in time, found by probing the trip's length and looking
+ * back from the deadline. Works for direct trains and trips with changes alike.
+ */
+fun planStatus(s: Schedule, route: SavedRoute, plan: PlanTime, count: Int): RouteStatus {
+    val deps = when (plan.mode) {
+        PlanMode.LEAVE -> s.delayedDepartures(route, plan.at, count, 0)
+        PlanMode.ARRIVE -> {
+            val probe = s.delayedDepartures(route, plan.at - 180 * MINUTE, 1, 0).firstOrNull()
+            if (probe == null) {
+                emptyList()
+            } else {
+                val start = plan.at - (probe.arr - probe.dep) - 45 * MINUTE
+                s.delayedDepartures(route, start, 40, 0).filter { it.arr <= plan.at }.takeLast(count)
+            }
+        }
+    }
+    return RouteStatus(
+        route = route,
+        now = plan.at,
+        departures = deps,
+        last = null,
+        closed = false,
+        running = true,
+        late = false,
+        remainingToday = deps.size,
+        plan = plan,
+        best = if (plan.mode == PlanMode.ARRIVE) (deps.size - 1).coerceAtLeast(0) else 0,
+    )
+}
+

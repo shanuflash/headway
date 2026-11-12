@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +39,8 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,7 +49,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,6 +72,8 @@ import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
+import com.flash.headway.app.PlanMode
+import com.flash.headway.app.PlanTime
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
 import com.flash.headway.data.Platforms
@@ -88,6 +96,8 @@ class RouteActions(
     val mockOff: () -> Unit,
     val topUp: () -> Unit,
     val savePreview: () -> Unit,
+    /** Opens "When?" to plan the quick look for another time. */
+    val whenOpen: () -> Unit = {},
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -140,33 +150,42 @@ private fun chipSpan(ms: Long): String {
 }
 
 @Composable
-fun ColumnScope.RoutesScreen(
+/**
+ * The routes tab as lazy list items: only the cards on screen are composed, so a long list of
+ * routes stays smooth. Each card is keyed by its route, so it keeps its picked train as you scroll.
+ */
+fun LazyListScope.routesScreen(
     statuses: List<RouteStatus>?,
     preview: RouteStatus?,
     prefs: Prefs,
     now: () -> Long,
     actions: RouteActions,
 ) {
-    TopBar(right = {
-        GlassGroup(
-            listOf(
-                Triple(Icons.Rounded.CreditCard, "Metro card balance and top-up", actions.topUp),
-                Triple(Icons.Rounded.Add, "Add a route", actions.add),
-                Triple(Icons.Rounded.MoreHoriz, "Settings", actions.settings),
-            ),
-        )
-    })
-    LargeTitle("Routes")
-    if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
-    LoadCardBanner(now)
+    item(key = "top", contentType = "top") {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            TopBar(right = {
+                GlassGroup(
+                    listOf(
+                        Triple(Icons.Rounded.CreditCard, "Metro card balance and top-up", actions.topUp),
+                        Triple(Icons.Rounded.Add, "Add a route", actions.add),
+                        Triple(Icons.Rounded.MoreHoriz, "Settings", actions.settings),
+                    ),
+                )
+            })
+            LargeTitle("Routes")
+            // In this column a hidden banner takes no space (a lazy item would leave a gap).
+            if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
+            LoadCardBanner(now)
+        }
+    }
 
-    if (preview != null) RouteCard(preview, prefs, now, actions, isPreview = true)
+    if (preview != null) item(key = "preview", contentType = "card") { RouteCard(preview, prefs, now, actions, isPreview = true) }
     if (statuses == null) return
     if (statuses.isEmpty() && preview == null) {
-        EmptyRoutes(actions)
+        item(key = "empty", contentType = "empty") { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { EmptyRoutes(actions) } }
         return
     }
-    statuses.forEach { s -> RouteCard(s, prefs, now, actions, isPreview = false) }
+    items(statuses, key = { it.route.id }, contentType = { "card" }) { s -> RouteCard(s, prefs, now, actions, isPreview = false) }
 }
 
 /** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
@@ -282,8 +301,8 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
     val hw = LocalHw.current
     val r = s.route
     // The train shown big. Tapping a chip picks another; it falls back to the next one once it leaves.
-    var picked by remember(r.id) { mutableStateOf<Long?>(null) }
-    val index = s.departures.indexOfFirst { it.dep == picked }.coerceAtLeast(0)
+    var picked by rememberSaveable(r.id) { mutableStateOf<Long?>(null) }
+    val index = s.departures.indexOfFirst { it.dep == picked }.let { if (it < 0) s.best else it }
 
     Column(
         Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(top = 18.dp, bottom = 20.dp),
@@ -334,16 +353,22 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             }
         }
 
+        if (isPreview) WhenPill(s.plan, actions.whenOpen)
+
         val shown = s.departures.getOrNull(index)
         if (shown == null) {
             Text(
-                "No trains between these stations.",
+                when (s.plan?.mode) {
+                    PlanMode.ARRIVE -> "No trains get there by then."
+                    PlanMode.LEAVE -> "No trains after then."
+                    null -> "No trains between these stations."
+                },
                 style = HwType.subhead,
                 color = hw.sub,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         } else {
-            Hero(s, shown, index, prefs, now, actions)
+            if (s.plan != null) PlanHero(s, shown, index) else Hero(s, shown, index, prefs, now, actions)
             val directPlatform = remember(r) { platformFor(r) }
             Boarding(shown.legs?.let { legPlatform(it.first()) } ?: directPlatform, prefs.coaches[r.id], if (isPreview) 0 else prefs.delayOf(r.id)) { actions.menu(r.id) }
             Chips(s, index, now) { picked = it }
@@ -358,7 +383,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             }
         }
 
-        if (isPreview) {
+        if (isPreview && prefs.routes.none { it.id == r.id }) {
             Box(Modifier.padding(horizontal = 20.dp)) { PrimaryButton("Save this route", Icons.Rounded.Add, actions.savePreview) }
         }
     }
@@ -439,6 +464,51 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
     }
 }
 
+/** "Leaving now ▾" / "Arrive by 9:30 AM tomorrow ▾" on a quick look: tap to plan another time. */
+@Composable
+private fun WhenPill(plan: PlanTime?, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    val fg = if (plan != null) hw.tint else hw.text
+    Row(
+        Modifier
+            .padding(horizontal = 20.dp)
+            .height(34.dp)
+            .clip(CircleShape)
+            .background(if (plan != null) hw.tintSoft else hw.fill2)
+            .press(scaleTo = 0.96f, onClick = onClick)
+            .padding(start = 12.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(Icons.Rounded.Schedule, null, tint = fg, modifier = Modifier.size(18.dp))
+        Text(whenText(plan), style = HwType.subheadStrong, color = fg)
+        Icon(Icons.Rounded.UnfoldMore, null, tint = hw.sub, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** The hero for a planned quick look: the departure time, not a countdown. */
+@Composable
+private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
+    val hw = LocalHw.current
+    val plan = s.plan ?: return
+    val label = when (plan.mode) {
+        PlanMode.ARRIVE -> if (i == s.best) "Latest to arrive by ${clock(plan.at)}" else "Earlier train"
+        PlanMode.LEAVE -> if (i == 0) "First after ${clock(plan.at)}" else "Later train"
+    }
+    val note = if (d.legs == null) trainNote(d)?.let { " · $it" }.orEmpty() else ""
+    Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = HwType.subheadStrong, color = hw.tint)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val lastDep = remember { mutableLongStateOf(d.dep) }
+            val later = d.dep > lastDep.longValue
+            SideEffect { lastDep.longValue = d.dep }
+            RollingText(clockTime(d.dep), HwType.bigClock, hw.text, up = later)
+            Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
+        }
+        Text("Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}$note", style = HwType.subhead, color = hw.sub)
+    }
+}
+
 /** The hero's countdown on its own, so only it recomposes as the clock ticks. */
 @Composable
 private fun HeroCountdown(dep: Long, now: () -> Long) {
@@ -495,16 +565,22 @@ private fun DelayTag(delay: Int, onClick: () -> Unit) {
 @Composable
 private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long) -> Unit) {
     val hw = LocalHw.current
-    val lastIdx = lastIndex(s)
+    val lastIdx = if (s.plan != null) -1 else lastIndex(s)
+    val scroll = rememberScrollState()
+    // A planned card may start on a chip off to the right (arrive by: the last one).
+    LaunchedEffect(s.plan, s.departures.size) {
+        if (s.plan != null && s.departures.size > 1) scroll.scrollTo(scroll.maxValue * selected / (s.departures.size - 1))
+    }
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         s.departures.forEachIndexed { i, d ->
             val on = i == selected
-            val tomorrow = isTomorrow(s, i)
+            val tomorrow = s.plan == null && isTomorrow(s, i)
             val shape = RoundedCornerShape(20.dp)
             val fixed = when {
+                s.plan != null -> "to ${clockTime(d.arr)}"
                 s.closed && i == 0 -> "first"
                 tomorrow -> "tomorrow"
                 else -> null

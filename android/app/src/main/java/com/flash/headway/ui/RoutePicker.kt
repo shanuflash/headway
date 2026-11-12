@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.TransferWithinAStation
@@ -270,6 +271,7 @@ fun RouteMenu(
     title: String,
     returnTitle: String,
     onReturn: () -> Unit,
+    onPlan: () -> Unit,
     onTop: () -> Unit,
     onRemove: () -> Unit,
     coach: Coach?,
@@ -306,6 +308,7 @@ fun RouteMenu(
             ListCard(
                 listOf<@Composable () -> Unit>(
                     { MenuRow(Icons.Rounded.SwapVert, "Add the return trip", returnTitle, hw.text) { close(onReturn) } },
+                    { MenuRow(Icons.Rounded.Schedule, "Plan another time", "Leave at or arrive by a time, today or tomorrow", hw.text) { close(onPlan) } },
                     { MenuRow(Icons.Rounded.VerticalAlignTop, "Move to the top", null, hw.text) { close(onTop) } },
                     { MenuRow(Icons.Rounded.Delete, "Remove route", null, danger) { close(onRemove) } },
                 ),

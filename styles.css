@@ -1037,3 +1037,14 @@ button.hero:active { transform: scale(0.985); }
 /* Destination picker: where a station needs a change. */
 .row .via { display: flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px; color: var(--sub); }
 .row .via .ms { font-size: 15px; }
+
+/* ---------- plan another time ---------- */
+.when-row { margin-top: -6px; }
+.when { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 12px; border-radius: 17px; background: var(--pill); font-size: 15px; font-weight: 600; transition: transform 0.2s var(--spring); }
+.when:active { transform: scale(0.96); }
+.when.on { color: var(--tint); background: var(--tint-soft); }
+.when .ms { font-size: 18px; }
+.when .ms:last-child { font-size: 16px; color: var(--sub); }
+.when-card { gap: 12px; }
+.when-time { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 17px; }
+.when-time input { font: inherit; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tint); background: var(--fill); border: 0; border-radius: 10px; padding: 6px 10px; min-height: 36px; }

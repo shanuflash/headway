@@ -415,7 +415,51 @@ function setFlip(r, f, apply) {
   render({ force: true, animate: true });
 }
 
+/* ---------- plan for another time (quick look) ---------- */
+
+/**
+ * Trains for a chosen time instead of now. "Leave at": the first ones from then. "Arrive by":
+ * the latest ones that still get there in time, found by probing the trip's length and looking
+ * back from the deadline. Works for direct trains and trips with changes alike.
+ */
+function planOptions(r, plan, count) {
+  const list = (start, n) =>
+    isDirect(r) ? schedule.routeDepartures(r.from, r.to, start, n) : schedule.journeys(r.from, r.to, start, n).map((j) => fromJourney(j, 0));
+  if (plan.mode === 'leave') return list(plan.at, count);
+  const probe = list(plan.at - 3 * 60 * MIN, 1)[0];
+  if (!probe) return [];
+  const start = plan.at - (probe.arr - probe.dep) - 45 * MIN;
+  return list(start, 40)
+    .filter((x) => x.arr <= plan.at)
+    .slice(-count);
+}
+
+function planModel(r) {
+  const deps = planOptions(r, r.plan, prefs.count);
+  // Arriving by a time, the best train is the last one that makes it.
+  return { r, kind: deps.length ? 'plan' : 'plan-none', direct: isDirect(r), plan: r.plan, deps, best: r.plan.mode === 'arrive' ? deps.length - 1 : 0 };
+}
+
+/** "Leave at 8:00 AM tomorrow", "Arrive by 9:30 AM", or "Leaving now". */
+function whenText(plan) {
+  if (!plan) return 'Leaving now';
+  return `${plan.mode === 'arrive' ? 'Arrive by' : 'Leave at'} ${clock(plan.at)}${dayWord(plan.at)}`;
+}
+
+/** "", " tomorrow" or " on Friday", against the current (possibly mocked) date. */
+function dayWord(ms) {
+  const day = (t) => {
+    const d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  };
+  const diff = Math.round((day(ms) - day(clockNow())) / (24 * 60 * MIN));
+  if (diff === 0) return '';
+  if (diff === 1) return ' tomorrow';
+  return ` on ${new Date(ms).toLocaleDateString('en-IN', { weekday: 'long' })}`;
+}
+
 function routeModel(r, now) {
+  if (r.plan) return planModel(r);
   const today = schedule.today(now).key;
   // Trains that run `delay` min late leave `delay` min after their timetabled time, so look
   // that much further back in the timetable for the ones still to come.
@@ -515,8 +559,8 @@ function routeCard(m, isPreview) {
       <span class="grow">
         <span class="t">${esc(name(r.from))} → ${esc(name(r.to))}</span>
         ${
-          m.direct === false && m.next
-            ? `<span class="s"><i class="dot" style="background: ${legsGradient(m.next.legs)}"></i>${esc(changesLabel(m.next))}</span>`
+          m.direct === false && (m.next ?? m.deps?.[0])
+            ? `<span class="s"><i class="dot" style="background: ${legsGradient((m.next ?? m.deps[0]).legs)}"></i>${esc(changesLabel(m.next ?? m.deps[0]))}</span>`
             : `<span class="s"><i class="dot ${interOnly(m) ? 'inter' : line}"></i>${esc(routeLabel(r, interOnly(m)))}</span>`
         }
       </span>
@@ -532,8 +576,51 @@ function routeCard(m, isPreview) {
       </span>
     </div>`;
 
+  // A quick look can be planned for another time.
+  const when = isPreview
+    ? `<div class="rc-pad when-row"><button class="when ${r.plan ? 'on' : ''}" data-act="when">${ic('schedule')}<span>${esc(whenText(r.plan))}</span>${ic(
+        'unfold_more',
+      )}</button></div>`
+    : '';
+
   let body = '';
-  if (m.kind === 'none') {
+  if (m.kind === 'plan-none') {
+    body = `<div class="rc-pad sub" style="font-size: 15px">${m.plan.mode === 'arrive' ? 'No trains get there by then.' : 'No trains after then.'}</div>`;
+  } else if (m.kind === 'plan') {
+    const want = picked.get(r.id);
+    const found = m.deps.findIndex((x) => x.dep === want);
+    const i = found >= 0 ? found : m.best;
+    const d = m.deps[i];
+    const label =
+      m.plan.mode === 'arrive'
+        ? i === m.best
+          ? `Latest to arrive by ${clock(m.plan.at)}`
+          : 'Earlier train'
+        : i === 0
+          ? `First after ${clock(m.plan.at)}`
+          : 'Later train';
+    const note = d.legs ? '' : trainNote(d.trip) ? ` · ${trainNote(d.trip)}` : '';
+    const big = `<div class="big clock"><span class="n flow" data-flow-at="${d.dep}" data-flow-mode="clock" data-flow-key="${r.id}"><number-flow-group><number-flow class="a"></number-flow><span class="sep">:</span><number-flow class="b"></number-flow></number-flow-group><span class="now">Now</span></span><span class="u"></span></div>`;
+    const chips = m.deps
+      .map((x, k) => {
+        const sel = k === i;
+        return `<button class="tchip ${sel ? 'on' : ''}" data-act="pick" data-route="${r.id}" data-dep="${x.dep}" aria-pressed="${sel}"><span class="t">${clock(
+          x.dep,
+        )}</span><span class="s">to ${clockTime(x.arr)}</span></button>`;
+      })
+      .join('');
+    body = `
+      <div class="rc-hero rc-pad">
+        <div class="grow">
+          <span class="label tint">${esc(label)}</span>
+          ${big}
+          <span class="line">Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}${note}</span>
+        </div>
+      </div>
+      ${boardingTags(r, d)}
+      <div class="tchips" data-show-on>${chips}</div>
+      ${d.legs ? timelineHtml(d) : ''}`;
+  } else if (m.kind === 'none') {
     body = `<div class="rc-pad sub" style="font-size: 15px">No direct trains between these stations.</div>`;
   } else {
     const closed = m.kind === 'closed';
@@ -592,8 +679,13 @@ function routeCard(m, isPreview) {
   return `
     <div class="card rc">
       ${head}
+      ${when}
       ${body}
-      ${isPreview ? `<div class="rc-pad"><button class="cta" data-act="save-preview">${ic('add')}Save this route</button></div>` : ''}
+      ${
+        isPreview && !prefs.routes.some((x) => x.from === r.from && x.to === r.to)
+          ? `<div class="rc-pad"><button class="cta" data-act="save-preview">${ic('add')}Save this route</button></div>`
+          : ''
+      }
     </div>`;
 }
 
@@ -948,6 +1040,11 @@ function render({ force = false, animate = false } = {}) {
   lastKey = key;
   const focused = document.activeElement?.id;
   view.innerHTML = html;
+  // Planned cards may pick a chip off to the right (arrive by: the last one); bring it into view.
+  for (const row of view.querySelectorAll('.tchips[data-show-on]')) {
+    const on = row.querySelector('.tchip.on');
+    if (on) row.scrollLeft = Math.max(0, on.offsetLeft - row.offsetLeft - row.clientWidth / 2 + on.offsetWidth / 2);
+  }
   paintFlows(now);
   view.classList.toggle('enter', animate);
   if (focused) document.getElementById(focused)?.focus();
@@ -1378,6 +1475,7 @@ function routeMenuHtml(r) {
       ${flipCard(r)}
       <div class="card list">
         <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
+        <button class="row tap plain" data-act="plan-route" data-route="${id}">${ic('schedule')}<span class="grow"><span class="t">Plan another time</span><span class="s">Leave at or arrive by a time, today or tomorrow</span></span></button>
         <button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>
         <button class="row tap plain" data-act="remove-route" data-route="${id}" style="color: #d70015">${ic('delete')}<span class="grow"><span class="t">Remove route</span></span></button>
       </div>
@@ -1467,6 +1565,59 @@ function setDelay(id, d) {
   save({ delays, reminder });
   paintDelayCard(id);
   render({ force: true });
+}
+
+/* ----- "When?" sheet: plan a quick look for another time ----- */
+
+let whenDraft = null;
+const pad2 = (n) => String(n).padStart(2, '0');
+
+function startWhen() {
+  const plan = preview?.plan;
+  const now = new Date(clockNow());
+  const base = plan ? new Date(plan.at) : new Date(Math.ceil((now.getTime() + 15 * MIN) / (15 * MIN)) * 15 * MIN);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const baseDay = new Date(base.getFullYear(), base.getMonth(), base.getDate()).getTime();
+  whenDraft = {
+    mode: plan?.mode ?? 'leave',
+    day: baseDay > today ? 1 : 0,
+    hm: `${pad2(base.getHours())}:${pad2(base.getMinutes())}`,
+  };
+}
+
+/** The draft's time as a timestamp: that day (today or tomorrow) at that clock time. */
+function whenAt(draft) {
+  const now = new Date(clockNow());
+  const [h, m] = draft.hm.split(':').map(Number);
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + draft.day, h, m).getTime();
+}
+
+function whenHtml() {
+  const d = whenDraft;
+  const seg = (act, value, opts) =>
+    `<div class="seg" role="radiogroup">${opts
+      .map(([v, l]) => `<button role="radio" aria-checked="${value === v}" data-act="${act}" data-v="${v}">${l}</button>`)
+      .join('')}</div>`;
+  return `${sheetHead('When?', preview ? `${name(preview.from)} → ${name(preview.to)}` : null, null)}
+    <div class="sheet-body" style="flex: 0 1 auto">
+      <div class="card set when-card">
+        ${seg('when-mode', d.mode, [['now', 'Now'], ['leave', 'Leave at'], ['arrive', 'Arrive by']])}
+        ${
+          d.mode === 'now'
+            ? '<span class="sub" style="font-size: 13px; line-height: 18px">The next trains from now, counting down.</span>'
+            : `${seg('when-day', String(d.day), [['0', 'Today'], ['1', 'Tomorrow']])}
+        <label class="when-time"><span>${d.mode === 'arrive' ? 'Arrive by' : 'Leave at'}</span><input type="time" value="${d.hm}" step="300" data-act="when-time" aria-label="Time"></label>`
+        }
+      </div>
+      <button class="cta" data-act="when-done">${ic(d.mode === 'now' ? 'schedule' : 'search')}${d.mode === 'now' ? 'Show the next trains' : 'Show trains'}</button>
+    </div>`;
+}
+
+function openWhen(replace) {
+  startWhen();
+  if (replace) replaceSheet(whenHtml());
+  else openSheet(whenHtml());
+  sheetRoot.querySelector('.sheet').classList.add('short', 'fit');
 }
 
 function closeSheet() {
@@ -1654,6 +1805,38 @@ const ACTIONS = {
     toast(`Removed ${name(r.from)} → ${name(r.to)}`);
     render({ force: true, animate: true });
   },
+  when: () => {
+    buzz();
+    openWhen(false);
+  },
+  'when-mode': (el) => {
+    buzz();
+    whenDraft.mode = el.dataset.v;
+    replaceSheet(whenHtml());
+  },
+  'when-day': (el) => {
+    buzz();
+    whenDraft.day = Number(el.dataset.v);
+    replaceSheet(whenHtml());
+  },
+  'when-done': () => {
+    if (!preview) return history.back();
+    const plan = whenDraft.mode === 'now' ? null : { mode: whenDraft.mode, at: whenAt(whenDraft) };
+    preview = { ...preview, plan };
+    picked.delete('preview');
+    history.back();
+    render({ force: true, animate: true });
+  },
+  'plan-route': (el) => {
+    const r = routeOf(el);
+    if (!r) return;
+    buzz();
+    preview = { id: 'preview', from: r.from, to: r.to };
+    menuPair = null;
+    if (nav.tab !== 'routes' || nav.stack.length) switchTab('routes');
+    else render({ force: true, animate: true });
+    openWhen(true);
+  },
   'close-preview': () => {
     preview = null;
     render({ force: true, animate: true });
@@ -1696,6 +1879,14 @@ document.addEventListener('change', (e) => {
     const key = serviceDateKey(clockNow());
     save({ override: el.value === 'auto' ? null : { date: key, type: el.value } });
     refreshSchedule();
+  } else if (el.dataset.act === 'when-time' && whenDraft) {
+    if (!el.value) return;
+    whenDraft.hm = el.value;
+    // A time that's already gone today means tomorrow.
+    if (whenDraft.day === 0 && whenAt(whenDraft) < clockNow()) {
+      whenDraft.day = 1;
+      replaceSheet(whenHtml());
+    }
   } else if (el.id === 'upi-scan') {
     if (el.files?.[0]) scanCardQr(el.files[0]);
     el.value = '';

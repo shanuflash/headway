@@ -28,13 +28,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -43,6 +46,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -107,6 +112,9 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var settings by rememberSaveable { mutableStateOf(false) }
     var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
+    var whenOpen by remember { mutableStateOf(false) }
+    val plan by vm.plan.collectAsStateWithLifecycle()
+    val preview by vm.preview.collectAsStateWithLifecycle()
     var stationFor by remember { mutableStateOf<String?>(null) }
     var pickFrom by remember { mutableStateOf<String?>(null) }
     var topUp by remember { mutableStateOf(false) }
@@ -161,9 +169,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             },
             label = "screens",
         ) { key ->
-            ScreenColumn {
-                when (key) {
-                    Tab.ROUTES.name -> RoutesScreen(
+            if (key == Tab.ROUTES.name) {
+                // A lazy list, so only the route cards on screen are composed and drawn.
+                ScreenLazy {
+                    routesScreen(
                         statuses = statuses,
                         preview = previewStatus,
                         prefs = prefs,
@@ -182,8 +191,12 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 vm.savePreview()
                                 toast("Route saved")
                             },
+                            whenOpen = { whenOpen = true },
                         ),
                     )
+                }
+            } else ScreenColumn {
+                when (key) {
                     Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, onSettings = { settings = true })
                     Tab.MAP.name -> MapScreen(onSettings = { settings = true }, onStation = { stationFor = it })
                     else -> SettingsScreen(
@@ -253,6 +266,16 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
         if (topUp) TopUpSheet(onDismiss = { topUp = false })
 
+        val planned = preview
+        if (whenOpen && planned != null) {
+            WhenSheet(
+                title = "${Network.name(planned.from)} → ${Network.name(planned.to)}",
+                plan = plan,
+                onDone = { vm.setPlan(it) },
+                onDismiss = { whenOpen = false },
+            )
+        }
+
         stationFor?.let { id ->
             StationSheet(
                 id = id,
@@ -281,6 +304,12 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     onReturn = {
                         menuFor = null
                         vm.addReturn(id)
+                    },
+                    onPlan = {
+                        menuFor = null
+                        vm.showPreview(route.from, route.to)
+                        tab = Tab.ROUTES
+                        whenOpen = true
                     },
                     onTop = {
                         menuFor = null
@@ -312,6 +341,24 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ScreenLazy(content: LazyListScope.() -> Unit) {
+    // The same frame as ScreenColumn, as a lazy list.
+    Box(Modifier.fillMaxSize().background(LocalHw.current.bg), contentAlignment = Alignment.TopCenter) {
+        LazyColumn(
+            Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars),
+            contentPadding = WindowInsets.navigationBars.asPaddingValues().let { nav ->
+                PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = nav.calculateBottomPadding() + 112.dp)
+            },
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            content = content,
+        )
     }
 }
 

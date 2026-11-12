@@ -15,7 +15,7 @@ Headway is for people who ride the same route every day. Save where you board an
   - **Trips with changes:** after picking where you board, direct trains come first, then every other station under "With a change", with where you'd change. A saved trip works like any route card: each chip is a whole journey, and the card shows its timeline, from boarding through each change (walk time and minutes to spare) to arrival, with lines, directions and platforms.
 - **States:** last trains (an amber label, plus the first train tomorrow), "No more trains tonight" and "Metro is closed".
 - **Countdown:** tap the bell on any train for a live countdown notification to its departure, with "I'll take the next one" and "Stop". It counts to the train itself; there's no walking-time offset.
-- **Quick look:** the search button checks any pair of stations without saving them, with changes if needed.
+- **Quick look:** the search button checks any pair of stations without saving them, with changes if needed. Its "Leaving now" pill plans it for another time instead: leave at, or arrive by, a time today or tomorrow (also from a route's menu: "Plan another time").
 - **Lines:** today's official first and last trains and frequency bands.
 - **Settings:** today's timetable override, trains shown per route, last-train warning, and appearance.
 

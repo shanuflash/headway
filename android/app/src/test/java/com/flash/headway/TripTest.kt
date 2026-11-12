@@ -2,7 +2,10 @@ package com.flash.headway
 
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.app.delayedDepartures
+import com.flash.headway.app.PlanMode
+import com.flash.headway.app.PlanTime
 import com.flash.headway.app.isDirect
+import com.flash.headway.app.planStatus
 import com.flash.headway.app.routeStatus
 import com.flash.headway.data.Network
 import com.flash.headway.engine.IST
@@ -75,5 +78,25 @@ class TripTest {
         last!!
         assertTrue(last.legs!!.size >= 2)
         assertFalse(st.closed)
+    }
+
+    @Test
+    fun planningForAnotherTimeLeavesAfterOrArrivesBy() {
+        val s = Schedule()
+        for (route in listOf(SavedRoute("guindy", "central"), SavedRoute("guindy", "koyambedu"))) {
+            val by = at(9, 30)
+            val arrive = planStatus(s, route, PlanTime(PlanMode.ARRIVE, by), 5)
+            assertEquals(5, arrive.departures.size)
+            assertTrue(arrive.departures.all { it.arr <= by })
+            assertEquals(arrive.departures.size - 1, arrive.best)
+            // Nothing later also makes it: the next one after the best arrives too late.
+            val after = s.delayedDepartures(route, arrive.departures.last().dep + 1, 1, 0).first()
+            assertTrue(after.arr > by)
+
+            val leave = planStatus(s, route, PlanTime(PlanMode.LEAVE, at(8, 0)), 3)
+            assertTrue(leave.departures.all { it.dep >= at(8, 0) })
+            assertEquals(0, leave.best)
+            assertNull(leave.nextChange)
+        }
     }
 }
