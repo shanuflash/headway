@@ -334,7 +334,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
         }
         // The route went (removed, or flipped direction): its train's sheet goes with it.
         LaunchedEffect(trainDelayFor, prefs.routes) {
-            if (trainDelayFor?.let { t -> prefs.routes.none { it.id == t.first } } == true) trainDelayFor = null
+            if (trainDelayFor?.let { t -> prefs.routes.none { it.id == t.routeId } } == true) trainDelayFor = null
         }
 
         val planned = preview
