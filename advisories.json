@@ -1,7 +1,12 @@
 {
-  "updated": "2026-10-12T00:00:00+05:30",
+  "updated": "2026-11-15T17:15:26.930Z",
   "source": "Headway bundled advisories",
   "holidays": {},
   "notices": [],
-  "adjustments": []
+  "adjustments": [],
+  "watch": {
+    "timetables": {
+      "https://chennaimetrorail.org/wp-content/uploads/2024/03/chennai-metro-timetable.pdf": "527c1e7719b66a3601cae65f7322c49e86a49de294c3641c308fc021cea02a5c"
+    }
+  }
 }
