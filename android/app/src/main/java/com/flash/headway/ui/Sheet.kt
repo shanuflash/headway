@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -150,6 +151,9 @@ fun HwSheet(
                 .background(Color.Black.copy(alpha = if (hw.dark) 0.6f else 0.32f))
                 .pointerInput(Unit) { detectTapGestures { close(onDismiss) } },
         )
+        // The sheet stops short of the status bar, so a tall one never pushes its heading under
+        // the clock: its content scrolls instead.
+        Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 12.dp)) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -176,6 +180,7 @@ fun HwSheet(
                 Box(Modifier.size(36.dp, 5.dp).clip(CircleShape).background(hw.chev))
             }
             content(this) { then -> close(then) }
+        }
         }
     }
 }

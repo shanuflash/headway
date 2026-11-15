@@ -101,6 +101,8 @@ class Trip(
     val band: Band,
     /** Which timetable the day runs (weekday, Saturday, Sunday/holiday). */
     val dayType: DayType = DayType.WEEKDAY,
+    /** Minutes the rider's delay for this train's line moved it (see [Schedule]'s lineDelays). */
+    val lineDelay: Int = 0,
 ) {
     val origin: String get() = stops.first().station
     val dest: String get() = stops.last().station
@@ -214,7 +216,18 @@ private class Window(val trips: List<Trip>, val conns: Array<Conn>)
  * then answers routing questions with the Connection Scan Algorithm.
  * Not thread-safe: confine each instance to one thread.
  */
-class Schedule(private val override: DayOverride? = null, private val feed: Feed? = null) {
+/** The line a rider's line delay is set on: short loops run on the Blue Line. */
+fun lineKey(route: RouteId): RouteId = if (route == RouteId.LOOP) RouteId.BLUE else route
+
+/**
+ * [lineDelays]: minutes the rider says each line runs off the timetable (negative early), by
+ * [lineKey]. Applied to every train on the line, so trips with changes are planned on them.
+ */
+class Schedule(
+    private val override: DayOverride? = null,
+    private val feed: Feed? = null,
+    private val lineDelays: Map<RouteId, Int> = emptyMap(),
+) {
     private val days = HashMap<LocalDate, List<Trip>>()
     private val windows = HashMap<LocalDate, Window>()
     private val lastCache = HashMap<String, Journey?>()
@@ -303,10 +316,10 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
         return generateSequence(last + step) { it + step }.takeWhile { it <= until }.toList()
     }
 
-    /** Feed "delay" adjustments shift trains running inside a window, per line. */
+    /** Feed "delay" adjustments shift trains running inside a window, per line; then the rider's line delays. */
     private fun applyDelays(trips: List<Trip>): List<Trip> {
         val delays = feed?.adjustments?.filter { it.delay != null && it.from != null && it.to != null }.orEmpty()
-        if (delays.isEmpty()) return trips
+        if (delays.isEmpty() && lineDelays.values.all { it == 0 }) return trips
         return trips.map { trip ->
             var shift = 0L
             for (d in delays) {
@@ -314,7 +327,13 @@ class Schedule(private val override: DayOverride? = null, private val feed: Feed
                 if (trip.stops.last().at < d.from!! || trip.stops.first().at > d.to!!) continue
                 shift += d.delay!! * MINUTE
             }
-            if (shift == 0L) trip else Trip(trip.route, trip.line, trip.dir, trip.stops.map { Stop(it.station, it.at + shift) }, trip.serviceDate, trip.band, trip.dayType)
+            val line = lineDelays[lineKey(trip.route)] ?: 0
+            shift += line * MINUTE
+            if (shift == 0L) {
+                trip
+            } else {
+                Trip(trip.route, trip.line, trip.dir, trip.stops.map { Stop(it.station, it.at + shift) }, trip.serviceDate, trip.band, trip.dayType, line)
+            }
         }
     }
 

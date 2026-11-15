@@ -32,7 +32,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.TransferWithinAStation
 import androidx.compose.material.icons.rounded.VerticalAlignTop
 import androidx.compose.material3.BottomSheetDefaults
@@ -72,7 +71,7 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
     var from by remember { mutableStateOf(startFrom) }
     var query by remember { mutableStateOf("") }
 
-    HwSheet(onDismiss = onDismiss, heightFraction = 0.92f) { close ->
+    HwSheet(onDismiss = onDismiss, heightFraction = 0.96f) { close ->
         AnimatedContent(
             targetState = from,
             transitionSpec = {
@@ -264,18 +263,19 @@ fun LineTag(line: Line) {
     )
 }
 
+/** One train of a route to pick a best coach for: [station] null is the first one (or the only one). */
+data class CoachStop(val station: String?, val label: String, val sub: String?, val coach: Coach?)
+
 /** Options for a saved route. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RouteMenu(
     title: String,
-    returnTitle: String,
-    onReturn: () -> Unit,
+    isTop: Boolean,
     onPlan: () -> Unit,
     onTop: () -> Unit,
     onRemove: () -> Unit,
-    coach: Coach?,
-    onCoach: (Coach?) -> Unit,
+    coaches: List<CoachStop>,
+    onCoach: (String?, Coach?) -> Unit,
     routeId: String,
     delay: Int,
     delayPreview: suspend (Int) -> DelayPreview?,
@@ -285,32 +285,49 @@ fun RouteMenu(
 ) {
     val hw = LocalHw.current
     HwSheet(onDismiss = onDismiss) { close ->
+        // The title stays put while the options scroll under it.
+        Text(
+            title,
+            style = HwType.headline,
+            color = hw.text,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(title, style = HwType.headline, color = hw.text, modifier = Modifier.align(Alignment.CenterHorizontally))
             Column(
                 Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text("Best coach to board", style = HwType.body, color = hw.text)
-                Segmented(
-                    options = listOf<Pair<Coach?, String>>(null to "Off", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear"),
-                    selected = coach,
-                    onSelect = onCoach,
-                )
-                Text("Where to stand so you get off near the exit or stairs you use. Shown on the route card.", style = HwType.footnote, color = hw.sub)
+                val options = listOf<Pair<Coach?, String>>(null to "Off", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear")
+                if (coaches.size <= 1) {
+                    Segmented(options = options, selected = coaches.firstOrNull()?.coach, onSelect = { onCoach(null, it) })
+                    Text("Where to stand so you get off near the exit or stairs you use. Shown on the route card.", style = HwType.footnote, color = hw.sub)
+                } else {
+                    // A trip with changes: where to stand differs train to train.
+                    coaches.forEach { c ->
+                        Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(c.label, style = HwType.subheadStrong, color = hw.text)
+                                if (c.sub != null) Text("· ${c.sub}", style = HwType.footnote, color = hw.sub)
+                            }
+                            Segmented(options = options, selected = c.coach, onSelect = { onCoach(c.station, it) })
+                        }
+                    }
+                    Text("Set each train so you step off near the stairs to your next line, then the exit. Shown at each step of the trip.", style = HwType.footnote, color = hw.sub)
+                }
             }
             DelayCard(routeId, delay, delayPreview, onDelay)
             flipCard()
             // System red, lighter on dark so it stays readable.
             val danger = if (hw.dark) Color(0xFFFF453A) else Color(0xFFD70015)
             ListCard(
-                listOf<@Composable () -> Unit>(
-                    { MenuRow(Icons.Rounded.SwapVert, "Add the return trip", returnTitle, hw.text) { close(onReturn) } },
+                listOfNotNull<@Composable () -> Unit>(
                     { MenuRow(Icons.Rounded.Schedule, "Plan another time", "Leave at or arrive by a time, today or tomorrow", hw.text) { close(onPlan) } },
-                    { MenuRow(Icons.Rounded.VerticalAlignTop, "Move to the top", null, hw.text) { close(onTop) } },
+                    // Already first: nothing to move.
+                    if (isTop) null else ({ MenuRow(Icons.Rounded.VerticalAlignTop, "Move to the top", null, hw.text) { close(onTop) } }),
                     { MenuRow(Icons.Rounded.Delete, "Remove route", null, danger) { close(onRemove) } },
                 ),
                 inset = 50.dp,

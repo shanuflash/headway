@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -307,5 +308,57 @@ private fun PreviewCell(label: String, time: String, color: Color, struck: Boole
             style = HwType.headline.copy(textDecoration = if (struck) TextDecoration.LineThrough else null),
             color = color,
         )
+    }
+}
+
+/** "3 min late", "2 min early", "On time": short enough to sit between two step buttons. */
+private fun shortDelay(d: Int): String = when {
+    d > 0 -> "$d min late"
+    d < 0 -> "${-d} min early"
+    else -> "On time"
+}
+
+/**
+ * One line's delay as a compact row: its colour dot (when [colors] is given), its name, and
+ * − "2 min late" +. Tapping the value puts it back on time.
+ */
+@Composable
+fun LineDelayRow(title: String, sub: String?, colors: List<Color>?, value: Int, onChange: (Int) -> Unit) {
+    val hw = LocalHw.current
+    val tone by animateColorAsState(
+        when {
+            value > 0 -> hw.warn
+            value < 0 -> hw.tint
+            else -> hw.sub
+        },
+        label = "line delay tone",
+    )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (colors != null) {
+            Box(
+                Modifier.size(10.dp).clip(CircleShape).background(
+                    if (colors.size > 1) androidx.compose.ui.graphics.Brush.linearGradient(colors) else androidx.compose.ui.graphics.SolidColor(colors[0]),
+                ),
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = HwType.subheadStrong, color = hw.text)
+            if (sub != null) Text(sub, style = HwType.footnote, color = hw.sub)
+        }
+        StepButton(Icons.Rounded.Remove, "$title, one minute earlier", enabled = value > -DELAY_MAX) { onChange(value - 1) }
+        Text(
+            shortDelay(value),
+            style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
+            color = tone,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier
+                .size(width = 84.dp, height = 32.dp)
+                .clip(CircleShape)
+                .press(enabled = value != 0, scaleTo = 0.94f) { onChange(0) }
+                .wrapContentHeight()
+                .semantics { stateDescription = delayText(value) },
+        )
+        StepButton(Icons.Rounded.Add, "$title, one minute later", enabled = value < DELAY_MAX) { onChange(value + 1) }
     }
 }

@@ -82,6 +82,11 @@ import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
 import com.flash.headway.data.Network
+import com.flash.headway.app.SavedRoute
+import com.flash.headway.engine.Leg
+import com.flash.headway.engine.RouteDeparture
+import com.flash.headway.engine.lineKey
+import com.flash.headway.ui.theme.HwColors
 import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
@@ -118,7 +123,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var whenOpen by remember { mutableStateOf(false) }
-    var trainDelayFor by remember { mutableStateOf<Triple<String, Long, DayType>?>(null) }
+    var trainDelayFor by remember { mutableStateOf<TrainDelayTarget?>(null) }
     val plan by vm.plan.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val feed by vm.feed.collectAsStateWithLifecycle()
@@ -226,14 +231,14 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 toast("Route saved")
                             },
                             whenOpen = { whenOpen = true },
-                            trainDelay = { id, at, type -> trainDelayFor = Triple(id, at, type) },
+                            trainDelay = { id, at, type, legs -> trainDelayFor = TrainDelayTarget(id, at, type, legs) },
                             swapPreview = vm::swapPreview,
                         ),
                     )
                 }
             } else ScreenColumn {
                 when (key) {
-                    Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, onSettings = { settings = true })
+                    Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, prefs.lineDelays, vm::setLineDelay, onSettings = { settings = true })
                     Tab.MAP.name -> MapScreen(onSettings = { settings = true }, onStation = { stationFor = it })
                     else -> SettingsScreen(
                         prefs = prefs,
@@ -303,7 +308,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
         if (topUp) TopUpSheet(onDismiss = { topUp = false })
 
-        trainDelayFor?.let { (id, at, type) ->
+        trainDelayFor?.let { (id, at, type, legs) ->
             val route = prefs.routes.firstOrNull { it.id == id }
             if (route != null) {
                 val own = prefs.delayRule(id).own(at, type)
@@ -321,6 +326,9 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     routeDelay = prefs.delayOf(id),
                     onChange = { minutes, today -> vm.setTrainDelay(id, at, type, minutes, today) },
                     onDismiss = { trainDelayFor = null },
+                    lines = tripLines(legs, hw),
+                    lineDelays = prefs.lineDelays,
+                    onLineDelay = vm::setLineDelay,
                 )
             }
         }
@@ -372,11 +380,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             if (route != null) {
                 RouteMenu(
                     title = "${Network.name(route.from)} → ${Network.name(route.to)}",
-                    returnTitle = "${Network.name(route.to)} → ${Network.name(route.from)}",
-                    onReturn = {
-                        menuFor = null
-                        vm.addReturn(id)
-                    },
+                    isTop = prefs.routes.firstOrNull()?.id == id,
                     onPlan = {
                         menuFor = null
                         vm.showPreview(route.from, route.to)
@@ -392,8 +396,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         vm.removeRoute(id)
                         toast("Removed ${Network.name(route.from)} → ${Network.name(route.to)}")
                     },
-                    coach = prefs.coaches[id],
-                    onCoach = { vm.setCoach(id, it) },
+                    coaches = coachStops(route, statuses?.firstOrNull { it.route.id == id }?.departures.orEmpty(), prefs),
+                    onCoach = { station, coach -> vm.setCoach(id, station, coach) },
                     routeId = id,
                     delay = prefs.delayOf(id),
                     delayPreview = { vm.delayPreview(route, it) },
@@ -484,4 +488,32 @@ private fun TabDock(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit) {
             Icon(Icons.Rounded.Search, "Check any station", tint = hw.text, modifier = Modifier.size(24.dp))
         }
     }
+}
+
+/** The train whose own delay is being set: its route, timetabled departure, kind of day and legs. */
+private data class TrainDelayTarget(val routeId: String, val at: Long, val type: DayType, val legs: List<Leg>?)
+
+/** Each line a trip with changes rides, in order, for its delay rows; none for a direct train. */
+private fun tripLines(legs: List<Leg>?, hw: HwColors): List<TripLine> {
+    if (legs == null || legs.size < 2) return emptyList()
+    return legs.distinctBy { lineKey(it.trip.route) }.mapIndexed { i, leg ->
+        TripLine(
+            route = lineKey(leg.trip.route),
+            name = legLineName(leg),
+            colors = legColors(leg, hw),
+            boards = if (i == 0) "From ${Network.name(leg.from)}" else "Change at ${Network.name(leg.from)}",
+        )
+    }
+}
+
+/**
+ * The trains to pick a best coach for: just the one on a direct route, else the first train and
+ * one for each station the upcoming trips change at (they may change at different ones).
+ */
+private fun coachStops(route: SavedRoute, departures: List<RouteDeparture>, prefs: Prefs): List<CoachStop> {
+    val first = departures.firstOrNull()?.legs?.firstOrNull()
+    val changes = departures.flatMap { it.legs.orEmpty().drop(1) }.distinctBy { it.from }
+    if (changes.isEmpty()) return listOf(CoachStop(null, "Best coach", null, prefs.coachFor(route.id, null)))
+    return listOf(CoachStop(null, "At ${Network.name(route.from)}", first?.let { legShort(it) }, prefs.coachFor(route.id, null))) +
+        changes.map { leg -> CoachStop(leg.from, "Change at ${Network.name(leg.from)}", legShort(leg), prefs.coachFor(route.id, leg.from)) }
 }

@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
+import com.flash.headway.data.RouteId
+import com.flash.headway.engine.lineKey
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.DayOverride
 import com.flash.headway.engine.Feed
@@ -66,13 +68,15 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private var schedule = Schedule()
     private var scheduleOverride: DayOverride? = null
     private var scheduleFeed: Feed? = null
+    private var scheduleLines: Map<RouteId, Int> = emptyMap()
 
     private fun engine(p: Prefs): Schedule {
         val f = _feed.value
-        if (p.override != scheduleOverride || f !== scheduleFeed) {
+        if (p.override != scheduleOverride || f !== scheduleFeed || p.lineDelays != scheduleLines) {
             scheduleOverride = p.override
             scheduleFeed = f
-            schedule = Schedule(p.override, f)
+            scheduleLines = p.lineDelays
+            schedule = Schedule(p.override, f, p.lineDelays)
         }
         return schedule
     }
@@ -204,11 +208,6 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         _preview.value = SavedRoute(pv.to, pv.from)
     }
 
-    fun addReturn(id: String) {
-        val r = prefs.value?.routes?.firstOrNull { it.id == id } ?: return
-        addRoute(r.to, r.from)
-    }
-
     fun removeRoute(id: String) {
         if (prefs.value?.reminder?.routeId == id) Alerts.stopCountdown(getApplication())
         update { p ->
@@ -218,7 +217,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             p.copy(
                 routes = routes,
                 reminder = p.reminder?.takeIf { it.routeId != id },
-                coaches = p.coaches - id,
+                coaches = p.coaches.filterKeys { it != id && !it.startsWith("$id@") },
                 delays = p.delays - id,
                 trainDelays = p.trainDelays - id,
                 flips = if (pair != null && routes.none { pairKey(it) == pair }) p.flips - pair else p.flips,
@@ -231,8 +230,38 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(routes = listOf(r) + p.routes.filterNot { it.id == id })
     }
 
-    fun setCoach(routeId: String, coach: Coach?) = update { p ->
-        p.copy(coaches = if (coach == null) p.coaches - routeId else p.coaches + (routeId to coach))
+    /** Best coach for a route's first train, or with [station], for the train boarded there after a change. */
+    fun setCoach(routeId: String, station: String?, coach: Coach?) = update { p ->
+        val key = if (station == null) routeId else coachKey(routeId, station)
+        p.copy(coaches = if (coach == null) p.coaches - key else p.coaches + (key to coach))
+    }
+
+    /**
+     * Sets how early or late a whole line runs (every route that rides it). A countdown whose
+     * train is on that line moves with it, so it keeps pointing at the same train.
+     */
+    fun setLineDelay(line: RouteId, minutes: Int) {
+        val key = lineKey(line)
+        val d = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
+        val p = prefs.value ?: return
+        val delta = d - p.lineDelayOf(key)
+        if (delta == 0) return
+        val rem = p.reminder
+        val onLine = rem != null && _statuses.value.orEmpty().any { s ->
+            s.route.id == rem.routeId && s.departures.any { it.dep == rem.dep && lineKey(it.trip.route) == key }
+        }
+        val moved = if (onLine && rem != null) Reminder(rem.routeId, rem.dep + delta * MINUTE) else null
+        val next = p.copy(lineDelays = if (d == 0) p.lineDelays - key else p.lineDelays + (key to d))
+        val route = moved?.let { m -> p.routes.firstOrNull { it.id == m.routeId } }
+        update { q ->
+            val c = q.copy(lineDelays = next.lineDelays)
+            if (moved != null && q.reminder == rem) c.copy(reminder = moved) else c
+        }
+        // The countdown's engine reads the widgets' mirror; write it first so it plans on the new times.
+        if (moved != null && route != null) {
+            Widgets.mirror(getApplication(), next.copy(reminder = moved))
+            Alerts.startCountdown(getApplication(), route, moved.dep, p.delayRule(route.id))
+        }
     }
 
     /**

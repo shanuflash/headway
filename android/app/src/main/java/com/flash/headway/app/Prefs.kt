@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
+import com.flash.headway.data.RouteId
+import com.flash.headway.engine.lineKey
 import com.flash.headway.engine.DayOverride
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -61,8 +63,18 @@ data class Prefs(
     val flips: Map<String, AutoFlip> = emptyMap(),
     /** Trains with their own delay, by route id, then timetabled departure ("08:14"); overrides [delays]. */
     val trainDelays: Map<String, Map<String, Int>> = emptyMap(),
+    /** Minutes each line's trains run off the timetable, set on the Lines tab (by [lineKey]). */
+    val lineDelays: Map<RouteId, Int> = emptyMap(),
 ) {
     fun delayOf(routeId: String): Int = delays[routeId] ?: 0
+
+    fun lineDelayOf(line: RouteId): Int = lineDelays[line] ?: 0
+
+    /**
+     * Best coach for one train of a route: the route's own for the first train (and for direct
+     * routes), else the one set for boarding at [station] on a trip with changes.
+     */
+    fun coachFor(routeId: String, station: String?): Coach? = if (station == null) coaches[routeId] else coaches[coachKey(routeId, station)]
 
     /** How late a route's trains run: the route's delay, with each train's own on top. */
     fun delayRule(routeId: String): DelayRule = DelayRule(delayOf(routeId), trainDelays[routeId].orEmpty())
@@ -83,6 +95,7 @@ class PrefsStore(private val context: Context) {
         val delays = stringPreferencesKey("delays")
         val flips = stringPreferencesKey("flips")
         val trainDelays = stringPreferencesKey("train_delays")
+        val lineDelays = stringPreferencesKey("line_delays")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -120,6 +133,7 @@ class PrefsStore(private val context: Context) {
             delays = decodeDelays(p[Keys.delays]),
             flips = decodeFlips(p[Keys.flips]),
             trainDelays = decodeTrainDelays(p[Keys.trainDelays]),
+            lineDelays = decodeLineDelays(p[Keys.lineDelays]),
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -142,6 +156,7 @@ class PrefsStore(private val context: Context) {
         p[Keys.delays] = encodeDelays(next.delays)
         p[Keys.flips] = encodeFlips(next.flips)
         p[Keys.trainDelays] = encodeTrainDelays(next.trainDelays)
+        p[Keys.lineDelays] = encodeLineDelays(next.lineDelays)
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
@@ -195,6 +210,21 @@ fun decodeDelays(raw: String?): Map<String, Int> =
         val (id, d) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
         val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: return@mapNotNull null
         (id to minutes).takeIf { minutes != 0 }
+    }.toMap()
+
+/** The key for a train boarded at [station] (after a change) on route [routeId]. */
+fun coachKey(routeId: String, station: String): String = "$routeId@$station"
+
+/** "BLUE=2;YELLOW=-1": each line's delay, in DataStore and the widgets' mirror. */
+fun encodeLineDelays(delays: Map<RouteId, Int>): String =
+    delays.entries.filter { it.value != 0 }.joinToString(";") { "${it.key.name}=${it.value}" }
+
+fun decodeLineDelays(raw: String?): Map<RouteId, Int> =
+    raw.orEmpty().split(';').mapNotNull { part ->
+        val (k, d) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+        val line = runCatching { lineKey(RouteId.valueOf(k)) }.getOrNull() ?: return@mapNotNull null
+        val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: return@mapNotNull null
+        (line to minutes).takeIf { minutes != 0 }
     }.toMap()
 
 /** "a>b|08:14=2;a>b|08:21=-1": each train's own delay, in DataStore and the widgets' mirror. */

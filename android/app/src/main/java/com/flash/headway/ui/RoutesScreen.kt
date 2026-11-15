@@ -81,6 +81,7 @@ import com.flash.headway.data.Network
 import com.flash.headway.data.Platforms
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.DestinationGroup
+import com.flash.headway.engine.Leg
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.engine.routeGroup
@@ -105,8 +106,8 @@ class RouteActions(
     val savePreview: () -> Unit,
     /** Opens "When?" to plan the quick look for another time. */
     val whenOpen: () -> Unit = {},
-    /** Opens one train's own delay: the route id and the train's timetabled departure. */
-    val trainDelay: (String, Long, DayType) -> Unit = { _, _, _ -> },
+    /** Opens one train's own delay: the route id, the train's timetabled departure, and its legs. */
+    val trainDelay: (String, Long, DayType, List<Leg>?) -> Unit = { _, _, _, _ -> },
     /** Flips the quick look (not a saved card with the same stations). */
     val swapPreview: () -> Unit = {},
 )
@@ -430,9 +431,11 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 prefs.coaches[r.id],
                 delay = if (saved && shown.timetabled != null) shown.delay else null,
                 own = ownDelay,
-            ) { shown.timetabled?.let { actions.trainDelay(r.id, it, shown.trip.dayType) } }
+            ) { shown.timetabled?.let { actions.trainDelay(r.id, it, shown.trip.dayType, shown.legs) } }
             Chips(s, index, now) { picked = it }
-            shown.legs?.takeIf { it.size > 1 }?.let { TripTimeline(it, Modifier.padding(horizontal = 20.dp)) }
+            shown.legs?.takeIf { it.size > 1 }?.let { legs ->
+                TripTimeline(legs, Modifier.padding(horizontal = 20.dp)) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
+            }
         }
 
         val last = s.last

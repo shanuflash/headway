@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.flash.headway.app.Coach
 import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.Leg
@@ -120,7 +121,7 @@ private val DotCenter = 10.dp
  * A coloured rail per train, dotted while walking between lines.
  */
 @Composable
-fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier) {
+fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, coachFor: (Int, Leg) -> Coach? = { _, _ -> null }) {
     val hw = LocalHw.current
     val walkRail = Rail(hw.sub, walk = true)
     Column(modifier.fillMaxWidth()) {
@@ -144,10 +145,12 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier) {
                 }
             }
             val platform = legPlatform(leg)
+            // Where to stand can differ train to train: each one's best coach, if set.
+            val coach = coachFor(i, leg)?.let { " · ${it.label.replaceFirstChar { c -> c.uppercase() }} coach" }.orEmpty()
             StopRow(
                 time = clock(leg.dep),
                 station = leg.from,
-                sub = "${legLineName(leg)} toward ${Network.name(leg.trip.dest)}${platform?.let { " · $it" }.orEmpty()}",
+                sub = "${legLineName(leg)} toward ${Network.name(leg.trip.dest)}${platform?.let { " · $it" }.orEmpty()}$coach",
                 color = color,
                 filled = false,
                 above = if (i > 0) walkRail else null,

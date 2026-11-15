@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
+import com.flash.headway.data.RouteId
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.History
@@ -34,10 +38,15 @@ import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlin.math.abs
 
+/** A line on a trip with changes, for its delay row: [route] is its [com.flash.headway.engine.lineKey]. */
+data class TripLine(val route: RouteId, val name: String, val colors: List<Color>, val boards: String)
+
 /**
  * One train's own delay: "The 8:13 AM train", on every day of its kind ([days], e.g. "Every
  * weekday") or just today. [own] is its delay, or null while it follows the route's
  * [routeDelay]. [onChange] sets it (minutes, just today?); null minutes follow the route again.
+ * On a trip with changes, [lines] lists each line it rides with that line's delay (as on the
+ * Lines tab), since each train can run late on its own.
  */
 @Composable
 fun TrainDelaySheet(
@@ -50,6 +59,9 @@ fun TrainDelaySheet(
     routeDelay: Int,
     onChange: (Int?, Boolean) -> Unit,
     onDismiss: () -> Unit,
+    lines: List<TripLine> = emptyList(),
+    lineDelays: Map<RouteId, Int> = emptyMap(),
+    onLineDelay: (RouteId, Int) -> Unit = { _, _ -> },
 ) {
     val hw = LocalHw.current
     // Its own value while dragging, so the thumb never waits on the saved setting.
@@ -73,11 +85,15 @@ fun TrainDelaySheet(
     }
 
     HwSheet(onDismiss = onDismiss) { close ->
-        Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(title, style = HwType.headline, color = hw.text)
-                Text(subtitle, style = HwType.footnote, color = hw.sub)
-            }
+        // The heading stays put; everything under it scrolls on a short screen.
+        Column(Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 16.dp).padding(bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = HwType.headline, color = hw.text)
+            Text(subtitle, style = HwType.footnote, color = hw.sub)
+        }
+        Column(
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             // For every day like this one, or just today (a one-off: it's dropped tomorrow).
             Segmented(
                 options = listOf(false to days, true to "Just today"),
@@ -135,6 +151,18 @@ fun TrainDelaySheet(
                         Icon(Icons.Rounded.History, null, tint = hw.tint, modifier = Modifier.size(18.dp))
                         Text("Follow the route again", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
                     }
+                }
+            }
+            if (lines.isNotEmpty()) {
+                Column(Modifier.padding(start = 4.dp, top = 4.dp)) {
+                    Text("Lines on this trip", style = HwType.headline, color = hw.text)
+                    Text("Each train can run late on its own. This moves every train on that line, as on the Lines tab.", style = HwType.footnote, color = hw.sub)
+                }
+                Column(
+                    Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    lines.forEach { l -> LineDelayRow(l.name, l.boards, l.colors, lineDelays[l.route] ?: 0) { onLineDelay(l.route, it) } }
                 }
             }
         }

@@ -10,7 +10,8 @@ import java.util.concurrent.Executors
  * The timetable for work outside the app's screens: the widget and the countdown notification.
  *
  * Building a [Schedule] and its two-day connection windows is heavy, so this one is kept and
- * reused until the service day, the rider's timetable override or the advisory feed changes.
+ * reused until the service day, the rider's timetable override, line delays or the advisory feed
+ * changes.
  * [Schedule] isn't thread-safe, so it's only ever used inside [with], one caller at a time; and
  * that work belongs on [post]'s background thread, never the main thread.
  */
@@ -25,8 +26,9 @@ object SharedEngine {
     fun <T> with(context: Context, block: (Schedule) -> T): T {
         val override = Widgets.override(context)
         val feed = Advisories.cached(context)
-        val k = Triple(serviceDate(Clock.now()), override, feed?.updated)
-        val s = schedule?.takeIf { key == k } ?: Schedule(override, feed).also {
+        val lines = Widgets.lineDelays(context)
+        val k = listOf(serviceDate(Clock.now()), override, feed?.updated, lines)
+        val s = schedule?.takeIf { key == k } ?: Schedule(override, feed, lines).also {
             schedule = it
             key = k
         }

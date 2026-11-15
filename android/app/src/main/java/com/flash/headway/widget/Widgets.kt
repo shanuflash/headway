@@ -23,6 +23,8 @@ import com.flash.headway.app.DelayRule
 import com.flash.headway.app.decodeDelays
 import com.flash.headway.app.decodeTrainDelays
 import com.flash.headway.app.encodeTrainDelays
+import com.flash.headway.app.encodeLineDelays
+import com.flash.headway.app.decodeLineDelays
 import com.flash.headway.app.decodeFlips
 import com.flash.headway.app.encodeDelays
 import com.flash.headway.app.encodeFlips
@@ -32,6 +34,7 @@ import com.flash.headway.app.routeStatus
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Line
 import com.flash.headway.data.Network
+import com.flash.headway.data.RouteId
 import com.flash.headway.engine.DayOverride
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
@@ -58,6 +61,7 @@ object Widgets {
             .putBoolean("lastWarn", p.lastWarn)
             .putString("delays", encodeDelays(p.delays))
             .putString("train_delays", encodeTrainDelays(p.trainDelays))
+            .putString("line_delays", encodeLineDelays(p.lineDelays))
             .putString("flips", encodeFlips(p.flips))
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
             .putLong("mock", p.mockOffset)
@@ -84,6 +88,9 @@ object Widgets {
     fun forget(context: Context, widgetId: Int) {
         store(context).edit().remove("w_$widgetId").remove("label_$widgetId").apply()
     }
+
+    /** The rider's line delays, as mirrored from the app. */
+    internal fun lineDelays(context: Context): Map<RouteId, Int> = decodeLineDelays(store(context).getString("line_delays", null))
 
     /** The rider's timetable override, as mirrored from the app. */
     internal fun override(context: Context): DayOverride? = runCatching {

@@ -65,7 +65,13 @@ import java.time.Instant
 // ---------------- lines ----------------
 
 @Composable
-fun ColumnScope.LinesScreen(today: DayInfo, now: () -> Long, onSettings: () -> Unit) {
+fun ColumnScope.LinesScreen(
+    today: DayInfo,
+    now: () -> Long,
+    lineDelays: Map<RouteId, Int>,
+    onLineDelay: (RouteId, Int) -> Unit,
+    onSettings: () -> Unit,
+) {
     val hw = LocalHw.current
     val spec = Timetable.day(today.type)
     val z = Instant.ofEpochMilli(now()).atZone(IST)
@@ -75,19 +81,34 @@ fun ColumnScope.LinesScreen(today: DayInfo, now: () -> Long, onSettings: () -> U
     LargeTitle("Lines") {
         Text("${today.type.label} timetable$reason", style = HwType.body, color = hw.sub)
     }
-    LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin)
-    LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin)
+    val delay = { r: RouteId -> lineDelays[r] ?: 0 }
+    LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin, delay(RouteId.BLUE), { onLineDelay(RouteId.BLUE, it) })
+    LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin, delay(RouteId.GREEN), { onLineDelay(RouteId.GREEN, it) })
     // Green Line tracks, then Blue Line to the Airport.
-    LineCard("Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)))
-    LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin)
+    LineCard(
+        "Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, delay(RouteId.INTER), { onLineDelay(RouteId.INTER, it) },
+        " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)),
+    )
+    LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin, delay(RouteId.YELLOW), { onLineDelay(RouteId.YELLOW, it) })
     Footnote(
-        (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
+        "Running early or late moves every train on that line: your route cards, trips with changes, the widget and countdowns. " +
+            (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
             "Source: CMRL timetable, ${Timetable.PUBLISHED}.",
     )
 }
 
 @Composable
-private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec, nowMin: Int, extra: String = "", bar: Brush? = null) {
+private fun LineCard(
+    title: String,
+    route: RouteId,
+    color: Color,
+    spec: LineSpec,
+    nowMin: Int,
+    delay: Int,
+    onDelay: (Int) -> Unit,
+    extra: String = "",
+    bar: Brush? = null,
+) {
     val hw = LocalHw.current
     val r = Network.routes.getValue(route)
     val a = r.fwd.first().first
@@ -137,6 +158,8 @@ private fun LineCard(title: String, route: RouteId, color: Color, spec: LineSpec
                 }
             }
         }
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(hw.sep))
+        LineDelayRow("Running early or late?", if (delay != 0) "Every train on this line" else "Shift this line's train times", null, delay, onDelay)
     }
 }
 
