@@ -1545,9 +1545,8 @@ function routeMenuHtml(r) {
       ${delayCard(r)}
       ${flipCard(r)}
       <div class="card list">
-        <button class="row tap plain" data-act="reverse-route" data-route="${id}">${ic('swap_vert')}<span class="grow"><span class="t">Add the return trip</span><span class="s">${esc(name(r.to))} → ${esc(name(r.from))}</span></span></button>
         <button class="row tap plain" data-act="plan-route" data-route="${id}">${ic('schedule')}<span class="grow"><span class="t">Plan another time</span><span class="s">Leave at or arrive by a time, today or tomorrow</span></span></button>
-        <button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>
+        ${prefs.routes[0]?.id === id ? '' : `<button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>`}
         <button class="row tap plain" data-act="remove-route" data-route="${id}" style="color: #d70015">${ic('delete')}<span class="grow"><span class="t">Remove route</span></span></button>
       </div>
     </div>`
@@ -1850,12 +1849,6 @@ const ACTIONS = {
     else if (r) toast('Save the route to start a countdown');
   },
   'route-menu': (el) => openRouteMenu(el.dataset.route),
-  'reverse-route': (el) => {
-    const r = routeOf(el);
-    history.back();
-    if (r) addRoute(r.to, r.from);
-    render({ force: true, animate: true });
-  },
   'top-route': (el) => {
     const r = routeOf(el);
     history.back();
