@@ -277,6 +277,9 @@ fun RouteMenu(
     coaches: List<CoachStop>,
     onCoach: (String?, Coach?) -> Unit,
     routeId: String,
+    journeyLines: List<TripLine>,
+    lineDelays: Map<String, Int>,
+    onLineDelay: (String, Int) -> Unit,
     delay: Int,
     delayPreview: suspend (Int) -> DelayPreview?,
     onDelay: (Int) -> Unit,
@@ -319,7 +322,12 @@ fun RouteMenu(
                     Text("Set each train so you step off near the stairs to your next line, then the exit. Shown at each step of the trip.", style = HwType.footnote, color = hw.sub)
                 }
             }
-            DelayCard(routeId, delay, delayPreview, onDelay)
+            if (journeyLines.isNotEmpty()) {
+                Text("Running early or late?", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+                JourneyDelays(journeyLines, lineDelays, onLineDelay)
+            } else {
+                DelayCard(routeId, delay, delayPreview, onDelay)
+            }
             flipCard()
             // System red, lighter on dark so it stays readable.
             val danger = if (hw.dark) Color(0xFFFF453A) else Color(0xFFD70015)

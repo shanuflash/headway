@@ -58,6 +58,8 @@ import com.flash.headway.data.Timetable
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.bandAt
+import com.flash.headway.engine.Dir
+import com.flash.headway.engine.lineDirKey
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import java.time.Instant
@@ -68,8 +70,8 @@ import java.time.Instant
 fun ColumnScope.LinesScreen(
     today: DayInfo,
     now: () -> Long,
-    lineDelays: Map<RouteId, Int>,
-    onLineDelay: (RouteId, Int) -> Unit,
+    lineDelays: Map<String, Int>,
+    onLineDelay: (String, Int) -> Unit,
     onSettings: () -> Unit,
 ) {
     val hw = LocalHw.current
@@ -81,17 +83,13 @@ fun ColumnScope.LinesScreen(
     LargeTitle("Lines") {
         Text("${today.type.label} timetable$reason", style = HwType.body, color = hw.sub)
     }
-    val delay = { r: RouteId -> lineDelays[r] ?: 0 }
-    LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin, delay(RouteId.BLUE), { onLineDelay(RouteId.BLUE, it) })
-    LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin, delay(RouteId.GREEN), { onLineDelay(RouteId.GREEN, it) })
+    LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin, lineDelays, onLineDelay)
+    LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin, lineDelays, onLineDelay)
     // Green Line tracks, then Blue Line to the Airport.
-    LineCard(
-        "Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, delay(RouteId.INTER), { onLineDelay(RouteId.INTER, it) },
-        " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)),
-    )
-    LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin, delay(RouteId.YELLOW), { onLineDelay(RouteId.YELLOW, it) })
+    LineCard("Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, lineDelays, onLineDelay, " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)))
+    LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin, lineDelays, onLineDelay)
     Footnote(
-        "Running early or late moves every train on that line: your route cards, trips with changes, the widget and countdowns. " +
+        "Running early or late moves every train on that line in that direction: your route cards, trips with changes, the widget and countdowns. " +
             (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
             "Source: CMRL timetable, ${Timetable.PUBLISHED}.",
     )
@@ -104,8 +102,8 @@ private fun LineCard(
     color: Color,
     spec: LineSpec,
     nowMin: Int,
-    delay: Int,
-    onDelay: (Int) -> Unit,
+    delays: Map<String, Int>,
+    onDelay: (String, Int) -> Unit,
     extra: String = "",
     bar: Brush? = null,
 ) {
@@ -159,7 +157,12 @@ private fun LineCard(
             }
         }
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(hw.sep))
-        LineDelayRow("Running early or late?", if (delay != 0) "Every train on this line" else "Shift this line's train times", null, delay, onDelay)
+        // Each direction runs on its own: one can be late while the other is on time.
+        Text("Running early or late?", style = HwType.subheadStrong, color = hw.text)
+        listOf(Dir.FWD to b, Dir.REV to a).forEach { (dir, end) ->
+            val key = lineDirKey(route, dir)
+            LineDelayRow("Toward ${Network.name(end)}", null, null, delays[key] ?: 0) { onDelay(key, it) }
+        }
     }
 }
 

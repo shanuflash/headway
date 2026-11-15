@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
-import com.flash.headway.engine.lineKey
+import com.flash.headway.engine.lineDirKey
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.DayOverride
 import com.flash.headway.engine.Feed
@@ -68,7 +68,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private var schedule = Schedule()
     private var scheduleOverride: DayOverride? = null
     private var scheduleFeed: Feed? = null
-    private var scheduleLines: Map<RouteId, Int> = emptyMap()
+    private var scheduleLines: Map<String, Int> = emptyMap()
 
     private fun engine(p: Prefs): Schedule {
         val f = _feed.value
@@ -237,18 +237,18 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Sets how early or late a whole line runs (every route that rides it). A countdown whose
-     * train is on that line moves with it, so it keeps pointing at the same train.
+     * Sets how early or late a line runs in one direction ([key] from [lineDirKey]), for every
+     * route that rides it. A countdown whose train is on it moves with it, so it keeps pointing
+     * at the same train.
      */
-    fun setLineDelay(line: RouteId, minutes: Int) {
-        val key = lineKey(line)
+    fun setLineDelay(key: String, minutes: Int) {
         val d = minutes.coerceIn(-DELAY_MAX, DELAY_MAX)
         val p = prefs.value ?: return
         val delta = d - p.lineDelayOf(key)
         if (delta == 0) return
         val rem = p.reminder
         val onLine = rem != null && _statuses.value.orEmpty().any { s ->
-            s.route.id == rem.routeId && s.departures.any { it.dep == rem.dep && lineKey(it.trip.route) == key }
+            s.route.id == rem.routeId && s.departures.any { it.dep == rem.dep && it.trip.lineDirKey == key }
         }
         val moved = if (onLine && rem != null) Reminder(rem.routeId, rem.dep + delta * MINUTE) else null
         val next = p.copy(lineDelays = if (d == 0) p.lineDelays - key else p.lineDelays + (key to d))

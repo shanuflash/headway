@@ -102,14 +102,17 @@ private val directCache = ConcurrentHashMap<String, Boolean>()
 fun isDirect(route: SavedRoute): Boolean = directCache.getOrPut(route.id) { routeGroup(route.from, route.to) != null }
 
 /**
- * Moved by the train's own delay or the route's, remembering the timetabled time; every leg of a
- * trip with changes moves with it. The first train's line delay is already in [dep] (the engine
- * applied it), so the timetabled time is taken back from it and [RouteDeparture.delay] counts both.
+ * Moved by the train's own delay or the route's, remembering the timetabled time. The first
+ * train's line delay is already in [dep] (the engine applied it), so the timetabled time is
+ * taken back from it and [RouteDeparture.delay] counts both.
+ *
+ * A trip with changes gets no delay of its own: each of its trains already runs on its line's
+ * delay, and the route's or a train's delay (one fixed shift for the whole trip) would be wrong.
  */
 private fun RouteDeparture.delayed(rule: DelayRule): RouteDeparture {
     val line = trip.lineDelay
     val timetabled = dep - line * MINUTE
-    val mins = rule.forDeparture(timetabled, trip.dayType)
+    val mins = if ((legs?.size ?: 1) > 1) 0 else rule.forDeparture(timetabled, trip.dayType)
     val off = mins * MINUTE
     return copy(
         dep = dep + off,

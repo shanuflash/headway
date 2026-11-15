@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
-import com.flash.headway.data.RouteId
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.History
@@ -38,15 +37,15 @@ import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlin.math.abs
 
-/** A line on a trip with changes, for its delay row: [route] is its [com.flash.headway.engine.lineKey]. */
-data class TripLine(val route: RouteId, val name: String, val colors: List<Color>, val boards: String)
+/** A train on a trip with changes, for its delay row: [key] is its line and direction ([com.flash.headway.engine.lineDirKey]). */
+data class TripLine(val key: String, val name: String, val colors: List<Color>, val boards: String)
 
 /**
  * One train's own delay: "The 8:13 AM train", on every day of its kind ([days], e.g. "Every
  * weekday") or just today. [own] is its delay, or null while it follows the route's
  * [routeDelay]. [onChange] sets it (minutes, just today?); null minutes follow the route again.
- * On a trip with changes, [lines] lists each line it rides with that line's delay (as on the
- * Lines tab), since each train can run late on its own.
+ * A trip with changes has no single delay: [lines] lists each of its trains' line and direction
+ * instead, with that delay (as on the Lines tab), and the one-train controls are left out.
  */
 @Composable
 fun TrainDelaySheet(
@@ -60,8 +59,8 @@ fun TrainDelaySheet(
     onChange: (Int?, Boolean) -> Unit,
     onDismiss: () -> Unit,
     lines: List<TripLine> = emptyList(),
-    lineDelays: Map<RouteId, Int> = emptyMap(),
-    onLineDelay: (RouteId, Int) -> Unit = { _, _ -> },
+    lineDelays: Map<String, Int> = emptyMap(),
+    onLineDelay: (String, Int) -> Unit = { _, _ -> },
 ) {
     val hw = LocalHw.current
     // Its own value while dragging, so the thumb never waits on the saved setting.
@@ -94,77 +93,89 @@ fun TrainDelaySheet(
             Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // For every day like this one, or just today (a one-off: it's dropped tomorrow).
-            Segmented(
-                options = listOf(false to days, true to "Just today"),
-                selected = today,
-                onSelect = {
-                    today = it
-                    if (!following) onChange(d, it)
-                },
-            )
-            Column(
-                Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
-                    if (d == 0) {
-                        Text("On time", style = HwType.title, color = tone)
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("${abs(d)}", style = HwType.title.copy(fontSize = 44.sp, lineHeight = 52.sp), color = tone, modifier = Modifier.alignByBaseline())
-                            Text(if (d > 0) "min late" else "min early", style = HwType.headline, color = tone, modifier = Modifier.alignByBaseline())
+            if (lines.isNotEmpty()) {
+                JourneyDelays(lines, lineDelays, onLineDelay)
+            } else {
+                // For every day like this one, or just today (a one-off: it's dropped tomorrow).
+                Segmented(
+                    options = listOf(false to days, true to "Just today"),
+                    selected = today,
+                    onSelect = {
+                        today = it
+                        if (!following) onChange(d, it)
+                    },
+                )
+                Column(
+                    Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
+                        if (d == 0) {
+                            Text("On time", style = HwType.title, color = tone)
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("${abs(d)}", style = HwType.title.copy(fontSize = 44.sp, lineHeight = 52.sp), color = tone, modifier = Modifier.alignByBaseline())
+                                Text(if (d > 0) "min late" else "min early", style = HwType.headline, color = tone, modifier = Modifier.alignByBaseline())
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StepButton(Icons.Rounded.Remove, "One minute earlier", enabled = d > -DELAY_MAX) { set(d - 1) }
+                        DelaySlider(d, tone, ::set, Modifier.weight(1f))
+                        StepButton(Icons.Rounded.Add, "One minute later", enabled = d < DELAY_MAX) { set(d + 1) }
+                    }
+                    Text(
+                        if (!following) {
+                            "Just this train${if (today) ", today only" else ""}. Other trains on this route: ${delayText(routeDelay).lowercase()}."
+                        } else {
+                            "Following the route (${delayText(routeDelay).lowercase()}). Change it here for just this train."
+                        },
+                        style = HwType.footnote,
+                        color = hw.sub,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    if (!following) {
+                        Row(
+                            Modifier
+                                .padding(top = 4.dp)
+                                .height(40.dp)
+                                .clip(RoundedCornerShapeFull)
+                                .background(hw.tintSoft)
+                                .press(scaleTo = 0.96f) {
+                                    d = routeDelay
+                                    following = true
+                                    onChange(null, today)
+                                }
+                                .padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Rounded.History, null, tint = hw.tint, modifier = Modifier.size(18.dp))
+                            Text("Follow the route again", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
                         }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StepButton(Icons.Rounded.Remove, "One minute earlier", enabled = d > -DELAY_MAX) { set(d - 1) }
-                    DelaySlider(d, tone, ::set, Modifier.weight(1f))
-                    StepButton(Icons.Rounded.Add, "One minute later", enabled = d < DELAY_MAX) { set(d + 1) }
-                }
-                Text(
-                    if (!following) {
-                        "Just this train${if (today) ", today only" else ""}. Other trains on this route: ${delayText(routeDelay).lowercase()}."
-                    } else {
-                        "Following the route (${delayText(routeDelay).lowercase()}). Change it here for just this train."
-                    },
-                    style = HwType.footnote,
-                    color = hw.sub,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-                if (!following) {
-                    Row(
-                        Modifier
-                            .padding(top = 4.dp)
-                            .height(40.dp)
-                            .clip(RoundedCornerShapeFull)
-                            .background(hw.tintSoft)
-                            .press(scaleTo = 0.96f) {
-                                d = routeDelay
-                                following = true
-                                onChange(null, today)
-                            }
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(Icons.Rounded.History, null, tint = hw.tint, modifier = Modifier.size(18.dp))
-                        Text("Follow the route again", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
-                    }
-                }
             }
-            if (lines.isNotEmpty()) {
-                Column(Modifier.padding(start = 4.dp, top = 4.dp)) {
-                    Text("Lines on this trip", style = HwType.headline, color = hw.text)
-                    Text("Each train can run late on its own. This moves every train on that line, as on the Lines tab.", style = HwType.footnote, color = hw.sub)
-                }
-                Column(
-                    Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    lines.forEach { l -> LineDelayRow(l.name, l.boards, l.colors, lineDelays[l.route] ?: 0) { onLineDelay(l.route, it) } }
-                }
-            }
+        }
+    }
+}
+
+/** A trip with changes: each train's line and direction, with its delay. */
+@Composable
+fun JourneyDelays(lines: List<TripLine>, lineDelays: Map<String, Int>, onLineDelay: (String, Int) -> Unit) {
+    val hw = LocalHw.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "A trip with changes has no one delay: each train runs early or late on its own. Each moves every train on that line in that direction, as on the Lines tab.",
+            style = HwType.footnote,
+            color = hw.sub,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Column(
+            Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            lines.forEach { l -> LineDelayRow(l.name, l.boards, l.colors, lineDelays[l.key] ?: 0) { onLineDelay(l.key, it) } }
         }
     }
 }

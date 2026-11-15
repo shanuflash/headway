@@ -85,7 +85,9 @@ import com.flash.headway.data.Network
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.engine.Leg
 import com.flash.headway.engine.RouteDeparture
-import com.flash.headway.engine.lineKey
+import com.flash.headway.engine.lineDirKey
+import com.flash.headway.engine.lineTerminal
+import com.flash.headway.app.isDirect
 import com.flash.headway.ui.theme.HwColors
 import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
@@ -314,7 +316,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 val own = prefs.delayRule(id).own(at, type)
                 TrainDelaySheet(
                     key = "$id@$at",
-                    title = "The ${clock(at)} train",
+                    title = if ((legs?.size ?: 1) > 1) "The ${clock(at)} trip" else "The ${clock(at)} train",
                     subtitle = "${Network.name(route.from)} → ${Network.name(route.to)}",
                     days = when (type) {
                         DayType.WEEKDAY -> "Every weekday"
@@ -399,6 +401,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     coaches = coachStops(route, statuses?.firstOrNull { it.route.id == id }?.departures.orEmpty(), prefs),
                     onCoach = { station, coach -> vm.setCoach(id, station, coach) },
                     routeId = id,
+                    // A route only reached with a change has no delay of its own: each train's line has one.
+                    journeyLines = if (isDirect(route)) emptyList() else routeTripLines(statuses?.firstOrNull { it.route.id == id }?.departures.orEmpty(), hw),
+                    lineDelays = prefs.lineDelays,
+                    onLineDelay = vm::setLineDelay,
                     delay = prefs.delayOf(id),
                     delayPreview = { vm.delayPreview(route, it) },
                     onDelay = { vm.setDelay(id, it) },
@@ -493,18 +499,22 @@ private fun TabDock(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit) {
 /** The train whose own delay is being set: its route, timetabled departure, kind of day and legs. */
 private data class TrainDelayTarget(val routeId: String, val at: Long, val type: DayType, val legs: List<Leg>?)
 
-/** Each line a trip with changes rides, in order, for its delay rows; none for a direct train. */
+/** Each train of a trip with changes (its line and direction), in order; none for a direct train. */
 private fun tripLines(legs: List<Leg>?, hw: HwColors): List<TripLine> {
     if (legs == null || legs.size < 2) return emptyList()
-    return legs.distinctBy { lineKey(it.trip.route) }.mapIndexed { i, leg ->
+    return legs.distinctBy { it.trip.lineDirKey }.mapIndexed { i, leg ->
         TripLine(
-            route = lineKey(leg.trip.route),
-            name = legLineName(leg),
+            key = leg.trip.lineDirKey,
+            name = "${legShort(leg)} toward ${Network.name(lineTerminal(leg.trip.route, leg.trip.dir))}",
             colors = legColors(leg, hw),
-            boards = if (i == 0) "From ${Network.name(leg.from)}" else "Change at ${Network.name(leg.from)}",
+            boards = if (i == 0 && leg.from == legs.first().from) "From ${Network.name(leg.from)}" else "Change at ${Network.name(leg.from)}",
         )
     }
 }
+
+/** Every train the upcoming trips with changes ride on a route, for the route menu's delays. */
+private fun routeTripLines(departures: List<RouteDeparture>, hw: HwColors): List<TripLine> =
+    departures.mapNotNull { d -> d.legs?.takeIf { it.size > 1 } }.flatMap { tripLines(it, hw) }.distinctBy { it.key }
 
 /**
  * The trains to pick a best coach for: just the one on a direct route, else the first train and

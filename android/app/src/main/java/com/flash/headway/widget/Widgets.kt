@@ -90,7 +90,7 @@ object Widgets {
     }
 
     /** The rider's line delays, as mirrored from the app. */
-    internal fun lineDelays(context: Context): Map<RouteId, Int> = decodeLineDelays(store(context).getString("line_delays", null))
+    internal fun lineDelays(context: Context): Map<String, Int> = decodeLineDelays(store(context).getString("line_delays", null))
 
     /** The rider's timetable override, as mirrored from the app. */
     internal fun override(context: Context): DayOverride? = runCatching {

@@ -101,7 +101,7 @@ class Trip(
     val band: Band,
     /** Which timetable the day runs (weekday, Saturday, Sunday/holiday). */
     val dayType: DayType = DayType.WEEKDAY,
-    /** Minutes the rider's delay for this train's line moved it (see [Schedule]'s lineDelays). */
+    /** Minutes the rider's delay for this train's line and direction moved it (see [Schedule]'s lineDelays). */
     val lineDelay: Int = 0,
 ) {
     val origin: String get() = stops.first().station
@@ -219,14 +219,26 @@ private class Window(val trips: List<Trip>, val conns: Array<Conn>)
 /** The line a rider's line delay is set on: short loops run on the Blue Line. */
 fun lineKey(route: RouteId): RouteId = if (route == RouteId.LOOP) RouteId.BLUE else route
 
+/** A line delay's key, "BLUE:FWD": the line (short loops count as Blue) and the direction. */
+fun lineDirKey(route: RouteId, dir: Dir): String = "${lineKey(route).name}:${dir.name}"
+
+val Trip.lineDirKey: String get() = lineDirKey(route, dir)
+
+/** The end of [route]'s line its trains head to in [dir] (a short loop's is the Blue Line's). */
+fun lineTerminal(route: RouteId, dir: Dir): String {
+    val r = Network.routes.getValue(lineKey(route))
+    return if (dir == Dir.FWD) r.fwd.last().first else r.fwd.first().first
+}
+
 /**
- * [lineDelays]: minutes the rider says each line runs off the timetable (negative early), by
- * [lineKey]. Applied to every train on the line, so trips with changes are planned on them.
+ * [lineDelays]: minutes the rider says each line runs off the timetable in each direction
+ * (negative early), by [lineDirKey]. Applied to every such train, so trips with changes are
+ * planned on them.
  */
 class Schedule(
     private val override: DayOverride? = null,
     private val feed: Feed? = null,
-    private val lineDelays: Map<RouteId, Int> = emptyMap(),
+    private val lineDelays: Map<String, Int> = emptyMap(),
 ) {
     private val days = HashMap<LocalDate, List<Trip>>()
     private val windows = HashMap<LocalDate, Window>()
@@ -327,7 +339,7 @@ class Schedule(
                 if (trip.stops.last().at < d.from!! || trip.stops.first().at > d.to!!) continue
                 shift += d.delay!! * MINUTE
             }
-            val line = lineDelays[lineKey(trip.route)] ?: 0
+            val line = lineDelays[trip.lineDirKey] ?: 0
             shift += line * MINUTE
             if (shift == 0L) {
                 trip

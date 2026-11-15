@@ -12,7 +12,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
-import com.flash.headway.engine.lineKey
+import com.flash.headway.engine.Dir
+import com.flash.headway.engine.lineDirKey
 import com.flash.headway.engine.DayOverride
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -63,12 +64,12 @@ data class Prefs(
     val flips: Map<String, AutoFlip> = emptyMap(),
     /** Trains with their own delay, by route id, then timetabled departure ("08:14"); overrides [delays]. */
     val trainDelays: Map<String, Map<String, Int>> = emptyMap(),
-    /** Minutes each line's trains run off the timetable, set on the Lines tab (by [lineKey]). */
-    val lineDelays: Map<RouteId, Int> = emptyMap(),
+    /** Minutes each line's trains run off the timetable in each direction, set on the Lines tab (by [lineDirKey]). */
+    val lineDelays: Map<String, Int> = emptyMap(),
 ) {
     fun delayOf(routeId: String): Int = delays[routeId] ?: 0
 
-    fun lineDelayOf(line: RouteId): Int = lineDelays[line] ?: 0
+    fun lineDelayOf(key: String): Int = lineDelays[key] ?: 0
 
     /**
      * Best coach for one train of a route: the route's own for the first train (and for direct
@@ -215,17 +216,27 @@ fun decodeDelays(raw: String?): Map<String, Int> =
 /** The key for a train boarded at [station] (after a change) on route [routeId]. */
 fun coachKey(routeId: String, station: String): String = "$routeId@$station"
 
-/** "BLUE=2;YELLOW=-1": each line's delay, in DataStore and the widgets' mirror. */
-fun encodeLineDelays(delays: Map<RouteId, Int>): String =
-    delays.entries.filter { it.value != 0 }.joinToString(";") { "${it.key.name}=${it.value}" }
+/** "BLUE:FWD=2;YELLOW:REV=-1": each line's delay by direction, in DataStore and the widgets' mirror. */
+fun encodeLineDelays(delays: Map<String, Int>): String =
+    delays.entries.filter { it.value != 0 }.joinToString(";") { "${it.key}=${it.value}" }
 
-fun decodeLineDelays(raw: String?): Map<RouteId, Int> =
-    raw.orEmpty().split(';').mapNotNull { part ->
-        val (k, d) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
-        val line = runCatching { lineKey(RouteId.valueOf(k)) }.getOrNull() ?: return@mapNotNull null
-        val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX) ?: return@mapNotNull null
-        (line to minutes).takeIf { minutes != 0 }
-    }.toMap()
+/** Reads [encodeLineDelays]; a bare "BLUE=2" (one delay for the whole line, as 1.0.58 saved it) counts for both directions. */
+fun decodeLineDelays(raw: String?): Map<String, Int> {
+    val out = HashMap<String, Int>()
+    for (part in raw.orEmpty().split(';')) {
+        val (k, d) = part.split('=').takeIf { it.size == 2 } ?: continue
+        val minutes = d.toIntOrNull()?.coerceIn(-DELAY_MAX, DELAY_MAX)?.takeIf { it != 0 } ?: continue
+        val bits = k.split(':')
+        val route = runCatching { RouteId.valueOf(bits[0]) }.getOrNull() ?: continue
+        val dirs = when (bits.size) {
+            1 -> Dir.entries
+            2 -> listOfNotNull(runCatching { Dir.valueOf(bits[1]) }.getOrNull())
+            else -> emptyList()
+        }
+        for (dir in dirs) out[lineDirKey(route, dir)] = minutes
+    }
+    return out
+}
 
 /** "a>b|08:14=2;a>b|08:21=-1": each train's own delay, in DataStore and the widgets' mirror. */
 fun encodeTrainDelays(all: Map<String, Map<String, Int>>): String =
