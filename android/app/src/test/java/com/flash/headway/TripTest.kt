@@ -11,6 +11,7 @@ import com.flash.headway.data.Network
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
+import com.flash.headway.engine.lineDirKey
 import com.flash.headway.engine.Transfer
 import com.flash.headway.engine.directDestinations
 import com.flash.headway.engine.transferDestinations
@@ -61,13 +62,19 @@ class TripTest {
     }
 
     @Test
-    fun aDelayMovesEveryLegOfATrip() {
+    fun aTripWithChangesRunsOnEachTrainsLineDelayNotTheRoutes() {
         val route = SavedRoute("guindy", "koyambedu")
-        val s = Schedule()
-        val onTime = s.delayedDepartures(route, at(8, 10) - 4 * MINUTE, 1, 0).first()
-        val late = s.delayedDepartures(route, at(8, 10), 1, 4).first()
+        val onTime = Schedule().delayedDepartures(route, at(8, 10) - 4 * MINUTE, 1, 0).first()
+        assertTrue(onTime.legs!!.size > 1)
+        // The route's delay would be one fixed shift for the whole trip: it's left out.
+        val routeDelay = Schedule().delayedDepartures(route, at(8, 10) - 4 * MINUTE, 1, 4).first()
+        assertEquals(onTime.dep to onTime.arr, routeDelay.dep to routeDelay.arr)
+        // Each train's line running 4 min late moves every leg of the trip with it.
+        val lines = onTime.legs!!.associate { it.trip.lineDirKey to 4 }
+        val late = Schedule(lineDelays = lines).delayedDepartures(route, at(8, 10), 1, 0).first()
         assertEquals(onTime.dep + 4 * MINUTE, late.dep)
         assertEquals(onTime.legs!!.map { it.arr + 4 * MINUTE }, late.legs!!.map { it.arr })
+        assertEquals(4, late.delay)
     }
 
     @Test
