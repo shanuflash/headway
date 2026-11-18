@@ -173,9 +173,9 @@ function routeLabel(r, inter = false) {
     // The inter-corridor runs Chennai Central <-> Airport; name the end this route heads to.
     const stops = ROUTES.inter.fwd.map(([id]) => id);
     const end = stops.indexOf(r.from) < stops.indexOf(r.to) ? stops.at(-1) : stops[0];
-    return `Inter-corridor · toward ${name(end)}`;
+    return `Inter-corridor · towards ${name(end)}`;
   }
-  return `${lineName(g.line)} · toward ${g.terminals.map(name).join(' or ')}`;
+  return `${lineName(g.line)} · towards ${g.terminals.map(name).join(' or ')}`;
 }
 
 /** Platform at the boarding station, from the direction the train heads off in. */
@@ -282,7 +282,7 @@ function timelineHtml(d) {
       );
     }
     const plat = legPlatform(leg);
-    out.push(stop(clock(leg.dep), leg.from, `${esc(legLineName(leg))} toward ${esc(name(leg.trip.dest))}${plat ? ` · ${esc(plat)}` : ''}`, 'board', color));
+    out.push(stop(clock(leg.dep), leg.from, `${esc(legLineName(leg))} towards ${esc(name(leg.trip.dest))}${plat ? ` · ${esc(plat)}` : ''}`, 'board', color));
     out.push(seg(`${plural(leg.stops.length - 1, 'stop')} · ${span(leg.arr - leg.dep)}`, 'ride', color, legRail(leg)));
     const lastLeg = i === d.legs.length - 1;
     out.push(stop(clock(leg.arr), leg.to, lastLeg ? 'Arrive' : 'Get off', lastLeg ? 'end' : 'off', color));
@@ -432,8 +432,8 @@ function flipCard(r) {
   const head = `
         <div class="dl-head">
           <span class="dl-icon">${ic('swap_vert')}</span>
-          <span class="grow"><span class="t">Switch direction by time</span><span class="s">Morning trip out, the ride home later</span></span>
-          ${both ? '' : `<button class="switch" role="switch" aria-checked="${on}" data-act="flip-toggle" data-route="${esc(r.id)}" aria-label="Switch direction by time"><i></i></button>`}
+          <span class="grow"><span class="t">Reverse automatically</span><span class="s">Show the return trip after a set time</span></span>
+          ${both ? '' : `<button class="switch" role="switch" aria-checked="${on}" data-act="flip-toggle" data-route="${esc(r.id)}" aria-label="Reverse automatically"><i></i></button>`}
         </div>`;
   if (both) return `<div class="card fl">${head}<span class="fl-foot">You've saved both directions as separate routes, so each keeps its own card.</span></div>`;
   if (!on) return `<div class="card fl">${head}</div>`;
@@ -453,15 +453,15 @@ function flipCard(r) {
             ${row(!pm, 'light_mode', `Until ${t}`, home, other)}
             ${row(pm, 'bedtime', `From ${t}`, other, home)}
           </div>
-          <button class="fl-swap" data-act="flip-home" data-route="${esc(r.id)}" aria-label="Swap the morning and evening trips">${ic('swap_vert')}</button>
+          <button class="fl-swap" data-act="flip-home" data-route="${esc(r.id)}" aria-label="Swap morning and evening">${ic('swap_vert')}</button>
         </div>
         <div class="fl-time">
-          <span class="grow">Switch at</span>
+          <span class="grow">Reverse at</span>
           <button class="dl-step" data-act="flip-time" data-route="${esc(r.id)}" data-d="${-FLIP_STEP}" aria-label="30 minutes earlier" ${f.at <= FLIP_MIN ? 'disabled' : ''}>${ic('remove')}</button>
           <output class="fl-at" aria-live="polite">${t}</output>
           <button class="dl-step" data-act="flip-time" data-route="${esc(r.id)}" data-d="${FLIP_STEP}" aria-label="30 minutes later" ${f.at >= FLIP_MAX ? 'disabled' : ''}>${ic('add')}</button>
         </div>
-        <span class="fl-foot">Swap by hand any time; it switches again at the next change.</span>
+        <span class="fl-foot">Tap ⇅ on the card to reverse it any time.</span>
       </div>`;
 }
 
@@ -502,10 +502,10 @@ function planModel(r) {
   return { r, kind: deps.length ? 'plan' : 'plan-none', plan: r.plan, deps, best: r.plan.mode === 'arrive' ? deps.length - 1 : 0 };
 }
 
-/** "Leave at 8:00 AM tomorrow", "Arrive by 9:30 AM", or "Leaving now". */
+/** "Leave at 8:00 AM tomorrow", "Arrive by 9:30 AM", or "Depart now". */
 function whenText(plan) {
-  if (!plan) return 'Leaving now';
-  return `${plan.mode === 'arrive' ? 'Arrive by' : 'Leave at'} ${clock(plan.at)}${dayWord(plan.at)}`;
+  if (!plan) return 'Depart now';
+  return `${plan.mode === 'arrive' ? 'Arrive by' : 'Depart at'} ${clock(plan.at)}${dayWord(plan.at)}`;
 }
 
 /** "", " tomorrow" or " on Friday", against the current (possibly mocked) date. */
@@ -587,11 +587,11 @@ function routesScreen(now, models) {
 
 /** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
 function loadCardBanner() {
-  return `<div class="strip load"><span class="grow"><span class="t">Load it onto your card</span><span class="s">Paid by UPI? Tap your card in Airtel to write the balance.</span></span><a class="strip-btn load-go" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" data-act="card-loaded">Open Airtel</a><button class="mini" data-act="card-loaded" aria-label="Dismiss">${ic('close')}</button></div>`;
+  return `<div class="strip load"><span class="grow"><span class="t">Top-up pending</span><span class="s">Tap the card in Airtel to add the balance.</span></span><a class="strip-btn load-go" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" data-act="card-loaded">Open Airtel</a><button class="mini" data-act="card-loaded" aria-label="Dismiss">${ic('close')}</button></div>`;
 }
 
 function mockBanner() {
-  return `<div class="strip mock"><span class="grow"><span class="t">Mock time: <span data-at="0" data-fmt="now">${clock(clockNow())}</span></span><span class="s">Not the real schedule. Real time is <span data-at="${prefs.mock.offset}" data-fmt="now">${clock(Date.now())}</span>.</span></span><button class="strip-btn mock-off" data-act="mock" data-v="off">Turn off</button></div>`;
+  return `<div class="strip mock"><span class="grow"><span class="t">Mock time · <span data-at="0" data-fmt="now">${clock(clockNow())}</span></span><span class="s">Real time: <span data-at="${prefs.mock.offset}" data-fmt="now">${clock(Date.now())}</span></span></span><button class="strip-btn mock-off" data-act="mock" data-v="off">Turn off</button></div>`;
 }
 
 function noticeCard(n) {
@@ -601,11 +601,11 @@ function noticeCard(n) {
 function emptyState() {
   return `
     <div class="card hero" style="padding-top: 20px; gap: 16px">
-      <span style="font-size: 28px; line-height: 34px; font-weight: 700">Add your daily route</span>
-      <span class="sub" style="font-size: 15px; line-height: 20px">Save where you board and where you get off. Headway lists the next trains on it, and one tap flips it for the ride home.</span>
+      <span style="font-size: 28px; line-height: 34px; font-weight: 700">No saved routes</span>
+      <span class="sub" style="font-size: 15px; line-height: 20px">Save a route to see its next trains. Tap ⇅ to reverse it for the trip back.</span>
       <button class="cta" data-act="add-route">${ic('add')}Add a route</button>
     </div>
-    <span class="section-title">Or check any station</span>
+    <span class="section-title">Or search a station</span>
     <button class="search-like card" style="background: var(--card); height: 52px" data-act="look">${ic('search')}Search stations</button>`;
 }
 
@@ -628,14 +628,14 @@ function routeCard(m, isPreview) {
           // From the next trip itself: where you change, or its train and where that's heading.
           lead?.legs
             ? `<span class="s"><i class="dot" style="background: ${legsGradient(lead.legs)}"></i>${esc(
-                hasChange(lead) ? changesLabel(lead) : `${legLineName(lead.legs[0])} · toward ${name(lead.legs[0].trip.dest)}`,
+                hasChange(lead) ? changesLabel(lead) : `${legLineName(lead.legs[0])} · towards ${name(lead.legs[0].trip.dest)}`,
               )}</span>`
             : `<span class="s"><i class="dot ${line}"></i>${esc(routeLabel(r))}</span>`
         }
       </span>
       <span class="pillgroup">
         <button data-act="swap" data-route="${r.id}" class="${!isPreview && flipOf(r) && !bothSaved(r) ? 'auto' : ''}" aria-label="${
-          !isPreview && flipOf(r) && !bothSaved(r) ? `Switch direction (switches by itself at ${minutesLabel(flipOf(r).at)})` : 'Switch direction'
+          !isPreview && flipOf(r) && !bothSaved(r) ? `Reverse (automatic at ${minutesLabel(flipOf(r).at)})` : 'Reverse'
         }">${ic('swap_vert')}</button>
         ${
           isPreview
@@ -654,7 +654,7 @@ function routeCard(m, isPreview) {
 
   let body = '';
   if (m.kind === 'plan-none') {
-    body = `<div class="rc-pad sub" style="font-size: 15px">${m.plan.mode === 'arrive' ? 'No trains get there by then.' : 'No trains after then.'}</div>`;
+    body = `<div class="rc-pad sub" style="font-size: 15px">${m.plan.mode === 'arrive' ? 'No trains arrive by then.' : 'No trains after then.'}</div>`;
   } else if (m.kind === 'plan') {
     const want = picked.get(r.id);
     const found = m.deps.findIndex((x) => pickKey(x) === want);
@@ -663,7 +663,7 @@ function routeCard(m, isPreview) {
     const label =
       m.plan.mode === 'arrive'
         ? i === m.best
-          ? `Latest to arrive by ${clock(m.plan.at)}`
+          ? `Latest arriving by ${clock(m.plan.at)}`
           : 'Earlier train'
         : i === 0
           ? `First after ${clock(m.plan.at)}`
@@ -738,7 +738,7 @@ function routeCard(m, isPreview) {
           ${hasChange(d) ? legsLine(d) : ''}
         </div>
         <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${
-          on ? 'Stop the countdown' : 'Count down to this train'
+          on ? 'Stop countdown' : 'Start countdown'
         }">${ic('notifications', on ? 'fill' : '')}</button>
       </div>
       ${boardingTags(r, d)}
@@ -777,22 +777,22 @@ function upiIdFromQr(raw) {
 /** Reads the QR in a photo of the card. Needs the BarcodeDetector API (Chrome on Android has it). */
 async function scanCardQr(file) {
   if (!('BarcodeDetector' in window)) {
-    toast("This browser can't read QR codes. Type the ID instead.");
+    toast("QR scanning isn’t supported in this browser. Enter the ID instead.");
     return;
   }
   try {
     const codes = await new BarcodeDetector({ formats: ['qr_code'] }).detect(await createImageBitmap(file));
     const id = codes.map((c) => upiIdFromQr(c.rawValue)).find(Boolean);
     if (!id) {
-      toast("Couldn't find the card's top-up QR in that photo");
+      toast("No metro card top-up QR found in the photo");
       return;
     }
     save({ upi: id });
     const input = document.getElementById('upi-id');
     if (input) input.value = id;
-    toast('Saved. The top-up button now offers UPI.');
+    toast('UPI ID saved');
   } catch {
-    toast("Couldn't read that photo. Type the ID instead.");
+    toast("Couldn’t read the photo. Enter the ID instead.");
   }
 }
 
@@ -803,8 +803,8 @@ function openTopUp() {
     `${sheetHead('Top up metro card', null, null)}
     <div class="sheet-body" style="flex: none">
       <div class="card list">
-        <a class="row tap plain" href="${upiLink(prefs.upi)}" data-act="upi-paid" style="color: inherit; text-decoration: none">${ic('qr_code_2')}<span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app, no fee, then load it on the card in Airtel</span></span></a>
-        <a class="row tap plain" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">${ic('credit_card')}<span class="grow"><span class="t">Airtel Thanks</span><span class="s">Free, can write the balance to your card</span></span></a>
+        <a class="row tap plain" href="${upiLink(prefs.upi)}" data-act="upi-paid" style="color: inherit; text-decoration: none">${ic('qr_code_2')}<span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app · No fee · Add to card in Airtel</span></span></a>
+        <a class="row tap plain" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">${ic('credit_card')}<span class="grow"><span class="t">Airtel Thanks</span><span class="s">No fee · Adds the balance to the card</span></span></a>
       </div>
     </div>`,
   );
@@ -861,7 +861,7 @@ function mapScreen() {
         <button data-act="zoom" data-v="1" aria-label="Zoom in" ${mapZoom === MAP_ZOOMS.length - 1 ? 'disabled' : ''}>${ic('add')}</button>
       </span>
     </div>
-    <p class="footnote">Tap a station for its next trains each way. Map data © OpenStreetMap contributors.</p>`;
+    <p class="footnote">Tap a station for departures. Map data © OpenStreetMap contributors.</p>`;
 }
 
 function zoomMap(step) {
@@ -902,7 +902,7 @@ function openStationSheet(id) {
         .join('');
       return `
         <div class="card set">
-          <span class="dir"><i class="dot ${g.line}"></i>Toward ${esc(g.terminals.map(name).join(' or '))}${p ? ` · ${esc(p)}` : ''}</span>
+          <span class="dir"><i class="dot ${g.line}"></i>Towards ${esc(g.terminals.map(name).join(' or '))}${p ? ` · ${esc(p)}` : ''}</span>
           ${deps.length ? `<div class="st-deps">${chips}</div>` : '<span class="sub" style="font-size: 15px">No more trains today</span>'}
         </div>`;
     })
@@ -958,7 +958,7 @@ function linesScreen() {
     ${card('inter', 'Inter-corridor', 'inter', ' via CMBT')}
     ${card('yellow', 'Yellow Line', 'yellow')}
     <p class="footnote" style="margin-top: 0">${
-      day.loop ? 'Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. ' : ''
+      day.loop ? 'On weekday peaks, short-loop trains run every 3 min between Washermenpet and Alandur. ' : ''
     }Source: <a href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener">CMRL timetable</a>, ${TIMETABLE_SOURCE.published}.</p>`;
 }
 
@@ -993,38 +993,38 @@ function settingsScreen() {
         ])}
       </div>
     </div>
-    <p class="footnote">Auto follows the calendar and public holidays (${esc(auto.reason)}). Pick Sunday or holiday if CMRL announces it for today.</p>
+    <p class="footnote">Auto follows the calendar and public holidays (today: ${esc(auto.reason)}). Choose Sunday or holiday when CMRL runs a Sunday timetable.</p>
 
     <div class="card set">
-      <span>Trains shown per route</span>
+      <span>Departures per route</span>
       ${seg('count', String(prefs.count), COUNT_CHOICES.map((n) => [String(n), String(n)]))}
       <div class="set-row">
-        <span class="grow"><span class="t">Last train warning</span><span class="s">In the final hour of service</span></span>
-        <button class="switch" role="switch" aria-checked="${prefs.lastWarn}" data-act="last-warn" aria-label="Last train warning"><i></i></button>
+        <span class="grow"><span class="t">Last-train warning</span><span class="s">Shown in the final hour of service</span></span>
+        <button class="switch" role="switch" aria-checked="${prefs.lastWarn}" data-act="last-warn" aria-label="Last-train warning"><i></i></button>
       </div>
     </div>
 
     <div class="card set">
       <span>Appearance</span>
-      ${seg('theme', prefs.theme, [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Automatic']])}
+      ${seg('theme', prefs.theme, [['light', 'Light'], ['dark', 'Dark'], ['auto', 'System']])}
     </div>
 
     <div class="card set">
       <span>Mock time</span>
       ${seg('mock', prefs.mock ? String(prefs.mock.at) : 'off', [['off', 'Off'], ...MOCK_CHOICES.map(([m, l]) => [String(m), l])])}
     </div>
-    <p class="footnote">For testing. The app runs as if it were that time now, and the clock keeps ticking from there.</p>
+    <p class="footnote">For testing. Runs the app from the chosen time.</p>
 
     <div class="card list">
       <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px">
         <label for="upi-id" class="t">Metro card UPI ID</label>
         <div class="upi-row">
           <input class="text-input" id="upi-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ncmc.1234…@mairtel" value="${esc(prefs.upi)}">
-          <label class="cta small scan">Scan card QR<input id="upi-scan" type="file" accept="image/*" capture="environment" hidden></label>
+          <label class="cta small scan">Scan QR<input id="upi-scan" type="file" accept="image/*" capture="environment" hidden></label>
         </div>
       </div>
     </div>
-    <p class="footnote">Scan the "Scan to recharge" QR on your card, or paste its ID. Adds "Pay by UPI" to the top-up button. Stays in this browser.</p>
+    <p class="footnote">From the “Scan to recharge” QR on the card. Enables top-up by UPI.</p>
 
     <div class="card list">
       <a class="row tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
@@ -1037,7 +1037,7 @@ function settingsScreen() {
         <input class="text-input" id="feed-url" type="url" inputmode="url" placeholder="https://…/advisories.json" value="${esc(prefs.feedUrl)}">
       </div>
     </div>
-    <p class="footnote">First and last trains match CMRL's timetable. Times at stations in between are estimated, so allow a minute or two either way.${
+    <p class="footnote">First and last trains are from CMRL’s timetable. Times at other stations are estimates (±2 min).${
       feedState.status === 'live' ? ' Advisory feed connected.' : ''
     }</p>`;
 }
@@ -1325,7 +1325,7 @@ async function toggleReminder(r, dep) {
     } catch {}
   }
   save({ reminder: { routeId: r.id, dep, at: dep, fired: false } });
-  toast(`Counting down to the ${clock(dep)}`);
+  toast(`Countdown on · ${clock(dep)}`);
   render({ force: true });
 }
 
@@ -1376,7 +1376,7 @@ let pickMode = 'save';
 function openStationStep(mode, initial = false) {
   pickMode = mode;
   const html = `
-    ${sheetHead(mode === 'look' ? 'Check a station' : 'Where do you board?', null, null)}
+    ${sheetHead(mode === 'look' ? 'Search' : 'Choose starting station', null, null)}
     <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
     <div class="sheet-body">
       ${PICKER_GROUPS.map(
@@ -1436,7 +1436,7 @@ function openDestinationStep(from) {
     .map(
       (g) => `
         <div class="group" style="display: flex; flex-direction: column; gap: 8px">
-          <div class="dir-head"><span class="dot ${g.line}"></span><span class="t">Toward ${esc(g.terminals.map(name).join(' or '))}</span></div>
+          <div class="dir-head"><span class="dot ${g.line}"></span><span class="t">Towards ${esc(g.terminals.map(name).join(' or '))}</span></div>
           <div class="card list">${g.stations
             .map((x) => {
               const st = STATIONS[x.id];
@@ -1466,7 +1466,7 @@ function openDestinationStep(from) {
       : '';
   }).join('');
   const html = `
-    ${sheetHead(`Where to from ${name(from)}?`, changes.size ? 'Direct trains first, then with a change' : 'Direct trains', 'pick-back')}
+    ${sheetHead('Choose destination', `From ${name(from)}`, 'pick-back')}
     <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
     <div class="sheet-body">
       <div class="pick-section" style="display: flex; flex-direction: column; gap: 20px">${direct}</div>
@@ -1536,17 +1536,17 @@ function routeMenuHtml(r) {
     `${sheetHead(`${name(r.from)} → ${name(r.to)}`, null, null)}
     <div class="sheet-body" style="flex: 0 1 auto">
       <div class="card set">
-        <span>Best coach to board</span>
-        <div class="seg" role="radiogroup" aria-label="Best coach to board">${[['', 'Off'], ['front', 'Front'], ['middle', 'Middle'], ['rear', 'Rear']]
+        <span>Where to board</span>
+        <div class="seg" role="radiogroup" aria-label="Where to board">${[['', 'Off'], ['front', 'Front'], ['middle', 'Middle'], ['rear', 'Rear']]
           .map(([v, l]) => `<button role="radio" aria-checked="${(prefs.coaches?.[id] ?? '') === v}" data-act="coach" data-route="${id}" data-v="${v}">${l}</button>`)
           .join('')}</div>
-        <span class="sub" style="font-size: 13px; line-height: 18px">Where to stand so you get off near the exit or stairs you use. Shown on the route card.</span>
+        <span class="sub" style="font-size: 13px; line-height: 18px">Board the coach nearest your exit. Shown on the card.</span>
       </div>
       ${delayCard(r)}
       ${flipCard(r)}
       <div class="card list">
-        <button class="row tap plain" data-act="plan-route" data-route="${id}">${ic('schedule')}<span class="grow"><span class="t">Plan another time</span><span class="s">Leave at or arrive by a time, today or tomorrow</span></span></button>
-        ${prefs.routes[0]?.id === id ? '' : `<button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to the top</span></span></button>`}
+        <button class="row tap plain" data-act="plan-route" data-route="${id}">${ic('schedule')}<span class="grow"><span class="t">Plan a trip</span><span class="s">Depart at or arrive by a set time</span></span></button>
+        ${prefs.routes[0]?.id === id ? '' : `<button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to top</span></span></button>`}
         <button class="row tap plain" data-act="remove-route" data-route="${id}" style="color: #d70015">${ic('delete')}<span class="grow"><span class="t">Remove route</span></span></button>
       </div>
     </div>`
@@ -1564,12 +1564,12 @@ function delayPreview(r, d) {
 
 function delayPreviewHtml(r, d) {
   const p = delayPreview(r, d);
-  if (!p) return '<span class="sub">No direct trains on this route.</span>';
-  if (!d) return `<span class="dl-cell"><span class="k">Next train</span><span class="v">${clock(p.shown)}</span></span><span class="dl-note">as timetabled</span>`;
-  return `<span class="dl-cell"><span class="k">Timetable</span><span class="v was">${clock(p.timetabled)}</span></span>${ic(
+  if (!p) return '<span class="sub">No upcoming trains</span>';
+  if (!d) return `<span class="dl-cell"><span class="k">Next train</span><span class="v">${clock(p.shown)}</span></span><span class="dl-note">On schedule</span>`;
+  return `<span class="dl-cell"><span class="k">Scheduled</span><span class="v was">${clock(p.timetabled)}</span></span>${ic(
     'arrow_forward',
     'dl-arrow',
-  )}<span class="dl-cell"><span class="k">You'll see</span><span class="v now">${clock(p.shown)}</span></span>`;
+  )}<span class="dl-cell"><span class="k">Expected</span><span class="v now">${clock(p.shown)}</span></span>`;
 }
 
 /** Route-menu card: how early or late this route's trains run, from DELAY_MAX early to DELAY_MAX late. */
@@ -1584,16 +1584,16 @@ function delayCard(r) {
       <div class="card dl" data-delay-card="${esc(r.id)}" data-tone="${delayTone(d)}" style="--v:${d}; --max:${DELAY_MAX}">
         <div class="dl-head">
           <span class="dl-icon">${ic('schedule')}</span>
-          <span class="grow"><span class="t">Running early or late?</span><span class="s">Shift this route's train times</span></span>
+          <span class="grow"><span class="t">Delay</span><span class="s">Applies to every train on this route</span></span>
         </div>
         <div class="dl-read" aria-hidden="true"><span class="dl-num">${d ? Math.abs(d) : ''}</span><span class="dl-unit">${d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time'}</span></div>
         <div class="dl-ctrl">
-          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="-1" aria-label="One minute earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
+          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="-1" aria-label="1 min earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
           <div class="dl-slider">
             <div class="dl-track" aria-hidden="true"><b class="dl-fill"></b>${ticks}</div>
-            <input type="range" data-act="delay" data-route="${esc(r.id)}" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="How early or late trains run, in minutes" aria-valuetext="${delayText(d)}" />
+            <input type="range" data-act="delay" data-route="${esc(r.id)}" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="Delay in minutes" aria-valuetext="${delayText(d)}" />
           </div>
-          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="1" aria-label="One minute later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
+          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="1" aria-label="1 min later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
         </div>
         <div class="dl-scale"><span>Early</span><button data-act="delay-reset" data-route="${esc(r.id)}" ${d ? '' : 'disabled'}>On time</button><span>Late</span></div>
         <div class="dl-preview">${delayPreviewHtml(r, d)}</div>
@@ -1674,17 +1674,17 @@ function trainDelayHtml() {
       <div class="card dl" data-tone="${tone}" style="--v:${d}; --max:${DELAY_MAX}">
         <div class="dl-read"><span class="dl-num">${d ? Math.abs(d) : ''}</span><span class="dl-unit">${d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time'}</span></div>
         <div class="dl-ctrl">
-          <button class="dl-step" data-act="tdelay-step" data-d="-1" aria-label="One minute earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
+          <button class="dl-step" data-act="tdelay-step" data-d="-1" aria-label="1 min earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
           <div class="dl-slider"><div class="dl-track" aria-hidden="true"><b class="dl-fill"></b></div>
-            <input type="range" data-act="tdelay" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="How early or late this train runs, in minutes" aria-valuetext="${delayText(d)}" /></div>
-          <button class="dl-step" data-act="tdelay-step" data-d="1" aria-label="One minute later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
+            <input type="range" data-act="tdelay" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="Delay for this train, in minutes" aria-valuetext="${delayText(d)}" /></div>
+          <button class="dl-step" data-act="tdelay-step" data-d="1" aria-label="1 min later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
         </div>
         <span class="fl-foot">${
           own != null
-            ? `Just this train, every day. Other trains on this route: ${delayText(delayOf(id)).toLowerCase()}.`
-            : `Following the route (${delayText(delayOf(id)).toLowerCase()}). Change it here for just this train.`
+            ? `This train only. Route delay: ${delayText(delayOf(id)).toLowerCase()}.`
+            : `Uses the route delay (${delayText(delayOf(id)).toLowerCase()}).`
         }</span>
-        ${own != null ? `<button class="cta small" data-act="tdelay-reset" style="align-self: flex-start">${ic('history')}Follow the route again</button>` : ''}
+        ${own != null ? `<button class="cta small" data-act="tdelay-reset" style="align-self: flex-start">${ic('history')}Use route delay</button>` : ''}
       </div>
     </div>`;
 }
@@ -1735,15 +1735,15 @@ function whenHtml() {
   return `${sheetHead('When?', preview ? `${name(preview.from)} → ${name(preview.to)}` : null, null)}
     <div class="sheet-body" style="flex: 0 1 auto">
       <div class="card set when-card">
-        ${seg('when-mode', d.mode, [['now', 'Now'], ['leave', 'Leave at'], ['arrive', 'Arrive by']])}
+        ${seg('when-mode', d.mode, [['now', 'Now'], ['leave', 'Depart at'], ['arrive', 'Arrive by']])}
         ${
           d.mode === 'now'
-            ? '<span class="sub" style="font-size: 13px; line-height: 18px">The next trains from now, counting down.</span>'
+            ? '<span class="sub" style="font-size: 13px; line-height: 18px">Live departures from now.</span>'
             : `${seg('when-day', String(d.day), [['0', 'Today'], ['1', 'Tomorrow']])}
-        <label class="when-time"><span>${d.mode === 'arrive' ? 'Arrive by' : 'Leave at'}</span><input type="time" value="${d.hm}" step="300" data-act="when-time" aria-label="Time"></label>`
+        <label class="when-time"><span>${d.mode === 'arrive' ? 'Arrive by' : 'Depart at'}</span><input type="time" value="${d.hm}" step="300" data-act="when-time" aria-label="Time"></label>`
         }
       </div>
-      <button class="cta" data-act="when-done">${ic(d.mode === 'now' ? 'schedule' : 'search')}${d.mode === 'now' ? 'Show the next trains' : 'Show trains'}</button>
+      <button class="cta" data-act="when-done">${ic(d.mode === 'now' ? 'schedule' : 'search')}Show trains</button>
     </div>`;
 }
 
@@ -1943,7 +1943,7 @@ const ACTIONS = {
     const flips = { ...(prefs.flips ?? {}) };
     if (!routes.some((x) => pairKey(x) === pairKey(r))) delete flips[pairKey(r)];
     save({ routes, flips, reminder: prefs.reminder?.routeId === r.id ? null : prefs.reminder });
-    toast(`Removed ${name(r.from)} → ${name(r.to)}`);
+    toast('Route removed');
     render({ force: true, animate: true });
   },
   when: () => {
@@ -2034,16 +2034,16 @@ document.addEventListener('change', (e) => {
   } else if (el.id === 'upi-id') {
     const id = el.value.trim();
     if (id && !UPI_ID.test(id)) {
-      toast("That doesn't look like a UPI ID");
+      toast('Enter a valid UPI ID');
       return;
     }
     save({ upi: id });
-    toast(id ? 'Saved. The top-up button now offers UPI.' : 'UPI ID removed');
+    toast(id ? 'UPI ID saved' : 'UPI ID removed');
   } else if (el.id === 'feed-url') {
     const url = el.value.trim();
     save({ feedUrl: url });
     feed.setRemote(url);
-    toast(url ? 'Checking advisory feed' : 'Advisory feed removed');
+    toast(url ? 'Advisory feed added' : 'Advisory feed removed');
   }
 });
 
