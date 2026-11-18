@@ -7,6 +7,7 @@ import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.lineDirKey
+import com.flash.headway.engine.lineKey
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.DayOverride
 import com.flash.headway.engine.Feed
@@ -161,6 +162,19 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                 .take(4)
             com.flash.headway.ui.StationBoard(g, com.flash.headway.ui.platformAt(id, g), trains)
         }
+    }
+
+    /**
+     * The next trains on one line at [station], toward each end, for the Lines tab: times as the
+     * rider sees them (their line delays applied), so they can be checked against the platform
+     * board. Short loops count as the Blue Line. On the engine thread.
+     */
+    suspend fun lineBoard(route: RouteId, station: String, per: Int = 3): Map<com.flash.headway.engine.Dir, List<Long>> = withContext(engineThread) {
+        val p = prefs.value ?: return@withContext emptyMap()
+        engine(p).departures(station, Clock.now(), 400)
+            .filter { lineKey(it.trip.route) == route }
+            .groupBy { it.trip.dir }
+            .mapValues { (_, deps) -> deps.map { it.at }.distinct().take(per) }
     }
 
     fun todayInfo(): DayInfo = dayTypeFor(serviceDate(Clock.now()), prefs.value?.override, _feed.value)

@@ -1,6 +1,9 @@
 package com.flash.headway.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,6 +76,8 @@ fun ColumnScope.LinesScreen(
     now: () -> Long,
     lineDelays: Map<String, Int>,
     onLineDelay: (String, Int) -> Unit,
+    boards: Map<RouteId, LineBoard>,
+    onPickStation: (RouteId) -> Unit,
     onSettings: () -> Unit,
 ) {
     val hw = LocalHw.current
@@ -83,13 +89,16 @@ fun ColumnScope.LinesScreen(
     LargeTitle("Lines") {
         Text("${today.type.label} timetable$reason", style = HwType.body, color = hw.sub)
     }
-    LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin, lineDelays, onLineDelay)
-    LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin, lineDelays, onLineDelay)
+    LineCard("Blue Line", RouteId.BLUE, hw.blue, spec.blue, nowMin, lineDelays, onLineDelay, boards[RouteId.BLUE], now, { onPickStation(RouteId.BLUE) })
+    LineCard("Green Line", RouteId.GREEN, hw.green, spec.green, nowMin, lineDelays, onLineDelay, boards[RouteId.GREEN], now, { onPickStation(RouteId.GREEN) })
     // Green Line tracks, then Blue Line to the Airport.
-    LineCard("Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, lineDelays, onLineDelay, " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)))
-    LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin, lineDelays, onLineDelay)
+    LineCard(
+        "Inter-corridor", RouteId.INTER, hw.green, spec.inter, nowMin, lineDelays, onLineDelay, boards[RouteId.INTER], now, { onPickStation(RouteId.INTER) },
+        " via CMBT", Brush.verticalGradient(listOf(hw.green, hw.blue)),
+    )
+    LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin, lineDelays, onLineDelay, boards[RouteId.YELLOW], now, { onPickStation(RouteId.YELLOW) })
     Footnote(
-        "Running early or late moves every train on that line in that direction: your route cards, trips with changes, the widget and countdowns. " +
+        "At a station, match the next trains to the platform board and nudge until they agree. Running early or late moves every train on that line in that direction: your route cards, trips with changes, the widget and countdowns. " +
             (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
             "Source: CMRL timetable, ${Timetable.PUBLISHED}.",
     )
@@ -104,6 +113,9 @@ private fun LineCard(
     nowMin: Int,
     delays: Map<String, Int>,
     onDelay: (String, Int) -> Unit,
+    board: LineBoard?,
+    now: () -> Long,
+    onPickStation: () -> Unit,
     extra: String = "",
     bar: Brush? = null,
 ) {
@@ -157,13 +169,45 @@ private fun LineCard(
             }
         }
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(hw.sep))
-        // Each direction runs on its own: one can be late while the other is on time.
-        Text("Running early or late?", style = HwType.subheadStrong, color = hw.text)
+        // Each direction runs on its own: one can be late while the other is on time. The next
+        // trains at a station sit with it, to check against the platform board.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Next trains at", style = HwType.subheadStrong, color = hw.text, modifier = Modifier.weight(1f))
+            if (board != null) {
+                Row(
+                    Modifier.height(32.dp).clip(CircleShape).background(hw.fill2).press(scaleTo = 0.95f, onClick = onPickStation).padding(start = 12.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(Network.name(board.station), style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold), color = hw.text, maxLines = 1)
+                    Icon(Icons.Rounded.UnfoldMore, "Pick a station", tint = hw.sub, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
         listOf(Dir.FWD to b, Dir.REV to a).forEach { (dir, end) ->
             val key = lineDirKey(route, dir)
-            LineDelayRow("Toward ${Network.name(end)}", null, null, delays[key] ?: 0) { onDelay(key, it) }
+            val sub = board?.let { nextText(it, dir, end, now()) }
+            LineDelayRow("Toward ${Network.name(end)}", sub, null, delays[key] ?: 0) { onDelay(key, it) }
         }
     }
+}
+
+/** One line's next trains at a station, toward each end: shown times (line delays applied). */
+data class LineBoard(val station: String, val byDir: Map<Dir, List<Long>>)
+
+/** "8:42 AM · 3 min, then 8:48": the next trains toward [end], or why there are none. */
+private fun nextText(board: LineBoard, dir: Dir, end: String, now: Long): String {
+    if (board.station == end) return "Trains end here"
+    val times = board.byDir[dir].orEmpty().filter { it >= now - 30_000 }
+    val first = times.firstOrNull() ?: return "No more trains"
+    val left = first - now
+    val wait = when {
+        left < 30_000 -> "now"
+        left < 60 * 60_000 -> "${mins(left)} min"
+        else -> null
+    }
+    val then = times.getOrNull(1)?.let { ", then ${clockTime(it)}" }.orEmpty()
+    return "${clock(first)}${wait?.let { " · $it" }.orEmpty()}$then"
 }
 
 // ---------------- settings ----------------
@@ -410,5 +454,33 @@ private fun androidx.compose.foundation.layout.RowScope.ThemeOption(label: Strin
             style = HwType.footnote.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal),
             color = if (on) hw.tint else hw.text,
         )
+    }
+}
+
+/** Which station a line card's next trains are for: every station on the line, in order. */
+@Composable
+fun LineStationSheet(title: String, route: RouteId, selected: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val hw = LocalHw.current
+    val stations = remember(route) { Network.routes.getValue(route).fwd.map { it.first } }
+    HwSheet(onDismiss = onDismiss) { close ->
+        Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Next trains at", style = HwType.headline, color = hw.text)
+            Text(title, style = HwType.footnote, color = hw.sub)
+        }
+        Column(
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+        ) {
+            ListCard(
+                stations.map { id ->
+                    @Composable {
+                        ListRow(onClick = { close { onPick(id) } }) {
+                            Text(Network.name(id), style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
+                            if (id == selected) Icon(Icons.Rounded.Check, "Picked", tint = hw.tint, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                },
+                inset = 16.dp,
+            )
+        }
     }
 }

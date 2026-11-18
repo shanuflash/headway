@@ -82,6 +82,7 @@ import com.flash.headway.app.RouteStatus
 import com.flash.headway.app.pairKey
 import com.flash.headway.app.reverseId
 import com.flash.headway.data.Network
+import com.flash.headway.data.RouteId
 import com.flash.headway.app.SavedRoute
 import com.flash.headway.engine.Leg
 import com.flash.headway.engine.RouteDeparture
@@ -130,6 +131,25 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     val preview by vm.preview.collectAsStateWithLifecycle()
     val feed by vm.feed.collectAsStateWithLifecycle()
     var stationFor by remember { mutableStateOf<String?>(null) }
+    // The Lines tab: the station each card shows next trains at (by line), and the card picking one.
+    var lineStations by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
+    var lineStationFor by remember { mutableStateOf<RouteId?>(null) }
+    // The picked one, else where a saved route boards on that line, else mid-line.
+    fun stationOn(route: RouteId): String {
+        val stops = Network.routes.getValue(route).fwd.map { it.first }
+        return lineStations[route.name]?.takeIf { it in stops }
+            ?: prefs.routes.map { it.from }.firstOrNull { it in stops }
+            ?: stops[stops.size / 2]
+    }
+    // Worked out on the engine thread while the tab shows, again when a delay or station changes,
+    // and every 20 s so trains drop off as they leave.
+    val lineBoards by produceState(emptyMap<RouteId, LineBoard>(), tab, settings, lineStations, prefs.lineDelays, prefs.routes) {
+        if (tab != Tab.LINES || settings) return@produceState
+        while (true) {
+            value = LINE_CARDS.associateWith { r -> stationOn(r).let { st -> LineBoard(st, vm.lineBoard(r, st)) } }
+            delay(20_000)
+        }
+    }
     var pickFrom by remember { mutableStateOf<String?>(null) }
     var topUp by remember { mutableStateOf(false) }
 
@@ -240,7 +260,12 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 }
             } else ScreenColumn {
                 when (key) {
-                    Tab.LINES.name -> LinesScreen(vm.todayInfo(), now, prefs.lineDelays, vm::setLineDelay, onSettings = { settings = true })
+                    Tab.LINES.name -> LinesScreen(
+                        vm.todayInfo(), now, prefs.lineDelays, vm::setLineDelay,
+                        boards = lineBoards,
+                        onPickStation = { lineStationFor = it },
+                        onSettings = { settings = true },
+                    )
                     Tab.MAP.name -> MapScreen(onSettings = { settings = true }, onStation = { stationFor = it })
                     else -> SettingsScreen(
                         prefs = prefs,
@@ -346,6 +371,16 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 plan = plan,
                 onDone = { vm.setPlan(it) },
                 onDismiss = { whenOpen = false },
+            )
+        }
+
+        lineStationFor?.let { r ->
+            LineStationSheet(
+                title = LINE_TITLES.getValue(r),
+                route = r,
+                selected = stationOn(r),
+                onPick = { lineStations = lineStations + (r.name to it) },
+                onDismiss = { lineStationFor = null },
             )
         }
 
@@ -527,3 +562,7 @@ private fun coachStops(route: SavedRoute, departures: List<RouteDeparture>, pref
     return listOf(CoachStop(null, "At ${Network.name(route.from)}", first?.let { legShort(it) }, prefs.coachFor(route.id, null))) +
         changes.map { leg -> CoachStop(leg.from, "Change at ${Network.name(leg.from)}", legShort(leg), prefs.coachFor(route.id, leg.from)) }
 }
+
+/** The Lines tab's cards, in order, and their titles. */
+private val LINE_CARDS = listOf(RouteId.BLUE, RouteId.GREEN, RouteId.INTER, RouteId.YELLOW)
+private val LINE_TITLES = mapOf(RouteId.BLUE to "Blue Line", RouteId.GREEN to "Green Line", RouteId.INTER to "Inter-corridor", RouteId.YELLOW to "Yellow Line")
