@@ -2,6 +2,8 @@ package com.flash.headway.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -183,14 +185,15 @@ private fun NetworkMap(onStation: (String) -> Unit) {
 fun StationSheet(id: String, boards: List<StationBoard>, now: () -> Long, onRouteFrom: () -> Unit, onDismiss: () -> Unit) {
     val hw = LocalHw.current
     HwSheet(onDismiss = onDismiss) { close ->
+        // The name stays put; an interchange's many directions scroll under it.
+        Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(Network.name(id), style = HwType.headline, color = hw.text)
+            Text(Network.stations.getValue(id).lines.joinToString(" · ") { it.label }, style = HwType.footnote, color = hw.sub)
+        }
         Column(
-            Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(Network.name(id), style = HwType.headline, color = hw.text)
-                Text(Network.stations.getValue(id).lines.joinToString(" · ") { it.label }, style = HwType.footnote, color = hw.sub)
-            }
             boards.forEach { b ->
                 val many = b.group.terminals.size > 1
                 Column(

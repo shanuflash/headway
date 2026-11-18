@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.flash.headway.engine.MINUTE
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import com.flash.headway.app.DELAY_MAX
 import com.flash.headway.ui.theme.HwType
@@ -61,6 +63,10 @@ fun TrainDelaySheet(
     lines: List<TripLine> = emptyList(),
     lineDelays: Map<String, Int> = emptyMap(),
     onLineDelay: (String, Int) -> Unit = { _, _ -> },
+    /** A direct train's line and direction: its delay adds to this train's, so it's shown here too. */
+    line: TripLine? = null,
+    /** The train's timetabled departure, to show the time it'll have on the card. */
+    at: Long? = null,
 ) {
     val hw = LocalHw.current
     // Its own value while dragging, so the thumb never waits on the saved setting.
@@ -119,6 +125,18 @@ fun TrainDelaySheet(
                             }
                         }
                     }
+                    // What the card will show: this train's delay plus its line's, from the timetable.
+                    val lineD = line?.let { lineDelays[it.key] } ?: 0
+                    if (at != null) {
+                        Text(
+                            "Leaves ${clock(at + (d + lineD) * MINUTE)} on your card" +
+                                if (lineD != 0) ", with the line ${delayText(lineD).lowercase()}" else "",
+                            style = HwType.footnote,
+                            color = hw.sub,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         StepButton(Icons.Rounded.Remove, "One minute earlier", enabled = d > -DELAY_MAX) { set(d - 1) }
                         DelaySlider(d, tone, ::set, Modifier.weight(1f))
@@ -153,6 +171,15 @@ fun TrainDelaySheet(
                             Icon(Icons.Rounded.History, null, tint = hw.tint, modifier = Modifier.size(18.dp))
                             Text("Follow the route again", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
                         }
+                    }
+                }
+                if (line != null) {
+                    // The whole line in this direction, as on the Lines tab: it moves this train too.
+                    Column(
+                        Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        LineDelayRow(line.name, "Every train this way, on all routes", line.colors, lineDelays[line.key] ?: 0) { onLineDelay(line.key, it) }
                     }
                 }
             }

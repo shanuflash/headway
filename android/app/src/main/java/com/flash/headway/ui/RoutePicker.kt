@@ -277,7 +277,8 @@ fun RouteMenu(
     coaches: List<CoachStop>,
     onCoach: (String?, Coach?) -> Unit,
     routeId: String,
-    journeyLines: List<TripLine>,
+    /** Each train's line on a route reached with a change (it has no delay of its own); null for a direct route. */
+    journeyLines: List<TripLine>?,
     lineDelays: Map<String, Int>,
     onLineDelay: (String, Int) -> Unit,
     delay: Int,
@@ -322,9 +323,13 @@ fun RouteMenu(
                     Text("Set each train so you step off near the stairs to your next line, then the exit. Shown at each step of the trip.", style = HwType.footnote, color = hw.sub)
                 }
             }
-            if (journeyLines.isNotEmpty()) {
+            if (journeyLines != null) {
                 Text("Running early or late?", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
-                JourneyDelays(journeyLines, lineDelays, onLineDelay)
+                if (journeyLines.isEmpty()) {
+                    Footnote("Set each line's delay on the Lines tab: this trip changes trains, so it has no one delay.")
+                } else {
+                    JourneyDelays(journeyLines, lineDelays, onLineDelay)
+                }
             } else {
                 DelayCard(routeId, delay, delayPreview, onDelay)
             }

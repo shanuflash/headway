@@ -356,6 +356,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     lines = tripLines(legs, hw),
                     lineDelays = prefs.lineDelays,
                     onLineDelay = vm::setLineDelay,
+                    line = legs?.singleOrNull()?.let { directLine(it, hw) },
+                    at = at,
                 )
             }
         }
@@ -437,7 +439,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     onCoach = { station, coach -> vm.setCoach(id, station, coach) },
                     routeId = id,
                     // A route only reached with a change has no delay of its own: each train's line has one.
-                    journeyLines = if (isDirect(route)) emptyList() else routeTripLines(statuses?.firstOrNull { it.route.id == id }?.departures.orEmpty(), hw),
+                    journeyLines = if (isDirect(route)) null else routeTripLines(statuses?.firstOrNull { it.route.id == id }?.departures.orEmpty(), hw),
                     lineDelays = prefs.lineDelays,
                     onLineDelay = vm::setLineDelay,
                     delay = prefs.delayOf(id),
@@ -546,6 +548,14 @@ private fun tripLines(legs: List<Leg>?, hw: HwColors): List<TripLine> {
         )
     }
 }
+
+/** A direct train's line and direction, for its delay row. */
+private fun directLine(leg: Leg, hw: HwColors): TripLine = TripLine(
+    key = leg.trip.lineDirKey,
+    name = "${legShort(leg)} toward ${Network.name(lineTerminal(leg.trip.route, leg.trip.dir))}",
+    colors = legColors(leg, hw),
+    boards = "",
+)
 
 /** Every train the upcoming trips with changes ride on a route, for the route menu's delays. */
 private fun routeTripLines(departures: List<RouteDeparture>, hw: HwColors): List<TripLine> =
