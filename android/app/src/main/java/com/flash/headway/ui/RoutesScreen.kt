@@ -454,7 +454,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                     FollowButton { actions.remind(s, shown.dep) }
                     // Didn't tap it before setting off: pick the train you're on and follow from there.
                     Text(
-                        "Already on a train? Follow it",
+                        "Already on the way? Follow it",
                         style = HwType.subheadStrong,
                         color = hw.tint,
                         textAlign = TextAlign.Center,

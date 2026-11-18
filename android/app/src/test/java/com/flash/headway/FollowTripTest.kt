@@ -8,6 +8,7 @@ import com.flash.headway.app.encodeTrip
 import com.flash.headway.app.followTrip
 import com.flash.headway.app.followOf
 import com.flash.headway.app.tripsOnTheWay
+import com.flash.headway.app.tripFrom
 import com.flash.headway.app.nextLeg
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.MINUTE
@@ -70,11 +71,30 @@ class FollowTripTest {
     }
 
     @Test
+    fun aTripJoinedPartwayIsFollowedFromThatStation() {
+        // A bus to Alandur, then the rest by metro.
+        val joinAt = "alandur"
+        val now = at(8, 10)
+        val d = Schedule().tripFrom(route, joinAt, now)!!
+        assertEquals(joinAt, d.legs!!.first().from)
+        assertTrue(d.dep >= now)
+        val trip = followOf(route, d, joinAt)!!
+        assertEquals(joinAt, trip.from)
+        val followed = Schedule().followTrip(route, trip, emptyMap())!!
+        assertEquals(d.legs!!.map { it.dep to it.arr }, followed.legs!!.map { it.dep to it.arr })
+        // Joining at the route's own start is just following it.
+        assertNull(followOf(route, firstTrip(), route.from)!!.from)
+    }
+
+    @Test
     fun aTripRoundTripsAsText() {
         val t = ActiveTrip("guindy>koyambedu", "BLUE:REV", 1_731_900_000_000L)
         assertEquals(t, decodeTrip(encodeTrip(t)))
         assertNull(decodeTrip(null))
         assertNull(decodeTrip("a>b|BLUE:FWD"))
         assertNull(decodeTrip("a>b|BLUE:FWD|soon"))
+        val joined = t.copy(from = "alandur")
+        assertEquals(joined, decodeTrip(encodeTrip(joined)))
+        assertNull(decodeTrip("a>b|BLUE:FWD|1731900000000|nowhere"))
     }
 }

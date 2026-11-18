@@ -159,7 +159,7 @@ fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, co
  * its timetabled time plus its line's delay now), the earliest way on from there.
  */
 fun Schedule.followTrip(route: SavedRoute, trip: ActiveTrip, lineDelays: Map<String, Int>): RouteDeparture? =
-    plan(route.from, route.to, trip.timetabled + (lineDelays[trip.firstKey] ?: 0) * MINUTE)?.asDeparture()
+    plan(trip.from ?: route.from, route.to, trip.timetabled + (lineDelays[trip.firstKey] ?: 0) * MINUTE)?.asDeparture()
 
 /**
  * Trips with changes on [route] already under way at [now]: left the start, not yet arrived.
@@ -179,11 +179,18 @@ fun Schedule.tripsOnTheWay(route: SavedRoute, now: Long, lookBack: Long = 150 * 
     return byArrival.values.sortedByDescending { it.dep }
 }
 
-/** The [ActiveTrip] that follows departure [d] on [route]: its first train, by its timetabled time. */
-fun followOf(route: SavedRoute, d: RouteDeparture): ActiveTrip? {
+/**
+ * The [ActiveTrip] that follows departure [d] on [route]: its first train, by its timetabled
+ * time. [from] is where it starts when that isn't the route's start (joining partway).
+ */
+fun followOf(route: SavedRoute, d: RouteDeparture, from: String? = null): ActiveTrip? {
     val first = d.legs?.firstOrNull() ?: return null
-    return ActiveTrip(route.id, first.trip.lineDirKey, d.timetabled ?: (d.dep - first.trip.lineDelay * MINUTE))
+    return ActiveTrip(route.id, first.trip.lineDirKey, d.timetabled ?: (d.dep - first.trip.lineDelay * MINUTE), from?.takeIf { it != route.from })
 }
+
+/** The rest of [route] joined partway: the first way on from [station] to its end, leaving at or after [at]. */
+fun Schedule.tripFrom(route: SavedRoute, station: String, at: Long): RouteDeparture? =
+    plan(station, route.to, at)?.asDeparture()
 
 /** Where a followed trip is at [now]: the next train to board (by index), or past the last one. */
 fun RouteDeparture.nextLeg(now: Long): Int = legs.orEmpty().indexOfFirst { it.dep > now }

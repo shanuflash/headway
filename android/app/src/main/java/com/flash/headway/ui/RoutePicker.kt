@@ -121,7 +121,7 @@ private fun SheetHeader(title: String, sub: String?, icon: ImageVector, descript
 }
 
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
+internal fun SearchField(query: String, onChange: (String) -> Unit) {
     val hw = LocalHw.current
     Row(
         Modifier
@@ -153,7 +153,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-private fun StationList(query: String, onPick: (String) -> Unit) {
+internal fun StationList(query: String, onPick: (String) -> Unit) {
     val q = query.trim().lowercase()
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),

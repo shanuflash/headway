@@ -475,6 +475,21 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         update { it.copy(trip = trip, reminder = null) }
     }
 
+    /**
+     * Joins [route] partway (after a bus, say): follows the first trip on from [station] to its
+     * end, leaving once the rider gets there in [inMinutes]. Returns it, or null when none runs.
+     */
+    suspend fun followFrom(route: SavedRoute, station: String, inMinutes: Int): com.flash.headway.engine.RouteDeparture? {
+        val d = withContext(engineThread) {
+            val p = prefs.value ?: return@withContext null
+            engine(p).tripFrom(route, station, Clock.now() + inMinutes * MINUTE)
+        } ?: return null
+        val trip = followOf(route, d, station) ?: return null
+        Alerts.startTrip(getApplication(), route, trip)
+        update { it.copy(trip = trip, reminder = null) }
+        return d
+    }
+
     /** Stops following a trip (and its countdown). */
     fun endTrip() {
         Alerts.stopCountdown(getApplication())

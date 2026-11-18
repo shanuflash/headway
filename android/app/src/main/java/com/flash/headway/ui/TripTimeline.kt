@@ -25,6 +25,14 @@ import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -246,12 +254,48 @@ private fun DrawScope.rail(rail: Rail, from: Offset, to: Offset) {
 
 /**
  * "Which train are you on?": trips on a route already under way, newest first, each with where
- * it's got to. Picking one follows it from there. [trips] is null while they're worked out.
+ * it's got to; picking one follows it from there. Or join partway (after a bus, say): pick the
+ * station and when you'll get there, and the rest of the trip is followed from it. [trips] is
+ * null while they're worked out.
  */
 @Composable
-fun OnTheWaySheet(title: String, trips: List<com.flash.headway.engine.RouteDeparture>?, now: () -> Long, onPick: (com.flash.headway.engine.RouteDeparture) -> Unit, onDismiss: () -> Unit) {
+fun OnTheWaySheet(
+    title: String,
+    to: String,
+    trips: List<com.flash.headway.engine.RouteDeparture>?,
+    now: () -> Long,
+    onPick: (com.flash.headway.engine.RouteDeparture) -> Unit,
+    onJoinAt: (station: String, inMinutes: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val hw = LocalHw.current
-    HwSheet(onDismiss = onDismiss) { close ->
+    var joining by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var minutes by remember { mutableIntStateOf(0) }
+    HwSheet(onDismiss = onDismiss, heightFraction = 0.9f) { close ->
+        if (joining) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                RoundButton(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", { joining = false }, background = hw.card)
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Where are you joining?", style = HwType.headline, color = hw.text)
+                    Text("Then on to ${Network.name(to)}", style = HwType.footnote, color = hw.sub)
+                }
+                Box(Modifier.size(44.dp))
+            }
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Getting there in", style = HwType.subheadStrong, color = hw.text, modifier = Modifier.padding(start = 4.dp))
+                Segmented(
+                    options = listOf(0 to "Now", 5 to "5 min", 10 to "10 min", 15 to "15 min", 20 to "20 min"),
+                    selected = minutes,
+                    onSelect = { minutes = it },
+                )
+            }
+            SearchField(query) { query = it }
+            Box(Modifier.weight(1f, fill = false)) {
+                StationList(query) { station -> close { onJoinAt(station, minutes) } }
+            }
+            return@HwSheet
+        }
         Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Which train are you on?", style = HwType.headline, color = hw.text)
             Text(title, style = HwType.footnote, color = hw.sub)
@@ -288,6 +332,18 @@ fun OnTheWaySheet(title: String, trips: List<com.flash.headway.engine.RouteDepar
                     )
                 }
             }
+            // Part of the way by bus (or on foot): pick up the trip at another station.
+            Text("Joining partway?", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
+            ListCard(
+                listOf<@Composable () -> Unit>({
+                    ListRow(onClick = { joining = true }) {
+                        Icon(Icons.Rounded.DirectionsBus, null, tint = hw.tint, modifier = Modifier.size(22.dp))
+                        RowText("Start from another station", "Took a bus for part of it? Pick where you'll board", modifier = Modifier.weight(1f))
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
+                    }
+                }),
+                inset = 50.dp,
+            )
         }
     }
 }

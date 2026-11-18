@@ -42,17 +42,21 @@ data class Reminder(val routeId: String, val dep: Long)
 /**
  * A trip with changes the rider is on (or about to board): the card and the countdown follow it
  * train by train. Kept by its first train: [firstKey] its line and direction, [timetabled] its
- * timetabled departure from the route's start, so a line delay set on the way still finds it.
+ * timetabled departure from where it starts, so a line delay set on the way still finds it.
+ * [from] is set when the rider joins partway (after a bus, say): the trip starts there instead of
+ * at the route's own start.
  */
-data class ActiveTrip(val routeId: String, val firstKey: String, val timetabled: Long)
+data class ActiveTrip(val routeId: String, val firstKey: String, val timetabled: Long, val from: String? = null)
 
-/** "a>b|BLUE:FWD|1731900000000": an [ActiveTrip] as text, in DataStore and alarm intents. */
-fun encodeTrip(t: ActiveTrip): String = "${t.routeId}|${t.firstKey}|${t.timetabled}"
+/** "a>b|BLUE:FWD|1731900000000|alandur": an [ActiveTrip] as text, in DataStore and alarm intents. */
+fun encodeTrip(t: ActiveTrip): String = "${t.routeId}|${t.firstKey}|${t.timetabled}" + (t.from?.let { "|$it" } ?: "")
 
 fun decodeTrip(raw: String?): ActiveTrip? {
-    val bits = raw?.split('|')?.takeIf { it.size == 3 } ?: return null
+    val bits = raw?.split('|')?.takeIf { it.size == 3 || it.size == 4 } ?: return null
     val at = bits[2].toLongOrNull() ?: return null
-    return ActiveTrip(bits[0], bits[1], at)
+    val from = bits.getOrNull(3)?.takeIf { it in Network.stations }
+    if (bits.size == 4 && from == null) return null
+    return ActiveTrip(bits[0], bits[1], at, from)
 }
 
 /** Where to stand on the platform for this route, set by the rider (no public data has it). */

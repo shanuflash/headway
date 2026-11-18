@@ -94,6 +94,8 @@ import com.flash.headway.data.Timetable
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -133,6 +135,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var stationFor by remember { mutableStateOf<String?>(null) }
     // A route whose trips already under way are listed, to follow the one the rider's on.
     var onTheWayFor by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     // The Lines tab: the station each card shows next trains at (by line), and the card picking one.
     var lineStations by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var lineStationFor by remember { mutableStateOf<RouteId?>(null) }
@@ -390,12 +393,26 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             } else {
                 OnTheWaySheet(
                     title = "${Network.name(route.from)} → ${Network.name(route.to)}",
+                    to = route.to,
                     trips = produceState<List<RouteDeparture>?>(null, id) { value = vm.tripsOnTheWay(route) }.value,
                     now = now,
                     onPick = { d ->
                         askNotifications()
                         vm.followOnTheWay(route, d)
                         toast("Following the ${clock(d.dep)} trip")
+                    },
+                    onJoinAt = { station, inMinutes ->
+                        askNotifications()
+                        scope.launch {
+                            val d = vm.followFrom(route, station, inMinutes)
+                            toast(
+                                if (d == null) {
+                                    "No trains from ${Network.name(station)} to ${Network.name(route.to)} then"
+                                } else {
+                                    "Following from ${Network.name(station)}: the ${clock(d.dep)}"
+                                },
+                            )
+                        }
                     },
                     onDismiss = { onTheWayFor = null },
                 )
