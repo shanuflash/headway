@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.flash.headway.app.Coach
 import androidx.compose.material.icons.rounded.Navigation
@@ -114,6 +115,8 @@ class RouteActions(
     val swapPreview: () -> Unit = {},
     /** Stops following a trip with changes. */
     val endTrip: () -> Unit = {},
+    /** Opens the trips already under way on a route, to follow the one the rider's on. */
+    val onTheWay: (String) -> Unit = {},
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -447,7 +450,22 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             shown.legs?.takeIf { it.size > 1 }?.let { legs ->
                 TripTimeline(legs, Modifier.padding(horizontal = 20.dp)) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
                 // Taking this one: follow it, so the card and countdown move on at each change.
-                if (saved && s.plan == null) FollowButton { actions.remind(s, shown.dep) }
+                if (saved && s.plan == null) {
+                    FollowButton { actions.remind(s, shown.dep) }
+                    // Didn't tap it before setting off: pick the train you're on and follow from there.
+                    Text(
+                        "Already on a train? Follow it",
+                        style = HwType.subheadStrong,
+                        color = hw.tint,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .clip(CircleShape)
+                            .press(scaleTo = 0.97f) { actions.onTheWay(r.id) }
+                            .padding(vertical = 6.dp),
+                    )
+                }
             }
         }
 

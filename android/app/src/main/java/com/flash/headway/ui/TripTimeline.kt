@@ -2,6 +2,9 @@ package com.flash.headway.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -238,5 +241,53 @@ private fun DrawScope.rail(rail: Rail, from: Offset, to: Offset) {
         drawLine(Brush.verticalGradient(listOf(rail.color, rail.fade), startY = from.y, endY = to.y), from, to, strokeWidth = 4.dp.toPx(), cap = StrokeCap.Butt)
     } else {
         drawLine(rail.color, from, to, strokeWidth = 4.dp.toPx(), cap = StrokeCap.Butt)
+    }
+}
+
+/**
+ * "Which train are you on?": trips on a route already under way, newest first, each with where
+ * it's got to. Picking one follows it from there. [trips] is null while they're worked out.
+ */
+@Composable
+fun OnTheWaySheet(title: String, trips: List<com.flash.headway.engine.RouteDeparture>?, now: () -> Long, onPick: (com.flash.headway.engine.RouteDeparture) -> Unit, onDismiss: () -> Unit) {
+    val hw = LocalHw.current
+    HwSheet(onDismiss = onDismiss) { close ->
+        Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Which train are you on?", style = HwType.headline, color = hw.text)
+            Text(title, style = HwType.footnote, color = hw.sub)
+        }
+        Column(
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            when {
+                trips == null -> Footnote("Finding trains on the way…")
+                trips.isEmpty() -> Footnote("No trips on this route are on the way right now.")
+                else -> {
+                    Footnote("Pick the train you boarded. The card and countdown follow your trip from where it is now.")
+                    ListCard(
+                        trips.map { d ->
+                            @Composable {
+                                val legs = d.legs.orEmpty()
+                                val t = now()
+                                val i = legs.indexOfFirst { it.dep > t }
+                                val where = when {
+                                    i < 0 -> "Arriving ${clock(d.arr)}"
+                                    else -> "Next: change at ${Network.name(legs[i].from)}, the ${clock(legs[i].dep)} ${legShort(legs[i])}"
+                                }
+                                ListRow(onClick = { close { onPick(d) } }) {
+                                    Box(Modifier.size(10.dp).clip(CircleShape).background(legsBrush(legs, hw)))
+                                    Column(Modifier.weight(1f)) {
+                                        Text("The ${clock(d.dep)} from ${Network.name(legs.first().from)}", style = HwType.body, color = hw.text)
+                                        Text(where, style = HwType.footnote, color = hw.sub)
+                                    }
+                                }
+                            }
+                        },
+                        inset = 38.dp,
+                    )
+                }
+            }
+        }
     }
 }

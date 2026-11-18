@@ -6,6 +6,8 @@ import com.flash.headway.app.decodeTrip
 import com.flash.headway.app.delayedDepartures
 import com.flash.headway.app.encodeTrip
 import com.flash.headway.app.followTrip
+import com.flash.headway.app.followOf
+import com.flash.headway.app.tripsOnTheWay
 import com.flash.headway.app.nextLeg
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.MINUTE
@@ -50,6 +52,21 @@ class FollowTripTest {
         assertEquals(0, d.nextLeg(legs[0].dep - MINUTE))
         assertEquals(1, d.nextLeg(legs[0].dep + 1))
         assertEquals(-1, d.nextLeg(legs.last().dep + 1))
+    }
+
+    @Test
+    fun aTripAlreadyUnderWayCanBeFollowedFromTheMiddle() {
+        val d = firstTrip()
+        // Just after its first train has left: it's on the way, and following it finds the same trip.
+        val now = d.legs!!.first().dep + MINUTE
+        val onTheWay = Schedule().tripsOnTheWay(route, now)
+        assertTrue(onTheWay.isNotEmpty())
+        assertTrue(onTheWay.all { it.dep <= now && it.arr > now && it.legs!!.size > 1 })
+        assertEquals(onTheWay.sortedByDescending { it.dep }, onTheWay)
+        val mine = onTheWay.first { it.dep == d.dep }
+        val followed = Schedule().followTrip(route, followOf(route, mine)!!, emptyMap())!!
+        assertEquals(d.legs!!.map { it.dep to it.arr }, followed.legs!!.map { it.dep to it.arr })
+        assertEquals(1, followed.nextLeg(now))
     }
 
     @Test

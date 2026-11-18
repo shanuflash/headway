@@ -131,6 +131,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     val preview by vm.preview.collectAsStateWithLifecycle()
     val feed by vm.feed.collectAsStateWithLifecycle()
     var stationFor by remember { mutableStateOf<String?>(null) }
+    // A route whose trips already under way are listed, to follow the one the rider's on.
+    var onTheWayFor by remember { mutableStateOf<String?>(null) }
     // The Lines tab: the station each card shows next trains at (by line), and the card picking one.
     var lineStations by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var lineStationFor by remember { mutableStateOf<RouteId?>(null) }
@@ -259,6 +261,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 vm.endTrip()
                                 toast("Trip ended")
                             },
+                            onTheWay = { onTheWayFor = it },
                         ),
                     )
                 }
@@ -378,6 +381,25 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 onDone = { vm.setPlan(it) },
                 onDismiss = { whenOpen = false },
             )
+        }
+
+        onTheWayFor?.let { id ->
+            val route = prefs.routes.firstOrNull { it.id == id }
+            if (route == null) {
+                LaunchedEffect(id) { onTheWayFor = null }
+            } else {
+                OnTheWaySheet(
+                    title = "${Network.name(route.from)} → ${Network.name(route.to)}",
+                    trips = produceState<List<RouteDeparture>?>(null, id) { value = vm.tripsOnTheWay(route) }.value,
+                    now = now,
+                    onPick = { d ->
+                        askNotifications()
+                        vm.followOnTheWay(route, d)
+                        toast("Following the ${clock(d.dep)} trip")
+                    },
+                    onDismiss = { onTheWayFor = null },
+                )
+            }
         }
 
         lineStationFor?.let { r ->

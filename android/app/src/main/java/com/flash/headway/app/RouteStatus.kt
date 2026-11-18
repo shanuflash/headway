@@ -4,6 +4,7 @@ import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.engine.Schedule
 import com.flash.headway.engine.asDeparture
+import com.flash.headway.engine.lineDirKey
 import com.flash.headway.engine.routeGroup
 import com.flash.headway.engine.IST
 import java.time.Instant
@@ -159,6 +160,30 @@ fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, co
  */
 fun Schedule.followTrip(route: SavedRoute, trip: ActiveTrip, lineDelays: Map<String, Int>): RouteDeparture? =
     plan(route.from, route.to, trip.timetabled + (lineDelays[trip.firstKey] ?: 0) * MINUTE)?.asDeparture()
+
+/**
+ * Trips with changes on [route] already under way at [now]: left the start, not yet arrived.
+ * Newest first, so the rider can find the one they're on and follow it from there. Of trips
+ * that arrive together only the latest to leave is kept, as in [Schedule.journeys].
+ */
+fun Schedule.tripsOnTheWay(route: SavedRoute, now: Long, lookBack: Long = 150 * MINUTE): List<RouteDeparture> {
+    val byArrival = LinkedHashMap<Long, RouteDeparture>()
+    var t = now - lookBack
+    var guard = 0
+    while (guard++ < 200) {
+        val j = plan(route.from, route.to, t) ?: break
+        if (j.dep > now) break
+        if (j.arr > now && j.legs.size > 1) byArrival[j.arr] = j.asDeparture()
+        t = j.dep + 1
+    }
+    return byArrival.values.sortedByDescending { it.dep }
+}
+
+/** The [ActiveTrip] that follows departure [d] on [route]: its first train, by its timetabled time. */
+fun followOf(route: SavedRoute, d: RouteDeparture): ActiveTrip? {
+    val first = d.legs?.firstOrNull() ?: return null
+    return ActiveTrip(route.id, first.trip.lineDirKey, d.timetabled ?: (d.dep - first.trip.lineDelay * MINUTE))
+}
 
 /** Where a followed trip is at [now]: the next train to board (by index), or past the last one. */
 fun RouteDeparture.nextLeg(now: Long): Int = legs.orEmpty().indexOfFirst { it.dep > now }

@@ -451,8 +451,8 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         // each change, then arrival, instead of stopping when the first train leaves.
         val d = _statuses.value?.firstOrNull { it.route.id == route.id }?.departures?.firstOrNull { it.dep == dep }
         val legs = d?.legs
-        if (d != null && legs != null && legs.size > 1) {
-            val trip = ActiveTrip(route.id, legs.first().trip.lineDirKey, d.timetabled ?: d.dep)
+        val trip = d?.takeIf { (legs?.size ?: 1) > 1 }?.let { followOf(route, it) }
+        if (trip != null) {
             Alerts.startTrip(ctx, route, trip)
             update { it.copy(reminder = Reminder(route.id, dep), trip = trip) }
             return
@@ -460,6 +460,19 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         Alerts.startCountdown(ctx, route, dep, p.delayRule(route.id))
         // One countdown at a time: a train on another route replaces a trip being followed.
         update { it.copy(reminder = Reminder(route.id, dep), trip = null) }
+    }
+
+    /** Trips with changes on [route] already under way, newest first, to follow one mid-trip. On the engine thread. */
+    suspend fun tripsOnTheWay(route: SavedRoute): List<com.flash.headway.engine.RouteDeparture> = withContext(engineThread) {
+        val p = prefs.value ?: return@withContext emptyList()
+        engine(p).tripsOnTheWay(route, Clock.now())
+    }
+
+    /** Follows a trip already under way: the card and countdown pick it up wherever it's got to. */
+    fun followOnTheWay(route: SavedRoute, d: com.flash.headway.engine.RouteDeparture) {
+        val trip = followOf(route, d) ?: return
+        Alerts.startTrip(getApplication(), route, trip)
+        update { it.copy(trip = trip, reminder = null) }
     }
 
     /** Stops following a trip (and its countdown). */
