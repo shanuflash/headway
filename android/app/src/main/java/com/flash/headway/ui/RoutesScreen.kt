@@ -68,6 +68,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flash.headway.app.Coach
+import androidx.compose.material.icons.rounded.Navigation
+import com.flash.headway.app.nextLeg
 import com.flash.headway.app.TopUp
 import com.flash.headway.app.Prefs
 import com.flash.headway.app.RouteStatus
@@ -110,6 +112,8 @@ class RouteActions(
     val trainDelay: (String, Long, DayType, List<Leg>?) -> Unit = { _, _, _, _ -> },
     /** Flips the quick look (not a saved card with the same stations). */
     val swapPreview: () -> Unit = {},
+    /** Stops following a trip with changes. */
+    val endTrip: () -> Unit = {},
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -410,7 +414,14 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         if (isPreview) WhenPill(s.plan, actions.whenOpen)
 
         val shown = s.departures.getOrNull(index)
-        if (shown == null) {
+        val trip = s.trip?.takeIf { !isPreview }
+        if (trip != null) {
+            // On a trip with changes: count down to whatever's next, train by train.
+            TripHero(trip, prefs, r.id, now, actions.endTrip)
+            trip.legs?.let { legs ->
+                TripTimeline(legs, Modifier.padding(horizontal = 20.dp), now = now) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
+            }
+        } else if (shown == null) {
             Text(
                 when (s.plan?.mode) {
                     PlanMode.ARRIVE -> "No trains get there by then."
@@ -435,6 +446,8 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             Chips(s, index, now) { picked = it }
             shown.legs?.takeIf { it.size > 1 }?.let { legs ->
                 TripTimeline(legs, Modifier.padding(horizontal = 20.dp)) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
+                // Taking this one: follow it, so the card and countdown move on at each change.
+                if (saved && s.plan == null) FollowButton { actions.remind(s, shown.dep) }
             }
         }
 
@@ -571,6 +584,80 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
         }
         Text("Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}$note", style = HwType.subhead, color = hw.sub)
         d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
+    }
+}
+
+/** "Follow this trip": under a trip with changes, to have the card and countdown follow it. */
+@Composable
+private fun FollowButton(onClick: () -> Unit) {
+    val hw = LocalHw.current
+    Row(
+        Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(CircleShape)
+            .background(hw.tintSoft)
+            .press(scaleTo = 0.97f, onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Navigation, null, tint = hw.tint, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Follow this trip", style = HwType.subheadStrong, color = hw.tint)
+    }
+}
+
+/**
+ * A followed trip with changes: what's next and a countdown to it. Before the first train, the
+ * train to board; on the way, the train at the next change (where to get off, the walk, its
+ * platform and coach); after the last one, arrival.
+ */
+@Composable
+private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: () -> Long, onEnd: () -> Unit) {
+    val hw = LocalHw.current
+    val legs = trip.legs ?: return
+    val t = now()
+    val i = trip.nextLeg(t)
+    val leg = legs.getOrNull(i)
+    fun coach(l: Leg, first: Boolean) = prefs.coachFor(routeId, if (first) null else l.from)?.let { "${it.label.replaceFirstChar { c -> c.uppercase() }} coach" }
+    val label: String
+    val target: Long
+    val lines = ArrayList<String>()
+    when {
+        leg == null -> {
+            label = "Arriving at ${Network.name(legs.last().to)}"
+            target = trip.arr
+            lines += "Get off at ${clock(trip.arr)}"
+        }
+        i == 0 -> {
+            label = "Your trip · board at ${Network.name(leg.from)}"
+            target = leg.dep
+            lines += "${legLineName(leg)} toward ${Network.name(leg.trip.dest)} · leaves ${clock(leg.dep)}"
+            listOfNotNull(legPlatform(leg), coach(leg, true)).takeIf { it.isNotEmpty() }?.let { lines += it.joinToString(" · ") }
+        }
+        else -> {
+            val prev = legs[i - 1]
+            val walk = Network.transfer(leg.from)
+            label = "Change at ${Network.name(leg.from)}"
+            target = leg.dep
+            lines += "${legLineName(leg)} toward ${Network.name(leg.trip.dest)} · leaves ${clock(leg.dep)}"
+            val getOff = if (t < prev.arr) "Get off at ${clock(prev.arr)}" else null
+            lines += listOfNotNull(getOff, "$walk min walk", legPlatform(leg), coach(leg, false)).joinToString(" · ")
+        }
+    }
+    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = HwType.subheadStrong, color = hw.tint)
+            BigCountdown(target - t)
+            lines.forEach { Text(it, style = HwType.subhead, color = hw.sub) }
+        }
+        Box(
+            Modifier.size(52.dp).clip(CircleShape).background(hw.fill).edge(CircleShape).press(scaleTo = 0.9f, onClick = onEnd),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Close, contentDescription = "End trip", tint = hw.text, modifier = Modifier.size(24.dp))
+        }
     }
 }
 

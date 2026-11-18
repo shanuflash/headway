@@ -30,14 +30,22 @@ data class RouteStatus(
     val best: Int = 0,
     /** A quick look, not a saved route (it may be the same stations as one). */
     val isPreview: Boolean = false,
+    /** The trip with changes the rider is following on this route, train by train. */
+    val trip: RouteDeparture? = null,
 ) {
     val next: RouteDeparture? get() = departures.firstOrNull()
 
     /** Index of the first departure that belongs to tomorrow, or -1. */
     val tomorrowFrom: Int get() = if (closed) 0 else departures.indexOfFirst { it.trip.serviceDate != departures.first().trip.serviceDate }
 
-    /** When this card next changes: the shown train leaves. */
-    val nextChange: Long? get() = if (plan != null) null else next?.dep
+    /** When this card next changes: the shown train leaves, or a followed trip's next train or arrival. */
+    val nextChange: Long?
+        get() {
+            if (plan != null) return null
+            val t = trip ?: return next?.dep
+            val leg = t.legs?.firstOrNull { it.dep > now }
+            return listOfNotNull(next?.dep, leg?.dep ?: t.arr).minOrNull()
+        }
 }
 
 /**
@@ -144,6 +152,16 @@ fun routeStatus(s: Schedule, route: SavedRoute, now: Long, lastWarn: Boolean, co
         remainingToday = deps.count { it.trip.serviceDate == today },
     )
 }
+
+/**
+ * The trip being followed, planned again on the current delays: from its first train (found by
+ * its timetabled time plus its line's delay now), the earliest way on from there.
+ */
+fun Schedule.followTrip(route: SavedRoute, trip: ActiveTrip, lineDelays: Map<String, Int>): RouteDeparture? =
+    plan(route.from, route.to, trip.timetabled + (lineDelays[trip.firstKey] ?: 0) * MINUTE)?.asDeparture()
+
+/** Where a followed trip is at [now]: the next train to board (by index), or past the last one. */
+fun RouteDeparture.nextLeg(now: Long): Int = legs.orEmpty().indexOfFirst { it.dep > now }
 
 enum class PlanMode { LEAVE, ARRIVE }
 

@@ -121,7 +121,7 @@ private val DotCenter = 10.dp
  * A coloured rail per train, dotted while walking between lines.
  */
 @Composable
-fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, coachFor: (Int, Leg) -> Coach? = { _, _ -> null }) {
+fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Long)? = null, coachFor: (Int, Leg) -> Coach? = { _, _ -> null }) {
     val hw = LocalHw.current
     val walkRail = Rail(hw.sub, walk = true)
     Column(modifier.fillMaxWidth()) {
@@ -148,6 +148,7 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, coachFor: (Int,
             // Where to stand can differ train to train: each one's best coach, if set.
             val coach = coachFor(i, leg)?.let { " · ${it.label.replaceFirstChar { c -> c.uppercase() }} coach" }.orEmpty()
             StopRow(
+                passed = now != null && leg.dep <= now(),
                 time = clock(leg.dep),
                 station = leg.from,
                 sub = "${legLineName(leg)} toward ${Network.name(leg.trip.dest)}${platform?.let { " · $it" }.orEmpty()}$coach",
@@ -161,6 +162,7 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, coachFor: (Int,
             }
             val last = i == legs.lastIndex
             StopRow(
+                passed = now != null && leg.arr <= now(),
                 time = clock(leg.arr),
                 station = leg.to,
                 sub = if (last) "Arrive" else "Get off",
@@ -175,13 +177,15 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, coachFor: (Int,
 }
 
 @Composable
-private fun StopRow(time: String, station: String, sub: String, color: Color, filled: Boolean, above: Rail?, below: Rail?, strong: Boolean = false) {
+private fun StopRow(time: String, station: String, sub: String, color: Color, filled: Boolean, above: Rail?, below: Rail?, strong: Boolean = false, passed: Boolean = false) {
     val hw = LocalHw.current
+    // On a followed trip, stops already behind you fade back.
+    val ink = if (passed) hw.sub else hw.text
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Gap)) {
         Text(
             time,
             style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
-            color = hw.text,
+            color = ink,
             textAlign = TextAlign.End,
             maxLines = 1,
             modifier = Modifier.width(TimeWidth).padding(top = 1.dp),
@@ -200,7 +204,7 @@ private fun StopRow(time: String, station: String, sub: String, color: Color, fi
             Text(
                 Network.name(station),
                 style = HwType.subhead.copy(fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold),
-                color = hw.text,
+                color = ink,
             )
             Text(sub, style = HwType.footnote, color = hw.sub)
         }

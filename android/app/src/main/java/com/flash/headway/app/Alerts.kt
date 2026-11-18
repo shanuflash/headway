@@ -16,6 +16,10 @@ import com.flash.headway.MainActivity
 import com.flash.headway.R
 import com.flash.headway.data.Network
 import com.flash.headway.ui.clock
+import com.flash.headway.ui.legPlatform
+import com.flash.headway.ui.legLineName
+import com.flash.headway.engine.RouteDeparture
+import com.flash.headway.widget.Widgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,6 +41,8 @@ object Alerts {
     const val ACTION_FIRE = "com.flash.headway.FIRE"
     const val ACTION_NEXT = "com.flash.headway.NEXT"
     const val ACTION_STOP = "com.flash.headway.STOP"
+    const val ACTION_TRIP = "com.flash.headway.TRIP"
+    private const val EXTRA_TRIP = "trip"
     private const val EXTRA_FROM = "from"
     private const val EXTRA_TO = "to"
     private const val EXTRA_DEP = "dep"
@@ -79,10 +85,85 @@ object Alerts {
         }
     }
 
+    /**
+     * Follows a trip with changes train by train: a countdown to boarding, then to each change's
+     * train, then to arrival. An alarm as each train leaves posts the next step, so it carries on
+     * with the app closed; past arrival it clears itself. Planned on the rider's line delays.
+     */
+    fun startTrip(context: Context, route: SavedRoute, trip: ActiveTrip) {
+        val app = context.applicationContext
+        SharedEngine.post {
+            val j = SharedEngine.with(app) { it.followTrip(route, trip, Widgets.lineDelays(app)) }
+            val nm = app.getSystemService(NotificationManager::class.java)
+            if (j == null || Clock.now() > j.arr + 60_000L) {
+                nm.cancel(ID_COUNTDOWN)
+                return@post
+            }
+            postTrip(app, route, trip, j)
+        }
+    }
+
+    private fun postTrip(context: Context, route: SavedRoute, trip: ActiveTrip, j: RouteDeparture) {
+        val legs = j.legs ?: return
+        val now = Clock.now()
+        val i = j.nextLeg(now)
+        val leg = legs.getOrNull(i)
+        fun toward(l: com.flash.headway.engine.Leg) =
+            "${legLineName(l)} toward ${Network.name(l.trip.dest)}${legPlatform(l)?.let { " · $it" }.orEmpty()}"
+        val (title, text, at) = when {
+            leg == null -> Triple("Arriving at ${Network.name(route.to)}", "Get off at ${clock(j.arr)}.", j.arr)
+            i == 0 -> Triple("Board the ${clock(leg.dep)} at ${Network.name(leg.from)}", toward(leg) + ".", leg.dep)
+            else -> Triple(
+                "Change at ${Network.name(leg.from)}: the ${clock(leg.dep)}",
+                toward(leg) + ". ${Network.transfer(leg.from)} min walk.",
+                leg.dep,
+            )
+        }
+        if (canNotify(context)) {
+            val n = Notification.Builder(context, CHANNEL_COUNTDOWN)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setWhen(at - Clock.offset)
+                .setShowWhen(true)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_NAVIGATION)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setContentIntent(openApp(context))
+                .setDeleteIntent(broadcast(context, ACTION_STOP, route, at))
+                .addAction(Notification.Action.Builder(null, "End trip", broadcast(context, ACTION_STOP, route, at)).build())
+                .build()
+            context.getSystemService(NotificationManager::class.java).notify(ID_COUNTDOWN, n)
+        }
+        // The next step when this train leaves (or a minute past arrival, to clear it), and a buzz
+        // a few minutes before a train to catch.
+        val am = context.getSystemService(AlarmManager::class.java)
+        val next = (if (leg == null) j.arr + 60_000L else at + 1_000L) - Clock.offset
+        val pi = tripIntent(context, route, trip)
+        if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi)
+        } else {
+            am.setWindow(AlarmManager.RTC_WAKEUP, next, 30_000L, pi)
+        }
+        if (leg != null) scheduleSoon(context, route, leg.dep)
+    }
+
+    private fun tripIntent(context: Context, route: SavedRoute, trip: ActiveTrip): PendingIntent {
+        val intent = Intent(context, AlertReceiver::class.java).setAction(ACTION_TRIP)
+            .putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to).putExtra(EXTRA_TRIP, encodeTrip(trip))
+        return PendingIntent.getBroadcast(context, 4, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
     fun stopCountdown(context: Context) {
         val app = context.applicationContext
         SharedEngine.post {
-            app.getSystemService(AlarmManager::class.java).cancel(broadcast(app, ACTION_FIRE, null, 0))
+            val am = app.getSystemService(AlarmManager::class.java)
+            am.cancel(broadcast(app, ACTION_FIRE, null, 0))
+            am.cancel(broadcast(app, ACTION_TRIP, null, 0))
             val nm = app.getSystemService(NotificationManager::class.java)
             nm.cancel(ID_COUNTDOWN)
             nm.cancel(ID_SOON)
@@ -161,6 +242,7 @@ object Alerts {
         val code = when (action) {
             ACTION_FIRE -> 1
             ACTION_NEXT -> 2
+            ACTION_TRIP -> 4
             else -> 3
         }
         return PendingIntent.getBroadcast(context, code, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -180,6 +262,8 @@ object Alerts {
         return SavedRoute(from, to)
     }
 
+    internal fun tripFrom(intent: Intent): ActiveTrip? = decodeTrip(intent.getStringExtra(EXTRA_TRIP))
+
     internal fun depFrom(intent: Intent): Long = intent.getLongExtra(EXTRA_DEP, 0L)
 
     internal fun ruleFrom(intent: Intent): DelayRule = decodeRule(intent.getStringExtra(EXTRA_DELAY))
@@ -192,7 +276,11 @@ class AlertReceiver : BroadcastReceiver() {
         when (intent.action) {
             Alerts.ACTION_STOP -> {
                 Alerts.stopCountdown(context)
-                updatePrefs(context) { it.copy(reminder = null) }
+                updatePrefs(context) { it.copy(reminder = null, trip = null) }
+            }
+            Alerts.ACTION_TRIP -> {
+                val trip = Alerts.tripFrom(intent)
+                if (route != null && trip != null) Alerts.startTrip(context, route, trip)
             }
             Alerts.ACTION_NEXT -> if (route != null) {
                 val rule = Alerts.ruleFrom(intent)

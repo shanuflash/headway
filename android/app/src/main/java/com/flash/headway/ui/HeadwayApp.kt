@@ -255,6 +255,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             whenOpen = { whenOpen = true },
                             trainDelay = { id, at, type, legs -> trainDelayFor = TrainDelayTarget(id, at, type, legs) },
                             swapPreview = vm::swapPreview,
+                            endTrip = {
+                                vm.endTrip()
+                                toast("Trip ended")
+                            },
                         ),
                     )
                 }

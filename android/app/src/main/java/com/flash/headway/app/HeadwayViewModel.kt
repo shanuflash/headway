@@ -102,7 +102,12 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     val (list, previewNow) = withContext(engineThread) {
                         val s = engine(p)
-                        shown.routes.map { routeStatus(s, it, now, p.lastWarn, p.count, p.delayRule(it.id)) } to
+                        shown.routes.map { r ->
+                            val st = routeStatus(s, r, now, p.lastWarn, p.count, p.delayRule(r.id))
+                            // The trip being followed on this route, planned again on the delays now.
+                            val t = p.trip?.takeIf { it.routeId == r.id }
+                            if (t != null) st.copy(trip = s.followTrip(r, t, p.lineDelays)) else st
+                        } to
                             pv?.let { route ->
                                 if (plan != null) {
                                     // A plan doesn't change as the clock runs: work it out once.
@@ -115,6 +120,11 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                             }
                     }
                     _statuses.value = list
+                    // A followed trip is over once it's arrived (or can't be found, or its route went).
+                    p.trip?.let { t ->
+                        val trip = list.firstOrNull { it.route.id == t.routeId }?.trip
+                        if (trip == null || now > trip.arr + 2 * MINUTE) update { q -> if (q.trip == t) q.copy(trip = null) else q }
+                    }
                     _previewStatus.value = previewNow?.copy(isPreview = true)
                     // Recompute the moment a shown train leaves, else every 15 s.
                     val boundary = (list + listOfNotNull(previewNow)).mapNotNull { it.nextChange }.minOrNull()
@@ -212,6 +222,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             p.copy(
                 routes = p.routes.map { if (it.id == id) SavedRoute(r0.to, r0.from) else it },
                 reminder = p.reminder?.takeIf { it.routeId != id },
+                trip = p.trip?.takeIf { it.routeId != id },
             )
         }
     }
@@ -231,6 +242,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
             p.copy(
                 routes = routes,
                 reminder = p.reminder?.takeIf { it.routeId != id },
+                trip = p.trip?.takeIf { it.routeId != id },
                 coaches = p.coaches.filterKeys { it != id && !it.startsWith("$id@") },
                 delays = p.delays - id,
                 trainDelays = p.trainDelays - id,
@@ -270,6 +282,14 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         update { q ->
             val c = q.copy(lineDelays = next.lineDelays)
             if (moved != null && q.reminder == rem) c.copy(reminder = moved) else c
+        }
+        // A followed trip is planned again on the new delay (the countdown reads the widgets' mirror).
+        val trip = p.trip
+        val tripRoute = trip?.let { t -> p.routes.firstOrNull { it.id == t.routeId } }
+        if (trip != null && tripRoute != null) {
+            Widgets.mirror(getApplication(), next)
+            Alerts.startTrip(getApplication(), tripRoute, trip)
+            return
         }
         // The countdown's engine reads the widgets' mirror; write it first so it plans on the new times.
         if (moved != null && route != null) {
@@ -424,15 +444,40 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         val current = p.reminder
         if (current != null && current.routeId == route.id && current.dep == dep) {
             Alerts.stopCountdown(ctx)
-            update { it.copy(reminder = null) }
+            update { it.copy(reminder = null, trip = it.trip?.takeIf { t -> t.routeId != route.id }) }
+            return
+        }
+        // A trip with changes is followed train by train: the card and the countdown move on to
+        // each change, then arrival, instead of stopping when the first train leaves.
+        val d = _statuses.value?.firstOrNull { it.route.id == route.id }?.departures?.firstOrNull { it.dep == dep }
+        val legs = d?.legs
+        if (d != null && legs != null && legs.size > 1) {
+            val trip = ActiveTrip(route.id, legs.first().trip.lineDirKey, d.timetabled ?: d.dep)
+            Alerts.startTrip(ctx, route, trip)
+            update { it.copy(reminder = Reminder(route.id, dep), trip = trip) }
             return
         }
         Alerts.startCountdown(ctx, route, dep, p.delayRule(route.id))
-        update { it.copy(reminder = Reminder(route.id, dep)) }
+        // One countdown at a time: a train on another route replaces a trip being followed.
+        update { it.copy(reminder = Reminder(route.id, dep), trip = null) }
     }
 
+    /** Stops following a trip (and its countdown). */
+    fun endTrip() {
+        Alerts.stopCountdown(getApplication())
+        update { it.copy(trip = null, reminder = null) }
+    }
+
+    /** Whether the countdown at [dep] on [route] would follow a trip with changes. */
+    fun isTrip(route: SavedRoute, dep: Long): Boolean =
+        (_statuses.value?.firstOrNull { it.route.id == route.id }?.departures?.firstOrNull { it.dep == dep }?.legs?.size ?: 1) > 1
+
     fun reminderToast(route: SavedRoute, dep: Long): String =
-        "Counting down to the ${clock(dep)} from ${Network.name(route.from)}"
+        if (isTrip(route, dep)) {
+            "Following the ${clock(dep)} trip: it counts down to each train"
+        } else {
+            "Counting down to the ${clock(dep)} from ${Network.name(route.from)}"
+        }
 
     fun setLastWarn(on: Boolean) = update { it.copy(lastWarn = on) }
 
@@ -442,7 +487,7 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         Clock.offset = offset
         // A countdown set on the other clock would point at the wrong train.
         Alerts.stopCountdown(getApplication())
-        update { it.copy(mockAt = minutes, mockOffset = offset, reminder = null) }
+        update { it.copy(mockAt = minutes, mockOffset = offset, reminder = null, trip = null) }
     }
 
     fun setTheme(mode: ThemeMode) = update { it.copy(theme = mode) }

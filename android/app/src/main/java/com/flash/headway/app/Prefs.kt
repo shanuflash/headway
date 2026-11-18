@@ -39,6 +39,22 @@ data class SavedRoute(val from: String, val to: String) {
 
 data class Reminder(val routeId: String, val dep: Long)
 
+/**
+ * A trip with changes the rider is on (or about to board): the card and the countdown follow it
+ * train by train. Kept by its first train: [firstKey] its line and direction, [timetabled] its
+ * timetabled departure from the route's start, so a line delay set on the way still finds it.
+ */
+data class ActiveTrip(val routeId: String, val firstKey: String, val timetabled: Long)
+
+/** "a>b|BLUE:FWD|1731900000000": an [ActiveTrip] as text, in DataStore and alarm intents. */
+fun encodeTrip(t: ActiveTrip): String = "${t.routeId}|${t.firstKey}|${t.timetabled}"
+
+fun decodeTrip(raw: String?): ActiveTrip? {
+    val bits = raw?.split('|')?.takeIf { it.size == 3 } ?: return null
+    val at = bits[2].toLongOrNull() ?: return null
+    return ActiveTrip(bits[0], bits[1], at)
+}
+
 /** Where to stand on the platform for this route, set by the rider (no public data has it). */
 enum class Coach(val label: String) { FRONT("front"), MIDDLE("middle"), REAR("rear") }
 
@@ -66,6 +82,8 @@ data class Prefs(
     val trainDelays: Map<String, Map<String, Int>> = emptyMap(),
     /** Minutes each line's trains run off the timetable in each direction, set on the Lines tab (by [lineDirKey]). */
     val lineDelays: Map<String, Int> = emptyMap(),
+    /** The trip with changes being followed, if any. */
+    val trip: ActiveTrip? = null,
 ) {
     fun delayOf(routeId: String): Int = delays[routeId] ?: 0
 
@@ -97,6 +115,7 @@ class PrefsStore(private val context: Context) {
         val flips = stringPreferencesKey("flips")
         val trainDelays = stringPreferencesKey("train_delays")
         val lineDelays = stringPreferencesKey("line_delays")
+        val trip = stringPreferencesKey("trip")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -135,6 +154,7 @@ class PrefsStore(private val context: Context) {
             flips = decodeFlips(p[Keys.flips]),
             trainDelays = decodeTrainDelays(p[Keys.trainDelays]),
             lineDelays = decodeLineDelays(p[Keys.lineDelays]),
+            trip = decodeTrip(p[Keys.trip]),
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -158,6 +178,7 @@ class PrefsStore(private val context: Context) {
         p[Keys.flips] = encodeFlips(next.flips)
         p[Keys.trainDelays] = encodeTrainDelays(next.trainDelays)
         p[Keys.lineDelays] = encodeLineDelays(next.lineDelays)
+        p.put(Keys.trip, next.trip?.let(::encodeTrip))
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name
