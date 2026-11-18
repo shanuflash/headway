@@ -70,13 +70,13 @@ fun FlipCard(
                 Icon(Icons.Rounded.SwapVert, null, tint = hw.tint, modifier = Modifier.size(20.dp))
             }
             Column(Modifier.weight(1f)) {
-                Text("Switch direction by time", style = HwType.headline, color = hw.text)
-                Text("Morning trip out, the ride home later", style = HwType.footnote, color = hw.sub)
+                Text("Reverse automatically", style = HwType.headline, color = hw.text)
+                Text("Show the return trip after a set time", style = HwType.footnote, color = hw.sub)
             }
-            if (!bothSaved) HwSwitch(on, onToggle, "Switch direction by time")
+            if (!bothSaved) HwSwitch(on, onToggle, "Reverse automatically")
         }
         if (bothSaved) {
-            Footnote("You've saved both directions as separate routes, so each keeps its own card.")
+            Footnote("Both directions are saved as separate routes.")
             return@Column
         }
         if (flip == null) return@Column
@@ -102,7 +102,7 @@ fun FlipCard(
                     .clip(CircleShape)
                     .background(hw.card)
                     .press(scaleTo = 0.88f, onClick = onSwapHome)
-                    .semantics { contentDescription = "Swap the morning and evening trips" },
+                    .semantics { contentDescription = "Swap morning and evening" },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Rounded.SwapVert, null, tint = hw.tint, modifier = Modifier.size(20.dp))
@@ -110,8 +110,8 @@ fun FlipCard(
         }
 
         Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Switch at", style = HwType.subhead, color = hw.text, modifier = Modifier.weight(1f))
-            StepButton(Icons.Rounded.Remove, "30 minutes earlier", enabled = flip.at > FLIP_MIN) { onMoveTime(-FLIP_STEP) }
+            Text("Reverse at", style = HwType.subhead, color = hw.text, modifier = Modifier.weight(1f))
+            StepButton(Icons.Rounded.Remove, "30 min earlier", enabled = flip.at > FLIP_MIN) { onMoveTime(-FLIP_STEP) }
             Text(
                 time,
                 style = HwType.headline.copy(fontFeatureSettings = "tnum"),
@@ -119,10 +119,10 @@ fun FlipCard(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(min = 84.dp),
             )
-            StepButton(Icons.Rounded.Add, "30 minutes later", enabled = flip.at < FLIP_MAX) { onMoveTime(FLIP_STEP) }
+            StepButton(Icons.Rounded.Add, "30 min later", enabled = flip.at < FLIP_MAX) { onMoveTime(FLIP_STEP) }
         }
         Text(
-            "Swap by hand any time; it switches again at the next change.",
+            "Tap ⇅ on the card to reverse it any time.",
             style = HwType.footnote,
             color = hw.sub,
             modifier = Modifier.padding(horizontal = 4.dp),

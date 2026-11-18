@@ -502,9 +502,9 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     fun reminderToast(route: SavedRoute, dep: Long): String =
         if (isTrip(route, dep)) {
-            "Following the ${clock(dep)} trip: it counts down to each train"
+            "Trip started"
         } else {
-            "Counting down to the ${clock(dep)} from ${Network.name(route.from)}"
+            "Countdown on · ${clock(dep)}"
         }
 
     fun setLastWarn(on: Boolean) = update { it.copy(lastWarn = on) }

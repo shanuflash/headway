@@ -124,10 +124,10 @@ fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
         // The inter-corridor runs Chennai Central <-> Airport; name the end this route heads to.
         val stops = Network.routes.getValue(RouteId.INTER).fwd.map { it.first }
         val end = if (stops.indexOf(r.from) < stops.indexOf(r.to)) stops.last() else stops.first()
-        return "Inter-corridor · toward ${Network.name(end)}"
+        return "Inter-corridor · towards ${Network.name(end)}"
     }
     val g = routeGroup(r.from, r.to) ?: return ""
-    return "${g.line.label} · toward ${g.terminals.joinToString(" or ") { Network.name(it) }}"
+    return "${g.line.label} · towards ${g.terminals.joinToString(" or ") { Network.name(it) }}"
 }
 
 /** Platform at the boarding station, from the direction the train heads off in. */
@@ -185,8 +185,8 @@ fun LazyListScope.routesScreen(
             TopBar(right = {
                 GlassGroup(
                     listOf(
-                        Triple(Icons.Rounded.CreditCard, "Metro card balance and top-up", actions.topUp),
-                        Triple(Icons.Rounded.Add, "Add a route", actions.add),
+                        Triple(Icons.Rounded.CreditCard, "Metro card", actions.topUp),
+                        Triple(Icons.Rounded.Add, "Add route", actions.add),
                         Triple(Icons.Rounded.MoreHoriz, "Settings", actions.settings),
                     ),
                 )
@@ -258,8 +258,8 @@ private fun LoadCardBanner(now: () -> Long) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Load it onto your card", style = HwType.subheadStrong, color = hw.text)
-            Text("Paid by UPI? Tap your card in Airtel to write the balance.", style = HwType.footnote, color = hw.sub)
+            Text("Top-up pending", style = HwType.subheadStrong, color = hw.text)
+            Text("Tap the card in Airtel to add the balance.", style = HwType.footnote, color = hw.sub)
         }
         Box(
             Modifier.height(36.dp).clip(CircleShape).background(hw.tint).press(scaleTo = 0.95f) {
@@ -288,8 +288,8 @@ private fun MockBanner(now: () -> Long, offset: Long, onOff: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            LiveText({ "Mock time: ${clock(now())}" }, HwType.subheadStrong, hw.warn)
-            LiveText({ "Not the real schedule. Real time is ${clock(now() - offset)}." }, HwType.footnote, hw.warn)
+            LiveText({ "Mock time · ${clock(now())}" }, HwType.subheadStrong, hw.warn)
+            LiveText({ "Real time: ${clock(now() - offset)}" }, HwType.footnote, hw.warn)
         }
         Box(
             Modifier.height(36.dp).clip(CircleShape).background(hw.warnButton).press(scaleTo = 0.95f, onClick = onOff).padding(horizontal = 14.dp),
@@ -307,15 +307,15 @@ private fun EmptyRoutes(actions: RouteActions) {
         Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Add your daily route", style = HwType.title, color = hw.text, modifier = Modifier.padding(top = 4.dp))
+        Text("No saved routes", style = HwType.title, color = hw.text, modifier = Modifier.padding(top = 4.dp))
         Text(
-            "Save where you board and where you get off. Headway lists the next trains on it, and one tap flips it for the ride home.",
+            "Save a route to see its next trains. Tap ⇅ to reverse it for the trip back.",
             style = HwType.subhead,
             color = hw.sub,
         )
-        PrimaryButton("Add a route", Icons.Rounded.Add, actions.add)
+        PrimaryButton("Add route", Icons.Rounded.Add, actions.add)
     }
-    SectionTitle("Or check any station")
+    SectionTitle("Or search a station")
     Row(
         Modifier
             .fillMaxWidth()
@@ -378,7 +378,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                         if (legs != null) {
                             Box(Modifier.size(8.dp).clip(CircleShape).background(legsBrush(legs, hw)))
                             Text(
-                                if (legs.size > 1) changesLabel(legs) else "${legLineName(legs[0])} · toward ${Network.name(legs[0].trip.dest)}",
+                                if (legs.size > 1) changesLabel(legs) else "${legLineName(legs[0])} · towards ${Network.name(legs[0].trip.dest)}",
                                 style = HwType.subhead,
                                 color = hw.sub,
                                 maxLines = 1,
@@ -403,7 +403,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 val auto = if (isPreview) null else prefs.flips[pairKey(r)]?.takeIf { f -> prefs.routes.none { it.id == reverseId(r.id) } }
                 PillIcon(
                     Icons.Rounded.SwapVert,
-                    if (auto != null) "Switch direction (switches by itself at ${minutesLabel(auto.at)})" else "Switch direction",
+                    if (auto != null) "Reverse (automatic at ${minutesLabel(auto.at)})" else "Reverse",
                     tint = if (auto != null) hw.tint else null,
                 ) { if (isPreview) actions.swapPreview() else actions.swap(r.id) }
                 if (isPreview) {
@@ -427,7 +427,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         } else if (shown == null) {
             Text(
                 when (s.plan?.mode) {
-                    PlanMode.ARRIVE -> "No trains get there by then."
+                    PlanMode.ARRIVE -> "No trains arrive by then."
                     PlanMode.LEAVE -> "No trains after then."
                     null -> "No trains between these stations."
                 },
@@ -454,7 +454,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                     FollowButton { actions.remind(s, shown.dep) }
                     // Didn't tap it before setting off: pick the train you're on and follow from there.
                     Text(
-                        "Already on the way? Follow it",
+                        "Already on board?",
                         style = HwType.subheadStrong,
                         color = hw.tint,
                         textAlign = TextAlign.Center,
@@ -473,7 +473,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         if (s.late && last != null) {
             Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Rounded.Bedtime, null, tint = hw.sub, modifier = Modifier.size(16.dp).padding(top = 1.dp))
-                Text("The ${clock(last.dep)} is the last train tonight.", style = HwType.footnote, color = hw.sub)
+                Text("Last train tonight: ${clock(last.dep)}", style = HwType.footnote, color = hw.sub)
             }
         }
 
@@ -551,7 +551,7 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         ) {
             Icon(
                 if (reminderOn) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
-                contentDescription = if (reminderOn) "Stop the countdown" else "Count down to this train",
+                contentDescription = if (reminderOn) "Stop countdown" else "Start countdown",
                 tint = if (reminderOn) Color.White else hw.tint,
                 modifier = Modifier.size(24.dp),
             )
@@ -587,7 +587,7 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
     val hw = LocalHw.current
     val plan = s.plan ?: return
     val label = when (plan.mode) {
-        PlanMode.ARRIVE -> if (i == s.best) "Latest to arrive by ${clock(plan.at)}" else "Earlier train"
+        PlanMode.ARRIVE -> if (i == s.best) "Latest arriving by ${clock(plan.at)}" else "Earlier train"
         PlanMode.LEAVE -> if (i == 0) "First after ${clock(plan.at)}" else "Later train"
     }
     val note = if (!d.hasChange) trainNote(d)?.let { " · $it" }.orEmpty() else ""
@@ -605,7 +605,7 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
     }
 }
 
-/** "Follow this trip": under a trip with changes, to have the card and countdown follow it. */
+/** "Start trip": under a trip with changes, so the card and countdown follow it step by step. */
 @Composable
 private fun FollowButton(onClick: () -> Unit) {
     val hw = LocalHw.current
@@ -622,7 +622,7 @@ private fun FollowButton(onClick: () -> Unit) {
     ) {
         Icon(Icons.Rounded.Navigation, null, tint = hw.tint, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Follow this trip", style = HwType.subheadStrong, color = hw.tint)
+        Text("Start trip", style = HwType.subheadStrong, color = hw.tint)
     }
 }
 
@@ -644,14 +644,14 @@ private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: (
     val lines = ArrayList<String>()
     when {
         leg == null -> {
-            label = "Arriving at ${Network.name(legs.last().to)}"
+            label = "Arrive at ${Network.name(legs.last().to)}"
             target = trip.arr
-            lines += "Get off at ${clock(trip.arr)}"
+            lines += "Arrives ${clock(trip.arr)}"
         }
         i == 0 -> {
-            label = "Your trip · board at ${Network.name(leg.from)}"
+            label = "Board at ${Network.name(leg.from)}"
             target = leg.dep
-            lines += "${legLineName(leg)} toward ${Network.name(leg.trip.dest)} · leaves ${clock(leg.dep)}"
+            lines += "${legLineName(leg)} towards ${Network.name(leg.trip.dest)} · ${clock(leg.dep)}"
             listOfNotNull(legPlatform(leg), coach(leg, true)).takeIf { it.isNotEmpty() }?.let { lines += it.joinToString(" · ") }
         }
         else -> {
@@ -659,7 +659,7 @@ private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: (
             val walk = Network.transfer(leg.from)
             label = "Change at ${Network.name(leg.from)}"
             target = leg.dep
-            lines += "${legLineName(leg)} toward ${Network.name(leg.trip.dest)} · leaves ${clock(leg.dep)}"
+            lines += "${legLineName(leg)} towards ${Network.name(leg.trip.dest)} · ${clock(leg.dep)}"
             val getOff = if (t < prev.arr) "Get off at ${clock(prev.arr)}" else null
             lines += listOfNotNull(getOff, "$walk min walk", legPlatform(leg), coach(leg, false)).joinToString(" · ")
         }
@@ -728,7 +728,7 @@ private fun DelayTag(delay: Int, own: Boolean, onClick: () -> Unit) {
     }
     Row(
         Modifier.press(onClick = onClick).clip(CircleShape).background(bg).padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "${delayText(delay)}${if (own) ", this train" else ""}. Change" },
+            .semantics(mergeDescendants = true) { contentDescription = "${delayText(delay)}${if (own) ", this train" else ""}. Edit delay" },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {

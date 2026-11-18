@@ -92,8 +92,8 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
                 } else {
                     var destQuery by remember(station) { mutableStateOf("") }
                     SheetHeader(
-                        "Where to from ${Network.name(station)}?",
-                        "Direct trains first, then with a change",
+                        "Choose destination",
+                        "From ${Network.name(station)}",
                         Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
                         "Back",
                     ) {
@@ -203,7 +203,7 @@ private fun DestinationList(from: String, query: String, onPick: (String) -> Uni
             if (shown.isEmpty()) return@forEach
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(g.line)))
-                Text("Toward ${g.terminals.joinToString(" or ") { Network.name(it) }}", style = HwType.section, color = hw.text)
+                Text("Towards ${g.terminals.joinToString(" or ") { Network.name(it) }}", style = HwType.section, color = hw.text)
             }
             ListCard(
                 shown.map { (id, minutes) ->
@@ -304,11 +304,11 @@ fun RouteMenu(
                 Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Best coach to board", style = HwType.body, color = hw.text)
-                val options = listOf<Pair<Coach?, String>>(null to "Off", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear")
+                Text("Where to board", style = HwType.body, color = hw.text)
+                val options = listOf<Pair<Coach?, String>>(null to "Any", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear")
                 if (coaches.size <= 1) {
                     Segmented(options = options, selected = coaches.firstOrNull()?.coach, onSelect = { onCoach(null, it) })
-                    Text("Where to stand so you get off near the exit or stairs you use. Shown on the route card.", style = HwType.footnote, color = hw.sub)
+                    Text("Board the coach nearest your exit. Shown on the card.", style = HwType.footnote, color = hw.sub)
                 } else {
                     // A trip with changes: where to stand differs train to train.
                     coaches.forEach { c ->
@@ -320,13 +320,13 @@ fun RouteMenu(
                             Segmented(options = options, selected = c.coach, onSelect = { onCoach(c.station, it) })
                         }
                     }
-                    Text("Set each train so you step off near the stairs to your next line, then the exit. Shown at each step of the trip.", style = HwType.footnote, color = hw.sub)
+                    Text("Board the coach nearest your change or exit. Shown at each step of the trip.", style = HwType.footnote, color = hw.sub)
                 }
             }
             if (journeyLines != null) {
-                Text("Running early or late?", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+                Text("Delay", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
                 if (journeyLines.isEmpty()) {
-                    Footnote("Set each line's delay on the Lines tab: this trip changes trains, so it has no one delay.")
+                    Footnote("Trips with changes use each line’s delay. Set them in Lines.")
                 } else {
                     JourneyDelays(journeyLines, lineDelays, onLineDelay)
                 }
@@ -338,9 +338,9 @@ fun RouteMenu(
             val danger = if (hw.dark) Color(0xFFFF453A) else Color(0xFFD70015)
             ListCard(
                 listOfNotNull<@Composable () -> Unit>(
-                    { MenuRow(Icons.Rounded.Schedule, "Plan another time", "Leave at or arrive by a time, today or tomorrow", hw.text) { close(onPlan) } },
+                    { MenuRow(Icons.Rounded.Schedule, "Plan a trip", "Depart at or arrive by a set time", hw.text) { close(onPlan) } },
                     // Already first: nothing to move.
-                    if (isTop) null else ({ MenuRow(Icons.Rounded.VerticalAlignTop, "Move to the top", null, hw.text) { close(onTop) } }),
+                    if (isTop) null else ({ MenuRow(Icons.Rounded.VerticalAlignTop, "Move to top", null, hw.text) { close(onTop) } }),
                     { MenuRow(Icons.Rounded.Delete, "Remove route", null, danger) { close(onRemove) } },
                 ),
                 inset = 50.dp,

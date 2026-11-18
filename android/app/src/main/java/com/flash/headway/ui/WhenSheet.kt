@@ -73,7 +73,7 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.align(Alignment.CenterHorizontally), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("When?", style = HwType.headline, color = hw.text)
+                Text("Plan a trip", style = HwType.headline, color = hw.text)
                 Text(title, style = HwType.footnote, color = hw.sub)
             }
             Column(
@@ -81,16 +81,16 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Segmented(
-                    options = listOf(WhenMode.NOW to "Now", WhenMode.LEAVE to "Leave at", WhenMode.ARRIVE to "Arrive by"),
+                    options = listOf(WhenMode.NOW to "Now", WhenMode.LEAVE to "Depart at", WhenMode.ARRIVE to "Arrive by"),
                     selected = mode,
                     onSelect = { mode = it },
                 )
                 if (mode == WhenMode.NOW) {
-                    Text("The next trains from now, counting down.", style = HwType.footnote, color = hw.sub)
+                    Text("Live departures from now.", style = HwType.footnote, color = hw.sub)
                 } else {
                     Segmented(options = listOf(0 to "Today", 1 to "Tomorrow"), selected = day, onSelect = { day = it })
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (mode == WhenMode.ARRIVE) "Arrive by" else "Leave at", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
+                        Text(if (mode == WhenMode.ARRIVE) "Arrive by" else "Depart at", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
                         Box(
                             Modifier
                                 .height(40.dp)
@@ -124,7 +124,7 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
                 }
             }
             PrimaryButton(
-                if (mode == WhenMode.NOW) "Show the next trains" else "Show trains",
+                "Show trains",
                 if (mode == WhenMode.NOW) Icons.Rounded.Schedule else Icons.Rounded.Search,
             ) {
                 val result = when (mode) {
@@ -140,7 +140,7 @@ fun WhenSheet(title: String, plan: PlanTime?, onDone: (PlanTime?) -> Unit, onDis
 
 /** "Leave at 8:00 AM tomorrow", "Arrive by 9:30 AM", or "Leaving now". */
 fun whenText(plan: PlanTime?): String {
-    if (plan == null) return "Leaving now"
+    if (plan == null) return "Depart now"
     val today = Instant.ofEpochMilli(Clock.now()).atZone(IST).toLocalDate()
     val date = Instant.ofEpochMilli(plan.at).atZone(IST).toLocalDate()
     val day = when (date) {
@@ -148,5 +148,5 @@ fun whenText(plan: PlanTime?): String {
         today.plusDays(1) -> " tomorrow"
         else -> " on ${date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }}"
     }
-    return "${if (plan.mode == PlanMode.ARRIVE) "Arrive by" else "Leave at"} ${clock(plan.at)}$day"
+    return "${if (plan.mode == PlanMode.ARRIVE) "Arrive by" else "Depart at"} ${clock(plan.at)}$day"
 }

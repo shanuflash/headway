@@ -58,14 +58,14 @@ object TopUp {
                 // Airtel Thanks isn't installed; try the web link.
             }
         }
-        Toast.makeText(context, "Install Airtel Thanks to top up your card", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Airtel Thanks isn't installed", Toast.LENGTH_LONG).show()
     }
 
     /** Opens the UPI app picker with the card's UPI ID filled in; the rider enters the amount. */
     fun payByUpi(context: Context) {
         val id = upiId(context)
         if (id == null) {
-            Toast.makeText(context, "Add your card's UPI ID in Headway settings", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Add the card's UPI ID in Settings", Toast.LENGTH_LONG).show()
             openAirtel(context)
             return
         }

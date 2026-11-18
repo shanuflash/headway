@@ -120,14 +120,14 @@ fun TopUpSheet(onDismiss: () -> Unit) {
                     add {
                         ListRow(onClick = { close { TopUp.payByUpi(context) } }) {
                             Icon(Icons.Rounded.QrCode2, null, tint = hw.tint, modifier = Modifier.size(22.dp))
-                            RowText("Pay by UPI", "Any UPI app, no fee, then load it on the card in Airtel", modifier = Modifier.weight(1f))
+                            RowText("Pay by UPI", "Any UPI app · No fee · Add to card in Airtel", modifier = Modifier.weight(1f))
                         }
                     }
                 }
                 add {
                     ListRow(onClick = { close { TopUp.openAirtel(context) } }) {
                         Icon(Icons.Rounded.CreditCard, null, tint = hw.tint, modifier = Modifier.size(22.dp))
-                        RowText("Airtel Thanks", "Free, can write the balance to your card", modifier = Modifier.weight(1f))
+                        RowText("Airtel Thanks", "No fee · Adds the balance to the card", modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -195,11 +195,11 @@ private fun BalanceCard(read: Read, fresh: Boolean, listening: Boolean, onReadAg
                     is Read.Done -> {
                         Text(if (fresh) "Balance on the card" else "Last read", style = HwType.subheadStrong, color = hw.tint)
                         Text("₹" + "%.2f".format(r.paise / 100.0), style = HwType.big.copy(fontSize = 56.sp, lineHeight = 60.sp), color = hw.text)
-                        Text("Read ${clock(r.at)}.", style = HwType.footnote, color = hw.sub)
+                        Text("Read at ${clock(r.at)}", style = HwType.footnote, color = hw.sub)
                         if (r.trips.isNotEmpty()) {
                             TripList(r.trips)
                         } else if (fresh) {
-                            Text("No trips on the card yet.", style = HwType.footnote, color = hw.sub, modifier = Modifier.padding(top = 8.dp))
+                            Text("No trips on this card", style = HwType.footnote, color = hw.sub, modifier = Modifier.padding(top = 8.dp))
                         }
                     }
                     Read.Reading -> {
@@ -212,13 +212,13 @@ private fun BalanceCard(read: Read, fresh: Boolean, listening: Boolean, onReadAg
                     }
                     Read.Waiting -> {
                         Text("Check balance", style = HwType.subheadStrong, color = hw.tint)
-                        Text("Hold your card to the back of the phone", style = HwType.cardTitle, color = hw.text)
+                        Text("Hold the card to the back of the phone", style = HwType.cardTitle, color = hw.text)
                     }
                 }
             }
         }
         when (nfcState) {
-            NfcState.MISSING -> Text("This phone has no NFC, so it can't read the card.", style = HwType.footnote, color = hw.warn)
+            NfcState.MISSING -> Text("This phone doesn’t support NFC.", style = HwType.footnote, color = hw.warn)
             NfcState.OFF -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("NFC is off.", style = HwType.footnote, color = hw.warn, modifier = Modifier.weight(1f))
                 Text(
@@ -232,7 +232,7 @@ private fun BalanceCard(read: Read, fresh: Boolean, listening: Boolean, onReadAg
             }
             NfcState.ON -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Rounded.Contactless, null, tint = hw.sub, modifier = Modifier.size(16.dp))
-                Text("Shows the balance on the chip, which is what the gates use.", style = HwType.footnote, color = hw.sub)
+                Text("Reads the balance stored on the card.", style = HwType.footnote, color = hw.sub)
             }
         }
         if (!listening && nfcState == NfcState.ON) {

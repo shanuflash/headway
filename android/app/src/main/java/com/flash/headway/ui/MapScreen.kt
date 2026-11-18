@@ -62,7 +62,7 @@ fun ColumnScope.MapScreen(onSettings: () -> Unit, onStation: (String) -> Unit) {
     TopBar(right = { RoundButton(Icons.Rounded.MoreHoriz, "Settings", onSettings) })
     LargeTitle("Map")
     NetworkMap(onStation)
-    Footnote("Pinch to zoom, and tap a station for its next trains each way. Map data © OpenStreetMap contributors.")
+    Footnote("Tap a station for departures. Map data © OpenStreetMap contributors.")
 }
 
 /** The schematic network: pinch to zoom, drag to pan, tap a station. */
@@ -203,7 +203,7 @@ fun StationSheet(id: String, boards: List<StationBoard>, now: () -> Long, onRout
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(hw.line(b.group.line)))
                         Text(
-                            "Toward ${b.group.terminals.joinToString(" or ") { Network.name(it) }}" + (b.platform?.let { " · $it" } ?: ""),
+                            "Towards ${b.group.terminals.joinToString(" or ") { Network.name(it) }}" + (b.platform?.let { " · $it" } ?: ""),
                             style = HwType.subheadStrong,
                             color = hw.text,
                         )
@@ -230,7 +230,7 @@ fun StationSheet(id: String, boards: List<StationBoard>, now: () -> Long, onRout
                     }
                 }
             }
-            PrimaryButton("Save a route from here", Icons.Rounded.Add) { close(onRouteFrom) }
+            PrimaryButton("Add route from here", Icons.Rounded.Add) { close(onRouteFrom) }
         }
     }
 }

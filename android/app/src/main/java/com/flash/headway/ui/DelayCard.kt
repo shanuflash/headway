@@ -112,8 +112,8 @@ fun DelayCard(routeId: String, delay: Int, preview: suspend (Int) -> DelayPrevie
                 Icon(Icons.Rounded.Schedule, null, tint = tone, modifier = Modifier.size(20.dp))
             }
             Column {
-                Text("Running early or late?", style = HwType.headline, color = hw.text)
-                Text("Shift this route's train times", style = HwType.footnote, color = hw.sub)
+                Text("Delay", style = HwType.headline, color = hw.text)
+                Text("Applies to every train on this route", style = HwType.footnote, color = hw.sub)
             }
         }
 
@@ -140,9 +140,9 @@ fun DelayCard(routeId: String, delay: Int, preview: suspend (Int) -> DelayPrevie
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(StepGap)) {
-            StepButton(Icons.Rounded.Remove, "One minute earlier", enabled = d > -DELAY_MAX) { change(d - 1) }
+            StepButton(Icons.Rounded.Remove, "1 min earlier", enabled = d > -DELAY_MAX) { change(d - 1) }
             DelaySlider(d, tone, ::change, Modifier.weight(1f))
-            StepButton(Icons.Rounded.Add, "One minute later", enabled = d < DELAY_MAX) { change(d + 1) }
+            StepButton(Icons.Rounded.Add, "1 min later", enabled = d < DELAY_MAX) { change(d + 1) }
         }
 
         // Scale under the track; the middle resets. Inset so its ends sit under the track's ends.
@@ -224,7 +224,7 @@ internal fun DelaySlider(value: Int, tone: Color, onValue: (Int) -> Unit, modifi
                 }
             }
             .semantics {
-                contentDescription = "How early or late trains run, in minutes"
+                contentDescription = "Delay in minutes"
                 stateDescription = delayText(value)
                 progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), -DELAY_MAX.toFloat()..DELAY_MAX.toFloat(), steps = DELAY_MAX * 2 - 1)
                 setProgress { target ->
@@ -273,7 +273,7 @@ private fun valueAt(x: Float, width: Float, r: Float): Int {
     return (f * 2 * DELAY_MAX - DELAY_MAX).roundToInt()
 }
 
-/** "Timetable 8:41 AM → You'll see 8:44 AM", so the rider sees what the delay does. */
+/** "Scheduled 8:41 AM → Expected 8:44 AM": what the delay does to the next train. */
 @Composable
 private fun DelayPreviewRow(p: DelayPreview?, d: Int, tone: Color) {
     val hw = LocalHw.current
@@ -284,15 +284,15 @@ private fun DelayPreviewRow(p: DelayPreview?, d: Int, tone: Color) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when {
-            p == null -> Text("No trains on this route.", style = HwType.footnote, color = hw.sub)
+            p == null -> Text("No upcoming trains", style = HwType.footnote, color = hw.sub)
             d == 0 -> {
                 PreviewCell("Next train", clock(p.shown), hw.text)
-                Text("as timetabled", style = HwType.footnote, color = hw.sub)
+                Text("On schedule", style = HwType.footnote, color = hw.sub)
             }
             else -> {
-                PreviewCell("Timetable", clock(p.timetabled), hw.sub, struck = true)
+                PreviewCell("Scheduled", clock(p.timetabled), hw.sub, struck = true)
                 Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = hw.sub, modifier = Modifier.size(20.dp))
-                PreviewCell("You'll see", clock(p.shown), tone)
+                PreviewCell("Expected", clock(p.shown), tone)
             }
         }
     }
@@ -345,7 +345,7 @@ fun LineDelayRow(title: String, sub: String?, colors: List<Color>?, value: Int, 
             Text(title, style = HwType.subheadStrong, color = hw.text)
             if (sub != null) Text(sub, style = HwType.footnote, color = hw.sub)
         }
-        StepButton(Icons.Rounded.Remove, "$title, one minute earlier", enabled = value > -DELAY_MAX) { onChange(value - 1) }
+        StepButton(Icons.Rounded.Remove, "$title: 1 min earlier", enabled = value > -DELAY_MAX) { onChange(value - 1) }
         Text(
             shortDelay(value),
             style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
@@ -359,6 +359,6 @@ fun LineDelayRow(title: String, sub: String?, colors: List<Color>?, value: Int, 
                 .wrapContentHeight()
                 .semantics { stateDescription = delayText(value) },
         )
-        StepButton(Icons.Rounded.Add, "$title, one minute later", enabled = value < DELAY_MAX) { onChange(value + 1) }
+        StepButton(Icons.Rounded.Add, "$title: 1 min later", enabled = value < DELAY_MAX) { onChange(value + 1) }
     }
 }

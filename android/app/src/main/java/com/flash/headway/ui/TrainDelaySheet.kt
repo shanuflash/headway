@@ -104,7 +104,7 @@ fun TrainDelaySheet(
             } else {
                 // For every day like this one, or just today (a one-off: it's dropped tomorrow).
                 Segmented(
-                    options = listOf(false to days, true to "Just today"),
+                    options = listOf(false to days, true to "Today only"),
                     selected = today,
                     onSelect = {
                         today = it
@@ -129,8 +129,8 @@ fun TrainDelaySheet(
                     val lineD = line?.let { lineDelays[it.key] } ?: 0
                     if (at != null) {
                         Text(
-                            "Leaves ${clock(at + (d + lineD) * MINUTE)} on your card" +
-                                if (lineD != 0) ", with the line ${delayText(lineD).lowercase()}" else "",
+                            "Expected ${clock(at + (d + lineD) * MINUTE)}" +
+                                if (lineD != 0) " · includes line delay" else "",
                             style = HwType.footnote,
                             color = hw.sub,
                             textAlign = TextAlign.Center,
@@ -138,15 +138,15 @@ fun TrainDelaySheet(
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StepButton(Icons.Rounded.Remove, "One minute earlier", enabled = d > -DELAY_MAX) { set(d - 1) }
+                        StepButton(Icons.Rounded.Remove, "1 min earlier", enabled = d > -DELAY_MAX) { set(d - 1) }
                         DelaySlider(d, tone, ::set, Modifier.weight(1f))
-                        StepButton(Icons.Rounded.Add, "One minute later", enabled = d < DELAY_MAX) { set(d + 1) }
+                        StepButton(Icons.Rounded.Add, "1 min later", enabled = d < DELAY_MAX) { set(d + 1) }
                     }
                     Text(
                         if (!following) {
-                            "Just this train${if (today) ", today only" else ""}. Other trains on this route: ${delayText(routeDelay).lowercase()}."
+                            "This train only${if (today) ", today" else ""}. Route delay: ${delayText(routeDelay).lowercase()}."
                         } else {
-                            "Following the route (${delayText(routeDelay).lowercase()}). Change it here for just this train."
+                            "Uses the route delay (${delayText(routeDelay).lowercase()})."
                         },
                         style = HwType.footnote,
                         color = hw.sub,
@@ -169,7 +169,7 @@ fun TrainDelaySheet(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Icon(Icons.Rounded.History, null, tint = hw.tint, modifier = Modifier.size(18.dp))
-                            Text("Follow the route again", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
+                            Text("Use route delay", style = HwType.subhead.copy(fontWeight = FontWeight.SemiBold), color = hw.tint)
                         }
                     }
                 }
@@ -179,7 +179,7 @@ fun TrainDelaySheet(
                         Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        LineDelayRow(line.name, "Every train this way, on all routes", line.colors, lineDelays[line.key] ?: 0) { onLineDelay(line.key, it) }
+                        LineDelayRow(line.name, "All trains in this direction", line.colors, lineDelays[line.key] ?: 0) { onLineDelay(line.key, it) }
                     }
                 }
             }
@@ -193,7 +193,7 @@ fun JourneyDelays(lines: List<TripLine>, lineDelays: Map<String, Int>, onLineDel
     val hw = LocalHw.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            "A trip with changes has no one delay: each train runs early or late on its own. Each moves every train on that line in that direction, as on the Lines tab.",
+            "Each train uses its line’s delay. Changes apply to every route, as in Lines.",
             style = HwType.footnote,
             color = hw.sub,
             modifier = Modifier.padding(horizontal = 4.dp),

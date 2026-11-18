@@ -143,12 +143,12 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Lon
                 val prev = legs[i - 1]
                 val walk = Network.transfer(leg.from)
                 val spare = ((leg.dep - prev.arr) / MINUTE).toInt() - walk
-                val to = if (isInter(leg)) "an Inter-corridor train" else "the ${legLineName(leg)}"
+                val to = legLineName(leg)
                 Segment(walkRail) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.AutoMirrored.Rounded.DirectionsWalk, null, tint = hw.sub, modifier = Modifier.size(18.dp))
                         Text(
-                            "Change to $to, $walk min walk${if (spare > 0) " · $spare min to spare" else ""}",
+                            "Change to $to · $walk min walk${if (spare > 0) " · $spare min spare" else ""}",
                             style = HwType.footnote.copy(fontWeight = FontWeight.Medium),
                             color = hw.text,
                         )
@@ -162,7 +162,7 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Lon
                 passed = now != null && leg.dep <= now(),
                 time = clock(leg.dep),
                 station = leg.from,
-                sub = "${legLineName(leg)} toward ${Network.name(leg.trip.dest)}${platform?.let { " · $it" }.orEmpty()}$coach",
+                sub = "${legLineName(leg)} towards ${Network.name(leg.trip.dest)}${platform?.let { " · $it" }.orEmpty()}$coach",
                 color = color,
                 filled = false,
                 above = if (i > 0) walkRail else null,
@@ -277,13 +277,13 @@ fun OnTheWaySheet(
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 RoundButton(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Back", { joining = false }, background = hw.card)
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Where are you joining?", style = HwType.headline, color = hw.text)
-                    Text("Then on to ${Network.name(to)}", style = HwType.footnote, color = hw.sub)
+                    Text("Choose boarding station", style = HwType.headline, color = hw.text)
+                    Text("To ${Network.name(to)}", style = HwType.footnote, color = hw.sub)
                 }
                 Box(Modifier.size(44.dp))
             }
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Getting there in", style = HwType.subheadStrong, color = hw.text, modifier = Modifier.padding(start = 4.dp))
+                Text("Ready to board in", style = HwType.subheadStrong, color = hw.text, modifier = Modifier.padding(start = 4.dp))
                 Segmented(
                     options = listOf(0 to "Now", 5 to "5 min", 10 to "10 min", 15 to "15 min", 20 to "20 min"),
                     selected = minutes,
@@ -297,7 +297,7 @@ fun OnTheWaySheet(
             return@HwSheet
         }
         Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Which train are you on?", style = HwType.headline, color = hw.text)
+            Text("Already on board", style = HwType.headline, color = hw.text)
             Text(title, style = HwType.footnote, color = hw.sub)
         }
         Column(
@@ -305,10 +305,10 @@ fun OnTheWaySheet(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             when {
-                trips == null -> Footnote("Finding trains on the way…")
-                trips.isEmpty() -> Footnote("No trips on this route are on the way right now.")
+                trips == null -> Footnote("Loading…")
+                trips.isEmpty() -> Footnote("No trips in progress on this route.")
                 else -> {
-                    Footnote("Pick the train you boarded. The card and countdown follow your trip from where it is now.")
+                    Footnote("Select a trip to continue from its current step.")
                     ListCard(
                         trips.map { d ->
                             @Composable {
@@ -316,13 +316,13 @@ fun OnTheWaySheet(
                                 val t = now()
                                 val i = legs.indexOfFirst { it.dep > t }
                                 val where = when {
-                                    i < 0 -> "Arriving ${clock(d.arr)}"
-                                    else -> "Next: change at ${Network.name(legs[i].from)}, the ${clock(legs[i].dep)} ${legShort(legs[i])}"
+                                    i < 0 -> "Arrives ${clock(d.arr)}"
+                                    else -> "Next: change at ${Network.name(legs[i].from)} · ${legShort(legs[i])} ${clock(legs[i].dep)}"
                                 }
                                 ListRow(onClick = { close { onPick(d) } }) {
                                     Box(Modifier.size(10.dp).clip(CircleShape).background(legsBrush(legs, hw)))
                                     Column(Modifier.weight(1f)) {
-                                        Text("The ${clock(d.dep)} from ${Network.name(legs.first().from)}", style = HwType.body, color = hw.text)
+                                        Text("${clock(d.dep)} from ${Network.name(legs.first().from)}", style = HwType.body, color = hw.text)
                                         Text(where, style = HwType.footnote, color = hw.sub)
                                     }
                                 }
@@ -333,12 +333,12 @@ fun OnTheWaySheet(
                 }
             }
             // Part of the way by bus (or on foot): pick up the trip at another station.
-            Text("Joining partway?", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
+            Text("Join mid-route", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
             ListCard(
                 listOf<@Composable () -> Unit>({
                     ListRow(onClick = { joining = true }) {
                         Icon(Icons.Rounded.DirectionsBus, null, tint = hw.tint, modifier = Modifier.size(22.dp))
-                        RowText("Start from another station", "Took a bus for part of it? Pick where you'll board", modifier = Modifier.weight(1f))
+                        RowText("Start from another station", "Board somewhere other than the route’s start", modifier = Modifier.weight(1f))
                         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
                     }
                 }),

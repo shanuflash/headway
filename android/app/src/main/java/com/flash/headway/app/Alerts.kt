@@ -53,14 +53,14 @@ object Alerts {
         // The old "time to set off" channel belonged to the walking-time alarm, which is gone.
         nm.deleteNotificationChannel("reminders")
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_COUNTDOWN, "Train countdown", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "A live countdown to the train you're catching"
+            NotificationChannel(CHANNEL_COUNTDOWN, "Live countdown", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Time left until your train or next change"
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
         )
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_SOON, "Train leaving soon", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "A buzz $SOON_MIN minutes before the train you're counting down to leaves"
+            NotificationChannel(CHANNEL_SOON, "Departure alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "An alert $SOON_MIN min before your train leaves"
                 enableVibration(true)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
@@ -109,13 +109,13 @@ object Alerts {
         val i = j.nextLeg(now)
         val leg = legs.getOrNull(i)
         fun toward(l: com.flash.headway.engine.Leg) =
-            "${legLineName(l)} toward ${Network.name(l.trip.dest)}${legPlatform(l)?.let { " · $it" }.orEmpty()}"
+            "${legLineName(l)} towards ${Network.name(l.trip.dest)}${legPlatform(l)?.let { " · $it" }.orEmpty()}"
         val (title, text, at) = when {
-            leg == null -> Triple("Arriving at ${Network.name(route.to)}", "Get off at ${clock(j.arr)}.", j.arr)
-            i == 0 -> Triple("Board the ${clock(leg.dep)} at ${Network.name(leg.from)}", toward(leg) + ".", leg.dep)
+            leg == null -> Triple("Arrive at ${Network.name(route.to)}", "Arrives ${clock(j.arr)}", j.arr)
+            i == 0 -> Triple("Board at ${Network.name(leg.from)} · ${clock(leg.dep)}", toward(leg), leg.dep)
             else -> Triple(
-                "Change at ${Network.name(leg.from)}: the ${clock(leg.dep)}",
-                toward(leg) + ". ${Network.transfer(leg.from)} min walk.",
+                "Change at ${Network.name(leg.from)} · ${clock(leg.dep)}",
+                toward(leg) + " · ${Network.transfer(leg.from)} min walk",
                 leg.dep,
             )
         }
@@ -193,8 +193,8 @@ object Alerts {
         val left = ((dep - Clock.now()) / 60_000L).coerceAtLeast(0)
         val n = Notification.Builder(context, CHANNEL_SOON)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("The ${clock(dep)} leaves in ${if (left <= 0) "under a minute" else "$left min"}")
-            .setContentText("${Network.name(route.from)} to ${Network.name(route.to)}")
+            .setContentTitle(if (left <= 0) "Leaving now" else "Leaves in $left min")
+            .setContentText("${clock(dep)} · ${Network.name(route.from)} → ${Network.name(route.to)}")
             .setCategory(Notification.CATEGORY_REMINDER)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
@@ -207,12 +207,12 @@ object Alerts {
     private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?, rule: DelayRule) {
         if (!canNotify(context)) return
         val text = buildString {
-            append("${Network.name(route.from)} to ${Network.name(route.to)}.")
-            if (following != null) append(" Next one is ${clock(following)}.")
+            append("Leaves ${clock(dep)}")
+            if (following != null) append(" · Next ${clock(following)}")
         }
         val builder = Notification.Builder(context, CHANNEL_COUNTDOWN)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("The ${clock(dep)} from ${Network.name(route.from)}")
+            .setContentTitle("${Network.name(route.from)} → ${Network.name(route.to)}")
             .setContentText(text)
             .setWhen(dep - Clock.offset)
             .setShowWhen(true)
@@ -228,7 +228,7 @@ object Alerts {
             .setTimeoutAfter((dep - Clock.now() + 60_000L).coerceAtLeast(60_000L))
         if (following != null) {
             builder.addAction(
-                Notification.Action.Builder(null, "I'll take the ${clock(following)}", broadcast(context, ACTION_NEXT, route, dep, rule)).build(),
+                Notification.Action.Builder(null, "Take ${clock(following)}", broadcast(context, ACTION_NEXT, route, dep, rule)).build(),
             )
         }
         builder.addAction(Notification.Action.Builder(null, "Stop", broadcast(context, ACTION_STOP, route, dep)).build())

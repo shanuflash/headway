@@ -98,8 +98,8 @@ fun ColumnScope.LinesScreen(
     )
     LineCard("Yellow Line", RouteId.YELLOW, hw.yellow, spec.yellow, nowMin, lineDelays, onLineDelay, boards[RouteId.YELLOW], now, { onPickStation(RouteId.YELLOW) })
     Footnote(
-        "At a station, match the next trains to the platform board and nudge until they agree. Running early or late moves every train on that line in that direction: your route cards, trips with changes, the widget and countdowns. " +
-            (if (spec.loop != null) "Weekday peaks add short-loop trains between Washermenpet and Alandur, so that stretch sees a train every 3 min. " else "") +
+        "Delays apply to every train on that line in that direction, including route cards, the widget and countdowns. " +
+            (if (spec.loop != null) "On weekday peaks, short-loop trains run every 3 min between Washermenpet and Alandur. " else "") +
             "Source: CMRL timetable, ${Timetable.PUBLISHED}.",
     )
 }
@@ -172,7 +172,7 @@ private fun LineCard(
         // Each direction runs on its own: one can be late while the other is on time. The next
         // trains at a station sit with it, to check against the platform board.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Next trains at", style = HwType.subheadStrong, color = hw.text, modifier = Modifier.weight(1f))
+            Text("Departures from", style = HwType.subheadStrong, color = hw.text, modifier = Modifier.weight(1f))
             if (board != null) {
                 Row(
                     Modifier.height(32.dp).clip(CircleShape).background(hw.fill2).press(scaleTo = 0.95f, onClick = onPickStation).padding(start = 12.dp, end = 8.dp),
@@ -180,14 +180,14 @@ private fun LineCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(Network.name(board.station), style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold), color = hw.text, maxLines = 1)
-                    Icon(Icons.Rounded.UnfoldMore, "Pick a station", tint = hw.sub, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.UnfoldMore, "Change station", tint = hw.sub, modifier = Modifier.size(16.dp))
                 }
             }
         }
         listOf(Dir.FWD to b, Dir.REV to a).forEach { (dir, end) ->
             val key = lineDirKey(route, dir)
             val sub = board?.let { nextText(it, dir, end, now()) }
-            LineDelayRow("Toward ${Network.name(end)}", sub, null, delays[key] ?: 0) { onDelay(key, it) }
+            LineDelayRow("Towards ${Network.name(end)}", sub, null, delays[key] ?: 0) { onDelay(key, it) }
         }
     }
 }
@@ -197,17 +197,17 @@ data class LineBoard(val station: String, val byDir: Map<Dir, List<Long>>)
 
 /** "8:42 AM · 3 min, then 8:48": the next trains toward [end], or why there are none. */
 private fun nextText(board: LineBoard, dir: Dir, end: String, now: Long): String {
-    if (board.station == end) return "Trains end here"
+    if (board.station == end) return "Last stop"
     val times = board.byDir[dir].orEmpty().filter { it >= now - 30_000 }
-    val first = times.firstOrNull() ?: return "No more trains"
+    val first = times.firstOrNull() ?: return "No more trains today"
     val left = first - now
     val wait = when {
         left < 30_000 -> "now"
-        left < 60 * 60_000 -> "${mins(left)} min"
+        left < 60 * 60_000 -> "in ${mins(left)} min"
         else -> null
     }
     val then = times.getOrNull(1)?.let { ", then ${clockTime(it)}" }.orEmpty()
-    return "${clock(first)}${wait?.let { " · $it" }.orEmpty()}$then"
+    return "${wait?.let { "${it.replaceFirstChar { c -> c.uppercase() }} · " }.orEmpty()}${clock(first)}$then"
 }
 
 // ---------------- settings ----------------
@@ -243,10 +243,10 @@ fun ColumnScope.SettingsScreen(
             onSelect = actions.override,
         )
     }
-    Footnote("Auto follows the calendar and public holidays (${today.reason}). Pick Holiday if CMRL announces a Sunday timetable for today.")
+    Footnote("Auto follows the calendar and public holidays (today: ${today.reason}). Choose Holiday when CMRL runs a Sunday timetable.")
 
     SettingsCard {
-        Text("Trains shown per route", style = HwType.body, color = hw.text)
+        Text("Departures per route", style = HwType.body, color = hw.text)
         Segmented(
             options = com.flash.headway.app.COUNT_CHOICES.map { it to "$it" },
             selected = prefs.count,
@@ -255,10 +255,10 @@ fun ColumnScope.SettingsScreen(
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Last train warning", style = HwType.body, color = hw.text)
-                Text("In the final hour of service", style = HwType.footnote, color = hw.sub)
+                Text("Last-train warning", style = HwType.body, color = hw.text)
+                Text("Shown in the final hour of service", style = HwType.footnote, color = hw.sub)
             }
-            HwSwitch(prefs.lastWarn, actions.lastWarn, "Last train warning")
+            HwSwitch(prefs.lastWarn, actions.lastWarn, "Last-train warning")
         }
     }
 
@@ -267,7 +267,7 @@ fun ColumnScope.SettingsScreen(
         if (!notificationsAllowed) {
             rows.add {
                 ListRow(onClick = actions.allowNotifications) {
-                    RowText("Allow notifications", "Needed for the train countdown", modifier = Modifier.weight(1f))
+                    RowText("Allow notifications", "Required for countdowns", modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
                 }
             }
@@ -278,7 +278,7 @@ fun ColumnScope.SettingsScreen(
     SettingsCard {
         Text("Appearance", style = HwType.body, color = hw.text)
         Segmented(
-            options = listOf(ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.AUTO to "Automatic"),
+            options = listOf(ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark", ThemeMode.AUTO to "System"),
             selected = prefs.theme,
             onSelect = actions.theme,
         )
@@ -294,7 +294,7 @@ fun ColumnScope.SettingsScreen(
             onSelect = actions.mock,
         )
     }
-    Footnote("For testing. The app runs as if it were that time now, and the clock keeps ticking from there.")
+    Footnote("For testing. Runs the app from the chosen time.")
 
     ListCard(
         listOf<@Composable () -> Unit>({
@@ -305,7 +305,7 @@ fun ColumnScope.SettingsScreen(
             }
         }),
     )
-    Footnote("First and last trains match CMRL's timetable. Times at stations in between are estimated, so allow a minute or two either way.")
+    Footnote("First and last trains are from CMRL’s timetable. Times at other stations are estimates (±2 min).")
 }
 
 /** The card's UPI ID, for "Pay by UPI" top-ups. Stays on this phone. */
@@ -339,7 +339,7 @@ private fun MetroCardSettings() {
                 },
             )
             Text(
-                "Scan card QR",
+                "Scan QR",
                 style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
                 color = Color.White,
                 modifier = Modifier.clip(CircleShape).background(hw.tint).press {
@@ -351,17 +351,17 @@ private fun MetroCardSettings() {
                                 text = id
                                 bad = false
                             } else {
-                                Toast.makeText(context, "That QR isn't a card top-up code", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Not a metro card top-up QR", Toast.LENGTH_LONG).show()
                             }
                         }
                         .addOnFailureListener {
-                            Toast.makeText(context, "Couldn't open the scanner. Type the ID instead.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Scanner unavailable. Enter the ID instead.", Toast.LENGTH_LONG).show()
                         }
                 }.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
         Text(
-            if (bad) "That doesn't look like a UPI ID." else "Scan the \"Scan to recharge\" QR on your card, or paste its ID. Adds \"Pay by UPI\" to the top-up button. Stays on this phone.",
+            if (bad) "Enter a valid UPI ID" else "From the “Scan to recharge” QR on the card. Enables top-up by UPI.",
             style = HwType.footnote,
             color = if (bad) hw.warn else hw.sub,
         )
@@ -464,7 +464,7 @@ fun LineStationSheet(title: String, route: RouteId, selected: String, onPick: (S
     val stations = remember(route) { Network.routes.getValue(route).fwd.map { it.first } }
     HwSheet(onDismiss = onDismiss) { close ->
         Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Next trains at", style = HwType.headline, color = hw.text)
+            Text("Departures from", style = HwType.headline, color = hw.text)
             Text(title, style = HwType.footnote, color = hw.sub)
         }
         Column(
@@ -475,7 +475,7 @@ fun LineStationSheet(title: String, route: RouteId, selected: String, onPick: (S
                     @Composable {
                         ListRow(onClick = { close { onPick(id) } }) {
                             Text(Network.name(id), style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-                            if (id == selected) Icon(Icons.Rounded.Check, "Picked", tint = hw.tint, modifier = Modifier.size(20.dp))
+                            if (id == selected) Icon(Icons.Rounded.Check, "Selected", tint = hw.tint, modifier = Modifier.size(20.dp))
                         }
                     }
                 },
