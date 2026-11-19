@@ -38,6 +38,7 @@ import com.flash.headway.data.RouteId
 import com.flash.headway.engine.DayOverride
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
+import com.flash.headway.engine.WalkSpeed
 import com.flash.headway.engine.routeGroup
 import com.flash.headway.ui.clock
 import com.flash.headway.ui.clockTime
@@ -62,6 +63,7 @@ object Widgets {
             .putString("delays", encodeDelays(p.delays))
             .putString("train_delays", encodeTrainDelays(p.trainDelays))
             .putString("line_delays", encodeLineDelays(p.lineDelays))
+            .putString("walk", p.walk.name)
             .putString("flips", encodeFlips(p.flips))
             .putString("override", p.override?.let { "${it.date}|${it.type.name}" })
             .putLong("mock", p.mockOffset)
@@ -88,6 +90,10 @@ object Widgets {
     fun forget(context: Context, widgetId: Int) {
         store(context).edit().remove("w_$widgetId").remove("label_$widgetId").apply()
     }
+
+    /** How fast the rider changes trains, as mirrored from the app. */
+    internal fun walk(context: Context): WalkSpeed =
+        store(context).getString("walk", null)?.let { runCatching { WalkSpeed.valueOf(it) }.getOrNull() } ?: WalkSpeed.NORMAL
 
     /** The rider's line delays, as mirrored from the app. */
     internal fun lineDelays(context: Context): Map<String, Int> = decodeLineDelays(store(context).getString("line_delays", null))

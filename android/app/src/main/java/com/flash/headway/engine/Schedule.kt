@@ -219,6 +219,19 @@ private class Window(val trips: List<Trip>, val conns: Array<Conn>)
  * then answers routing questions with the Connection Scan Algorithm.
  * Not thread-safe: confine each instance to one thread.
  */
+/** How fast the rider changes trains: scales every station's change time. */
+enum class WalkSpeed(val label: String) { SLOW("Slow"), NORMAL("Normal"), FAST("Fast") }
+
+/** Minutes to change trains at [station] at [walk] speed: Fast takes tighter connections. */
+fun changeMinutes(station: String, walk: WalkSpeed = WalkSpeed.NORMAL): Int {
+    val base = Network.transfer(station)
+    return when (walk) {
+        WalkSpeed.SLOW -> Math.round(base * 1.5).toInt()
+        WalkSpeed.NORMAL -> base
+        WalkSpeed.FAST -> maxOf(1, Math.round(base * 0.6).toInt())
+    }
+}
+
 /** The line a rider's line delay is set on: short loops run on the Blue Line. */
 fun lineKey(route: RouteId): RouteId = if (route == RouteId.LOOP) RouteId.BLUE else route
 
@@ -242,6 +255,7 @@ class Schedule(
     private val override: DayOverride? = null,
     private val feed: Feed? = null,
     private val lineDelays: Map<String, Int> = emptyMap(),
+    private val walk: WalkSpeed = WalkSpeed.NORMAL,
 ) {
     private val days = HashMap<LocalDate, List<Trip>>()
     private val windows = HashMap<LocalDate, Window>()
@@ -437,7 +451,7 @@ class Schedule(
             // With [boardFirst], the trip has to start on that train: no other boards at the start.
             val startsElsewhere = boardFirst != null && c.from == from && c.trip !== boardFirst
             if (e != null && arrivedBy !== c.trip && !startsElsewhere) {
-                val ready = if (c.from == from) e else e + Network.transfer(c.from) * MINUTE
+                val ready = if (c.from == from) e else e + changeMinutes(c.from, walk) * MINUTE
                 val legs = legCount.getValue(c.from)
                 val cur = enter[c.trip]
                 // Nobody waits at an interchange overnight: a change stays within one service day.

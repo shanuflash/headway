@@ -19,6 +19,7 @@ import com.flash.headway.ui.clock
 import com.flash.headway.ui.legPlatform
 import com.flash.headway.ui.legLineName
 import com.flash.headway.engine.RouteDeparture
+import com.flash.headway.engine.changeMinutes
 import com.flash.headway.widget.Widgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,7 +116,7 @@ object Alerts {
             i == 0 -> Triple("Board at ${Network.name(leg.from)} · ${clock(leg.dep)}", toward(leg), leg.dep)
             else -> Triple(
                 "Change at ${Network.name(leg.from)} · ${clock(leg.dep)}",
-                toward(leg) + " · ${Network.transfer(leg.from)} min walk",
+                toward(leg) + " · ${changeMinutes(leg.from, Widgets.walk(context))} min walk",
                 leg.dep,
             )
         }

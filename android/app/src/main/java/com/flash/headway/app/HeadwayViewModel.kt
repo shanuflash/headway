@@ -70,14 +70,16 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private var scheduleOverride: DayOverride? = null
     private var scheduleFeed: Feed? = null
     private var scheduleLines: Map<String, Int> = emptyMap()
+    private var scheduleWalk: com.flash.headway.engine.WalkSpeed = com.flash.headway.engine.WalkSpeed.NORMAL
 
     private fun engine(p: Prefs): Schedule {
         val f = _feed.value
-        if (p.override != scheduleOverride || f !== scheduleFeed || p.lineDelays != scheduleLines) {
+        if (p.override != scheduleOverride || f !== scheduleFeed || p.lineDelays != scheduleLines || p.walk != scheduleWalk) {
             scheduleOverride = p.override
             scheduleFeed = f
             scheduleLines = p.lineDelays
-            schedule = Schedule(p.override, f, p.lineDelays)
+            scheduleWalk = p.walk
+            schedule = Schedule(p.override, f, p.lineDelays, p.walk)
         }
         return schedule
     }
@@ -508,6 +510,17 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     fun setLastWarn(on: Boolean) = update { it.copy(lastWarn = on) }
+
+    /** How fast the rider changes trains; trips are planned again on it. */
+    fun setWalk(walk: com.flash.headway.engine.WalkSpeed) {
+        update { it.copy(walk = walk) }
+        // A trip being followed is planned again (the countdown reads the widgets' mirror).
+        val p = prefs.value ?: return
+        val trip = p.trip ?: return
+        val route = p.routes.firstOrNull { it.id == trip.routeId } ?: return
+        Widgets.mirror(getApplication(), p.copy(walk = walk))
+        Alerts.startTrip(getApplication(), route, trip)
+    }
 
     /** [minutes] past midnight IST, or null to go back to real time. */
     fun setMock(minutes: Int?) {

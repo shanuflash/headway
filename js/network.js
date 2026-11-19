@@ -37,7 +37,7 @@ export const STATIONS = {
   saidapet: { name: 'Saidapet', lines: ['blue'] },
   'little-mount': { name: 'Little Mount', lines: ['blue'] },
   guindy: { name: 'Guindy', lines: ['blue'] },
-  alandur: { name: 'Alandur', long: 'Arignar Anna Alandur', lines: ['blue', 'green'], transfer: 3 },
+  alandur: { name: 'Alandur', long: 'Arignar Anna Alandur', lines: ['blue', 'green'], transfer: 2 },
   'nanganallur-road': { name: 'Nanganallur Road', long: 'OTA – Nanganallur Road', lines: ['blue'] },
   meenambakkam: { name: 'Meenambakkam', lines: ['blue'] },
   airport: { name: 'Airport', long: 'Chennai International Airport', lines: ['blue'] },

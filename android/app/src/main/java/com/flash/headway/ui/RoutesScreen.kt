@@ -85,6 +85,7 @@ import com.flash.headway.data.Platforms
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.DestinationGroup
 import com.flash.headway.engine.Leg
+import com.flash.headway.engine.changeMinutes
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.engine.routeGroup
@@ -422,7 +423,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             // On a trip with changes: count down to whatever's next, train by train.
             TripHero(trip, prefs, r.id, now, actions.endTrip)
             trip.legs?.let { legs ->
-                TripTimeline(legs, Modifier.padding(horizontal = 20.dp), now = now) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
+                TripTimeline(legs, Modifier.padding(horizontal = 20.dp), now = now, walk = prefs.walk) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
             }
         } else if (shown == null) {
             Text(
@@ -448,7 +449,7 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             ) { shown.timetabled?.let { actions.trainDelay(r.id, it, shown.trip.dayType, shown.legs) } }
             Chips(s, index, now) { picked = it }
             shown.legs?.takeIf { it.size > 1 }?.let { legs ->
-                TripTimeline(legs, Modifier.padding(horizontal = 20.dp)) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
+                TripTimeline(legs, Modifier.padding(horizontal = 20.dp), walk = prefs.walk) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
                 // Taking this one: follow it, so the card and countdown move on at each change.
                 if (saved && s.plan == null) {
                     FollowButton { actions.remind(s, shown.dep) }
@@ -660,7 +661,7 @@ private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: (
         }
         else -> {
             val prev = legs[i - 1]
-            val walk = Network.transfer(leg.from)
+            val walk = changeMinutes(leg.from, prefs.walk)
             label = "Change at ${Network.name(leg.from)}"
             target = leg.dep
             lines += "${legLineName(leg)} towards ${Network.name(leg.trip.dest)} · ${clock(leg.dep)}"

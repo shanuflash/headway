@@ -50,6 +50,8 @@ import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.Leg
 import com.flash.headway.engine.MINUTE
+import com.flash.headway.engine.WalkSpeed
+import com.flash.headway.engine.changeMinutes
 import com.flash.headway.engine.directDestinations
 import com.flash.headway.ui.theme.HwColors
 import com.flash.headway.ui.theme.HwType
@@ -132,7 +134,7 @@ private val DotCenter = 10.dp
  * A coloured rail per train, dotted while walking between lines.
  */
 @Composable
-fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Long)? = null, coachFor: (Int, Leg) -> Coach? = { _, _ -> null }) {
+fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Long)? = null, walk: WalkSpeed = WalkSpeed.NORMAL, coachFor: (Int, Leg) -> Coach? = { _, _ -> null }) {
     val hw = LocalHw.current
     val walkRail = Rail(hw.sub, walk = true)
     Column(modifier.fillMaxWidth()) {
@@ -141,14 +143,14 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Lon
             val ride = legColors(leg, hw).let { Rail(it.first(), fade = it.getOrNull(1)) }
             if (i > 0) {
                 val prev = legs[i - 1]
-                val walk = Network.transfer(leg.from)
-                val spare = ((leg.dep - prev.arr) / MINUTE).toInt() - walk
+                val walkMin = changeMinutes(leg.from, walk)
+                val spare = ((leg.dep - prev.arr) / MINUTE).toInt() - walkMin
                 val to = legLineName(leg)
                 Segment(walkRail) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.AutoMirrored.Rounded.DirectionsWalk, null, tint = hw.sub, modifier = Modifier.size(18.dp))
                         Text(
-                            "Change to $to · $walk min walk${if (spare > 0) " · $spare min spare" else ""}",
+                            "Change to $to · $walkMin min walk${if (spare > 0) " · $spare min spare" else ""}",
                             style = HwType.footnote.copy(fontWeight = FontWeight.Medium),
                             color = hw.text,
                         )

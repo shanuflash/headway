@@ -13,6 +13,7 @@ import com.flash.headway.data.DayType
 import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.Dir
+import com.flash.headway.engine.WalkSpeed
 import com.flash.headway.engine.lineDirKey
 import com.flash.headway.engine.DayOverride
 import java.time.LocalDate
@@ -88,6 +89,8 @@ data class Prefs(
     val lineDelays: Map<String, Int> = emptyMap(),
     /** The trip with changes being followed, if any. */
     val trip: ActiveTrip? = null,
+    /** How fast the rider changes trains. */
+    val walk: WalkSpeed = WalkSpeed.NORMAL,
 ) {
     fun delayOf(routeId: String): Int = delays[routeId] ?: 0
 
@@ -120,6 +123,7 @@ class PrefsStore(private val context: Context) {
         val trainDelays = stringPreferencesKey("train_delays")
         val lineDelays = stringPreferencesKey("line_delays")
         val trip = stringPreferencesKey("trip")
+        val walk = stringPreferencesKey("walk")
         val mockOffset = longPreferencesKey("mock_offset")
         val reminder = stringPreferencesKey("reminder_route")
         val reminderDep = longPreferencesKey("reminder_dep")
@@ -159,6 +163,7 @@ class PrefsStore(private val context: Context) {
             trainDelays = decodeTrainDelays(p[Keys.trainDelays]),
             lineDelays = decodeLineDelays(p[Keys.lineDelays]),
             trip = decodeTrip(p[Keys.trip]),
+            walk = p[Keys.walk]?.let { runCatching { WalkSpeed.valueOf(it) }.getOrNull() } ?: WalkSpeed.NORMAL,
             lastWarn = p[Keys.lastWarn] ?: true,
             theme = p[Keys.theme]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.AUTO,
             override = p[Keys.override]?.let(::decodeOverride),
@@ -183,6 +188,7 @@ class PrefsStore(private val context: Context) {
         p[Keys.trainDelays] = encodeTrainDelays(next.trainDelays)
         p[Keys.lineDelays] = encodeLineDelays(next.lineDelays)
         p.put(Keys.trip, next.trip?.let(::encodeTrip))
+        p[Keys.walk] = next.walk.name
         p.remove(Keys.remindLead)
         p[Keys.lastWarn] = next.lastWarn
         p[Keys.theme] = next.theme.name

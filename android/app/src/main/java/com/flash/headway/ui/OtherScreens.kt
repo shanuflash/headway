@@ -63,6 +63,7 @@ import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.bandAt
 import com.flash.headway.engine.Dir
+import com.flash.headway.engine.WalkSpeed
 import com.flash.headway.engine.lineDirKey
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
@@ -217,6 +218,7 @@ class SettingsActions(
     val override: (DayType?) -> Unit,
     val count: (Int) -> Unit,
     val lastWarn: (Boolean) -> Unit,
+    val walk: (WalkSpeed) -> Unit,
     val theme: (ThemeMode) -> Unit,
     val mock: (Int?) -> Unit,
     val allowNotifications: () -> Unit,
@@ -261,6 +263,16 @@ fun ColumnScope.SettingsScreen(
             HwSwitch(prefs.lastWarn, actions.lastWarn, "Last-train warning")
         }
     }
+
+    SettingsCard {
+        Text("Walking speed", style = HwType.body, color = hw.text)
+        Segmented(
+            options = WalkSpeed.entries.map { it to it.label },
+            selected = prefs.walk,
+            onSelect = actions.walk,
+        )
+    }
+    Footnote("Sets the time to change trains. Fast takes tighter connections.")
 
     if (!notificationsAllowed) {
         val rows = ArrayList<@Composable () -> Unit>()

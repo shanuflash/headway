@@ -163,6 +163,14 @@ function applyDelays(key, trips, feed) {
   }
 }
 
+/** Minutes to change trains at `station` at `walk` speed ('slow', 'normal', 'fast'): fast takes tighter connections. */
+export function changeMinutes(station, walk = 'normal') {
+  const base = STATIONS[station]?.transfer ?? 4;
+  if (walk === 'slow') return Math.round(base * 1.5);
+  if (walk === 'fast') return Math.max(1, Math.round(base * 0.6));
+  return base;
+}
+
 /** The most a trip listed for leaving sooner may leave before the quickest way, in minutes. */
 const SOONER_MAX = 15;
 
@@ -311,7 +319,7 @@ export class Schedule {
       // With `boardFirst`, the trip has to start on that train: no other boards at the start.
       const startsElsewhere = boardFirst !== null && c.from === from && c.trip !== boardFirst;
       if (e !== undefined && arrivedBy !== c.trip && !startsElsewhere) {
-        const ready = c.from === from ? e : e + (STATIONS[c.from].transfer ?? 4) * MIN;
+        const ready = c.from === from ? e : e + changeMinutes(c.from, this.ctx.walk) * MIN;
         const legs = legCount.get(c.from);
         const cur = enter.get(c.trip);
         // Nobody waits at an interchange overnight: a change must stay within one service day.

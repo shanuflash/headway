@@ -27,8 +27,9 @@ object SharedEngine {
         val override = Widgets.override(context)
         val feed = Advisories.cached(context)
         val lines = Widgets.lineDelays(context)
-        val k = listOf(serviceDate(Clock.now()), override, feed?.updated, lines)
-        val s = schedule?.takeIf { key == k } ?: Schedule(override, feed, lines).also {
+        val walk = Widgets.walk(context)
+        val k = listOf(serviceDate(Clock.now()), override, feed?.updated, lines, walk)
+        val s = schedule?.takeIf { key == k } ?: Schedule(override, feed, lines, walk).also {
             schedule = it
             key = k
         }

@@ -178,3 +178,17 @@ test('a train leaving sooner that arrives as early is listed too', () => {
     for (const l of j.legs.slice(1)) assert.ok(!l.trip.stops.some((x) => x.s === 'airport' && x.at >= j.dep));
   }
 });
+
+test('walking speed scales the time to change', async () => {
+  const { changeMinutes } = await import('../js/engine.js');
+  assert.equal(changeMinutes('alandur'), 2);
+  assert.equal(changeMinutes('alandur', 'fast'), 1);
+  assert.equal(changeMinutes('vadapalani', 'slow'), 9);
+  for (const h of [8, 13, 17, 20]) {
+    const start = at(2026, 11, 19, h, 5);
+    const normal = new Schedule().plan('guindy', 'porur-junction', start);
+    const fast = new Schedule({ walk: 'fast' }).plan('guindy', 'porur-junction', start);
+    const slow = new Schedule({ walk: 'slow' }).plan('guindy', 'porur-junction', start);
+    assert.ok(fast.arr <= normal.arr && slow.arr >= normal.arr);
+  }
+});

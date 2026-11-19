@@ -1,4 +1,4 @@
-import { Schedule, serviceDateKey, bandAt, hm } from './engine.js';
+import { Schedule, serviceDateKey, bandAt, hm, changeMinutes } from './engine.js';
 import { STATIONS, ROUTES, LINES, PICKER_GROUPS, directDestinations, transferDestinations } from './network.js';
 import { TIMETABLE, TIMETABLE_SOURCE } from './timetable.js';
 import { createFeed, activeNotices } from './live.js';
@@ -20,6 +20,7 @@ const DEFAULTS = {
   routes: [],
   count: 5,
   lastWarn: true,
+  walk: 'normal', // how fast the rider changes trains: 'slow' | 'normal' | 'fast'
   theme: 'auto',
   override: null,
   feedUrl: '',
@@ -89,7 +90,7 @@ let feedState = { status: 'official', feed: null };
 const schedule = new Schedule(scheduleContext());
 
 function scheduleContext() {
-  return { feed: feedState.feed, override: prefs.override };
+  return { feed: feedState.feed, override: prefs.override, walk: prefs.walk };
 }
 
 function refreshSchedule() {
@@ -271,11 +272,11 @@ function timelineHtml(d) {
     const color = legColor(leg);
     if (i > 0) {
       const prev = d.legs[i - 1];
-      const walk = STATIONS[leg.from].transfer ?? 4;
+      const walk = changeMinutes(leg.from, prefs.walk);
       const spare = Math.round((leg.dep - prev.arr) / MIN) - walk;
       out.push(
         seg(
-          `${ic('directions_walk')}<span>Change to ${legLine(leg) === 'inter' ? 'an Inter-corridor train' : `the ${esc(legLineName(leg))}`}, ${walk} min walk${spare > 0 ? ` · ${spare} min to spare` : ''}</span>`,
+          `${ic('directions_walk')}<span>Change to ${esc(legLineName(leg))} · ${walk} min walk${spare > 0 ? ` · ${spare} min spare` : ''}</span>`,
           'walk',
           'var(--sub)',
         ),
@@ -998,6 +999,12 @@ function settingsScreen() {
       </div>
     </div>
     <p class="footnote">Auto follows the calendar and public holidays (today: ${esc(auto.reason)}). Choose Sunday or holiday when CMRL runs a Sunday timetable.</p>
+
+    <div class="card set">
+      <span>Walking speed</span>
+      ${seg('walk', prefs.walk, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']])}
+    </div>
+    <p class="footnote">Sets the time to change trains. Fast takes tighter connections.</p>
 
     <div class="card set">
       <span>Departures per route</span>
@@ -1840,6 +1847,11 @@ const ACTIONS = {
     document.title = 'Headway';
     toast(v === 'off' ? 'Back to real time' : `Mock time on`);
     render({ force: true, animate: true });
+  },
+  walk: (el) => {
+    buzz();
+    save({ walk: el.dataset.v });
+    refreshSchedule();
   },
   count: (el) => {
     buzz();

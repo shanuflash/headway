@@ -286,6 +286,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             override = vm::setOverride,
                             count = vm::setCount,
                             lastWarn = vm::setLastWarn,
+                            walk = vm::setWalk,
                             theme = vm::setTheme,
                             mock = vm::setMock,
                             allowNotifications = {

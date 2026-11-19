@@ -49,7 +49,7 @@ object Network {
         Station("saidapet", "Saidapet", null, listOf(Line.BLUE), 4),
         Station("little-mount", "Little Mount", null, listOf(Line.BLUE), 4),
         Station("guindy", "Guindy", null, listOf(Line.BLUE), 4),
-        Station("alandur", "Alandur", "Arignar Anna Alandur", listOf(Line.BLUE, Line.GREEN), 3),
+        Station("alandur", "Alandur", "Arignar Anna Alandur", listOf(Line.BLUE, Line.GREEN), 2),
         Station("nanganallur-road", "Nanganallur Road", "OTA – Nanganallur Road", listOf(Line.BLUE), 4),
         Station("meenambakkam", "Meenambakkam", null, listOf(Line.BLUE), 4),
         Station("airport", "Airport", "Chennai International Airport", listOf(Line.BLUE), 4),
