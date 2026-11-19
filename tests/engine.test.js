@@ -149,15 +149,32 @@ test('every station is reachable, directly or with a change', () => {
 test('the fastest trip wins; fewer changes only settle equally fast ones', () => {
   const s = new Schedule();
   const js = s.journeys('airport', 'poonamallee-bypass', at(2026, 11, 12, 8, 0), 8);
-  const by = (hhmmArr) => js.find((j) => hhmm(j.arr) === hhmmArr);
+  // The quickest way for an arrival is the latest start that makes it.
+  const by = (hhmmArr) => js.filter((j) => hhmm(j.arr) === hhmmArr).at(-1);
   // Arriving 9:40: the 8:42 Blue + Green + Yellow takes 58 min, the 8:40 Inter-corridor + Yellow 60.
   assert.equal(hhmm(by('09:40').dep), '08:42');
   assert.equal(by('09:40').legs.length, 3);
   // Arriving 9:20: the 8:28 Inter-corridor + Yellow (52 min) is the quickest way.
   assert.equal(by('09:20').legs.length, 2);
-  // Every trip listed is the latest start for its arrival, so the quickest one.
+  // For each arrival, the latest start is listed: nothing later gets there as early.
+  for (const arr of new Set(js.map((j) => j.arr))) {
+    const quick = js.filter((j) => j.arr === arr).at(-1);
+    const later = s.plan('airport', 'poonamallee-bypass', quick.dep + 60_000);
+    assert.ok(!later || later.arr > arr, `${hhmm(quick.dep)} is the quickest way to ${hhmm(arr)}`);
+  }
+});
+
+test('a train leaving sooner that arrives as early is listed too', () => {
+  // At Airport at 4:50 PM for Poonamallee: the 4:50 Blue to Alandur, then a change, gets
+  // there as early as waiting for the Inter-corridor, so a rider on the platform can take it.
+  const s = new Schedule();
+  const js = s.journeys('airport', 'poonamallee', at(2026, 11, 19, 16, 50), 6);
+  // Each arrival lists at most two ways: the quickest and the soonest to leave.
+  for (const arr of new Set(js.map((j) => j.arr))) assert.ok(js.filter((j) => j.arr === arr).length <= 2);
   for (const j of js) {
-    const later = s.plan('airport', 'poonamallee-bypass', j.dep + 60_000);
-    assert.ok(!later || later.arr > j.arr, `${hhmm(j.dep)} is the quickest way to ${hhmm(j.arr)}`);
+    const quick = js.filter((x) => x.arr === j.arr).at(-1);
+    assert.ok(quick.dep - j.dep <= 15 * 60_000, `${hhmm(j.dep)} leaves at most 15 min before the ${hhmm(quick.dep)}`);
+    // Never rides away to catch, further on, a train it could board at the start.
+    for (const l of j.legs.slice(1)) assert.ok(!l.trip.stops.some((x) => x.s === 'airport' && x.at >= j.dep));
   }
 });

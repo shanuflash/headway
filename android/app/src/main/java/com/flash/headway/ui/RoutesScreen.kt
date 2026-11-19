@@ -538,6 +538,10 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
                 HeroCountdown(d.dep, now)
             }
             Text(line, style = HwType.subhead, color = hw.sub)
+            // Leaves sooner than a later train that gets there just as early: say which.
+            s.departures.drop(i + 1).firstOrNull { it.arr == d.arr }?.let { later ->
+                Text("Same arrival as ${clock(later.dep)}", style = HwType.footnote, color = hw.sub)
+            }
             d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
         }
         Box(

@@ -163,6 +163,9 @@ function applyDelays(key, trips, feed) {
   }
 }
 
+/** The most a trip listed for leaving sooner may leave before the quickest way, in minutes. */
+const SOONER_MAX = 15;
+
 export class Schedule {
   constructor(ctx = {}) {
     this.ctx = ctx;
@@ -290,7 +293,7 @@ export class Schedule {
   }
 
   /** Connection Scan over the trips of the service day containing `startMs` and the next. */
-  scan(from, to, startMs) {
+  scan(from, to, startMs, boardFirst = null) {
     const { conns, byId } = this.window(startMs);
     const earliest = new Map([[from, startMs]]);
     const legCount = new Map([[from, 0]]);
@@ -305,7 +308,9 @@ export class Schedule {
       // route never rides away from an interchange to catch the same train further back.
       const e = earliest.get(c.from);
       const arrivedBy = ptr.get(c.from)?.exit.trip;
-      if (e !== undefined && arrivedBy !== c.trip) {
+      // With `boardFirst`, the trip has to start on that train: no other boards at the start.
+      const startsElsewhere = boardFirst !== null && c.from === from && c.trip !== boardFirst;
+      if (e !== undefined && arrivedBy !== c.trip && !startsElsewhere) {
         const ready = c.from === from ? e : e + (STATIONS[c.from].transfer ?? 4) * MIN;
         const legs = legCount.get(c.from);
         const cur = enter.get(c.trip);
@@ -341,25 +346,58 @@ export class Schedule {
     return { from, to, legs, dep: legs[0].dep, arr: legs[legs.length - 1].arr };
   }
 
-  /** The next `count` distinct journeys, each departing after the previous one. */
+  /**
+   * The next `count` journeys, by departure. Each is the earliest arrival from its start, and the
+   * latest start for that arrival, so the quickest. As well, when a train leaving up to
+   * SOONER_MAX min earlier still arrives as early (often with a change), the soonest such trip is
+   * listed too, so a rider already at the platform can take it instead of waiting.
+   */
   journeys(from, to, startMs, count = 4) {
-    const out = [];
+    // By arrival: the quickest way (latest start) and the soonest start.
+    const groups = new Map();
+    const add = (j) => {
+      const g = groups.get(j.arr);
+      if (!g) groups.set(j.arr, { quick: j, soon: j });
+      else {
+        if (j.dep > g.quick.dep) g.quick = j;
+        if (j.dep < g.soon.dep) g.soon = j;
+      }
+    };
     let t = startMs;
-    // Fastest first: a later start that arrives just as early is the quicker trip, so it replaces
-    // the earlier one, even with more changes. (Equally quick ways are settled in scan(): fewer
-    // changes.) Later starts can replace earlier ones, so allow plenty of steps.
-    // Stop only at a trip that arrives after the last one listed, so that one is settled too.
     for (let n = 0; n < count * 20; n++) {
       const j = this.plan(from, to, t);
       if (!j) break;
-      const same = out.findIndex((o) => o.arr === j.arr);
-      if (same >= 0) out[same] = j;
-      else if (out.length < count) out.push(j);
-      else break;
+      // Settled: enough arrivals listed, and this one arrives after them all.
+      if (groups.size >= count && j.arr > Math.max(...groups.keys())) break;
+      for (const e of this.leavesSooner(from, to, t, j)) add(e);
+      add(j);
       t = j.dep + 1;
+    }
+    const out = [];
+    for (const g of groups.values()) {
+      out.push(g.quick);
+      // Leaving sooner is only worth it a little sooner, not an hour early to wait at a change.
+      if (g.soon !== g.quick && g.quick.dep - g.soon.dep <= SOONER_MAX * MIN) out.push(g.soon);
+    }
+    return out.sort((a, b) => a.dep - b.dep).slice(0, count);
+  }
+
+  /** Trips that leave `from` in [t, j.dep) and still arrive by `j.arr`, each on its own first train. */
+  leavesSooner(from, to, t, j) {
+    const out = [];
+    const seen = new Set();
+    for (const { trip, at } of this.departures(from, Math.max(t, j.dep - SOONER_MAX * MIN), 40)) {
+      if (at >= j.dep) break;
+      if (seen.has(trip.id)) continue;
+      seen.add(trip.id);
+      const alt = this.scan(from, to, at, trip.id);
+      // Never change onto a train that could be boarded at the start instead.
+      const pointless = alt?.legs.slice(1).some((l) => l.trip.stops.some((x) => x.s === from && x.at >= at));
+      if (alt && !pointless && alt.dep < j.dep && alt.arr <= j.arr) out.push(alt);
     }
     return out;
   }
+
 
   /**
    * The last journey of the current service day from `from` to `to`, with changes if needed:

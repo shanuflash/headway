@@ -734,7 +734,11 @@ function routeCard(m, isPreview) {
         <div class="grow">
           <span class="label ${tone}">${label}</span>
           ${big}
-          <span class="line">${lineText}</span>
+          <span class="line">${lineText}</span>${(() => {
+            // Leaves sooner than a later train that gets there just as early: say which.
+            const later = m.deps.slice(i + 1).find((x) => x.arr === d.arr);
+            return later ? `<span class="line">Same arrival as ${clock(later.dep)}</span>` : '';
+          })()}
           ${hasChange(d) ? legsLine(d) : ''}
         </div>
         <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${

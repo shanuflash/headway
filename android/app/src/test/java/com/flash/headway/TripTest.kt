@@ -8,6 +8,7 @@ import com.flash.headway.app.isDirect
 import com.flash.headway.app.planStatus
 import com.flash.headway.app.routeStatus
 import com.flash.headway.data.Network
+import com.flash.headway.data.RouteId
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.MINUTE
 import com.flash.headway.engine.Schedule
@@ -113,13 +114,33 @@ class TripTest {
         val start = LocalDateTime.of(2026, 11, 12, 8, 0).atZone(IST).toInstant().toEpochMilli()
         val js = s.journeys("airport", "poonamallee-bypass", start, 8)
         assertEquals(8, js.size)
-        // Each trip is the latest start for its arrival, so the quickest way to it, the last one too.
-        for (j in js) {
-            val later = s.plan("airport", "poonamallee-bypass", j.dep + MINUTE)
-            assertTrue(later == null || later.arr > j.arr)
+        // For each arrival the latest start is listed, the quickest way to it.
+        for (arr in js.map { it.arr }.toSet()) {
+            val quick = js.last { it.arr == arr }
+            val later = s.plan("airport", "poonamallee-bypass", quick.dep + MINUTE)
+            assertTrue(later == null || later.arr > arr)
         }
         // Arriving 9:40, the 8:42 with two changes (58 min) beats the 8:40 with one (60 min).
-        val at940 = js.first { java.time.Instant.ofEpochMilli(it.arr).atZone(IST).let { z -> z.hour == 9 && z.minute == 40 } }
+        val at940 = js.last { java.time.Instant.ofEpochMilli(it.arr).atZone(IST).let { z -> z.hour == 9 && z.minute == 40 } }
         assertEquals(3, at940.legs.size)
+    }
+
+    @Test
+    fun aTrainLeavingSoonerThatArrivesAsEarlyIsListedToo() {
+        // At Airport at 4:50 PM for Poonamallee: the 4:57 Blue, then Green at Alandur, arrives with
+        // the 5:08 Inter-corridor, so a rider on the platform can leave sooner instead of waiting.
+        val s = Schedule()
+        val start = LocalDateTime.of(2026, 11, 19, 16, 50).atZone(IST).toInstant().toEpochMilli()
+        val js = s.journeys("airport", "poonamallee", start, 6)
+        for (arr in js.map { it.arr }.toSet()) assertTrue(js.count { it.arr == arr } <= 2)
+        for (j in js) {
+            val quick = js.last { it.arr == j.arr }
+            assertTrue(quick.dep - j.dep <= 15 * MINUTE)
+            // Never rides away to catch, further on, a train it could board at the start.
+            for (l in j.legs.drop(1)) assertFalse(l.trip.stops.any { it.station == "airport" && it.at >= j.dep })
+        }
+        val sooner = js.filter { j -> js.any { it.arr == j.arr && it.dep > j.dep } }
+        assertTrue(sooner.isNotEmpty())
+        assertTrue(sooner.all { it.legs.first().trip.route == RouteId.BLUE && it.legs.size > 2 })
     }
 }

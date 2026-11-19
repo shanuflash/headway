@@ -207,6 +207,9 @@ fun transferDestinations(from: String): Map<String, Transfer> {
     return best.filter { it.value.changes > 0 && it.key != from }.mapValues { Transfer(it.value.changes, it.value.via) }
 }
 
+/** The most a trip listed for leaving sooner may leave before the quickest way, in minutes. */
+private const val SOONER_MAX = 15
+
 private class Conn(val trip: Trip, val from: String, val to: String, val dep: Long, val arr: Long)
 
 private class Window(val trips: List<Trip>, val conns: Array<Conn>)
@@ -415,7 +418,7 @@ class Schedule(
         return if (tomorrow > startMs) scan(from, to, tomorrow) else null
     }
 
-    private fun scan(from: String, to: String, startMs: Long): Journey? {
+    private fun scan(from: String, to: String, startMs: Long, boardFirst: Trip? = null): Journey? {
         val conns = window(startMs).conns
         val earliest = HashMap<String, Long>().apply { put(from, startMs) }
         val legCount = HashMap<String, Int>().apply { put(from, 0) }
@@ -431,7 +434,9 @@ class Schedule(
             // route never rides away from an interchange to catch the same train further back.
             val e = earliest[c.from]
             val arrivedBy = ptr[c.from]?.second?.trip
-            if (e != null && arrivedBy !== c.trip) {
+            // With [boardFirst], the trip has to start on that train: no other boards at the start.
+            val startsElsewhere = boardFirst != null && c.from == from && c.trip !== boardFirst
+            if (e != null && arrivedBy !== c.trip && !startsElsewhere) {
                 val ready = if (c.from == from) e else e + Network.transfer(c.from) * MINUTE
                 val legs = legCount.getValue(c.from)
                 val cur = enter[c.trip]
@@ -464,26 +469,54 @@ class Schedule(
         return if (s == from) Journey(from, to, legs) else null
     }
 
-    /** The next [count] journeys; a later train that arrives just as early replaces an earlier one. */
+    /**
+     * The next [count] journeys, by departure. Each is the earliest arrival from its start, and
+     * the latest start for that arrival, so the quickest. As well, when a train leaving up to
+     * [SOONER_MAX] min earlier still arrives as early (often with a change), the soonest such
+     * trip is listed too, so a rider already at the platform can take it instead of waiting.
+     */
     fun journeys(from: String, to: String, startMs: Long, count: Int = 4): List<Journey> {
-        val out = ArrayList<Journey>()
+        // By arrival: the quickest way (latest start) and the soonest start.
+        class Group(var quick: Journey, var soon: Journey)
+        val groups = LinkedHashMap<Long, Group>()
+        fun add(j: Journey) {
+            val g = groups[j.arr]
+            if (g == null) {
+                groups[j.arr] = Group(j, j)
+            } else {
+                if (j.dep > g.quick.dep) g.quick = j
+                if (j.dep < g.soon.dep) g.soon = j
+            }
+        }
         var t = startMs
         var n = 0
-        // Stop only at a trip that arrives after the last one listed, so that one is settled too.
         while (n++ < count * 20) {
             val j = plan(from, to, t) ?: break
-            // Fastest first: a later start that arrives just as early is the quicker trip, so it
-            // replaces the earlier one, even with more changes. (Equally quick ways are settled in
-            // scan(): fewer changes.)
-            val same = out.indexOfFirst { it.arr == j.arr }
-            if (same >= 0) {
-                out[same] = j
-            } else if (out.size < count) {
-                out += j
-            } else {
-                break
-            }
+            // Settled: enough arrivals listed, and this one arrives after them all.
+            if (groups.size >= count && j.arr > groups.keys.max()) break
+            leavesSooner(from, to, t, j).forEach(::add)
+            add(j)
             t = j.dep + 1
+        }
+        // Leaving sooner is only worth it a little sooner, not an hour early to wait at a change.
+        return groups.values.flatMap { g ->
+            if (g.soon !== g.quick && g.quick.dep - g.soon.dep <= SOONER_MAX * MINUTE) listOf(g.quick, g.soon) else listOf(g.quick)
+        }
+            .sortedBy { it.dep }
+            .take(count)
+    }
+
+    /** Trips that leave [from] in [t, j.dep) and still arrive by [j]'s arrival, each on its own first train. */
+    private fun leavesSooner(from: String, to: String, t: Long, j: Journey): List<Journey> {
+        val out = ArrayList<Journey>()
+        val seen = HashSet<Trip>()
+        for (d in departures(from, maxOf(t, j.dep - SOONER_MAX * MINUTE), 40)) {
+            if (d.at >= j.dep) break
+            if (!seen.add(d.trip)) continue
+            val alt = scan(from, to, d.at, d.trip) ?: continue
+            // Never change onto a train that could be boarded at the start instead.
+            val pointless = alt.legs.drop(1).any { l -> l.trip.stops.any { it.station == from && it.at >= d.at } }
+            if (!pointless && alt.dep < j.dep && alt.arr <= j.arr) out += alt
         }
         return out
     }
