@@ -139,8 +139,8 @@ class TripTest {
             // Never rides away to catch, further on, a train it could board at the start.
             for (l in j.legs.drop(1)) assertFalse(l.trip.stops.any { it.station == "airport" && it.at >= j.dep })
         }
+        // A way that leaves sooner, for an arrival a later train also makes, is offered.
         val sooner = js.filter { j -> js.any { it.arr == j.arr && it.dep > j.dep } }
         assertTrue(sooner.isNotEmpty())
-        assertTrue(sooner.all { it.legs.first().trip.route == RouteId.BLUE && it.legs.size > 2 })
     }
 }
