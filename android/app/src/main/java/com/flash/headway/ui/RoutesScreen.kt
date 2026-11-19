@@ -118,6 +118,10 @@ class RouteActions(
     val endTrip: () -> Unit = {},
     /** Opens the trips already under way on a route, to follow the one the rider's on. */
     val onTheWay: (String) -> Unit = {},
+    /** The followed trip's next train was missed: take the backup (route id, backup). */
+    val missed: (String, RouteDeparture) -> Unit = { _, _ -> },
+    /** Opens other trains from a station on a followed trip: route id, station, after. */
+    val otherTrains: (String, String, Long) -> Unit = { _, _, _ -> },
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -421,7 +425,12 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         val trip = s.trip?.takeIf { !isPreview }
         if (trip != null) {
             // On a trip with changes: count down to whatever's next, train by train.
-            TripHero(trip, prefs, r.id, now, actions.endTrip)
+            TripHero(
+                trip, prefs, r.id, now, actions.endTrip,
+                backup = s.tripBackup,
+                onMissed = { b -> actions.missed(r.id, b) },
+                onOther = { station, after -> actions.otherTrains(r.id, station, after) },
+            )
             trip.legs?.let { legs ->
                 TripTimeline(legs, Modifier.padding(horizontal = 20.dp), now = now, walk = prefs.walk) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
             }
@@ -637,7 +646,16 @@ private fun FollowButton(onClick: () -> Unit) {
  * platform and coach); after the last one, arrival.
  */
 @Composable
-private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: () -> Long, onEnd: () -> Unit) {
+private fun TripHero(
+    trip: RouteDeparture,
+    prefs: Prefs,
+    routeId: String,
+    now: () -> Long,
+    onEnd: () -> Unit,
+    backup: RouteDeparture?,
+    onMissed: (RouteDeparture) -> Unit,
+    onOther: (station: String, after: Long) -> Unit,
+) {
     val hw = LocalHw.current
     val legs = trip.legs ?: return
     val t = now()
@@ -674,6 +692,18 @@ private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: (
             Text(label, style = HwType.subheadStrong, color = hw.tint)
             BigCountdown(target - t)
             lines.forEach { Text(it, style = HwType.subhead, color = hw.sub) }
+            // In case the train to catch is missed: the next way on, and a choice of others.
+            if (leg != null) {
+                if (backup != null) {
+                    Text("If missed: ${clock(backup.dep)} · arrives ${clock(backup.arr)}", style = HwType.footnote, color = hw.sub)
+                }
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (backup != null) TripPill("Missed it") { onMissed(backup) }
+                    // Only trains that can be reached: still on the way, after arriving and walking over.
+                    val ready = if (i > 0) maxOf(t, legs[i - 1].arr + changeMinutes(leg.from, prefs.walk) * MINUTE) else t
+                    TripPill("Other trains") { onOther(leg.from, ready) }
+                }
+            }
         }
         Box(
             Modifier.size(52.dp).clip(CircleShape).background(hw.fill).edge(CircleShape).press(scaleTo = 0.9f, onClick = onEnd),
@@ -682,6 +712,19 @@ private fun TripHero(trip: RouteDeparture, prefs: Prefs, routeId: String, now: (
             Icon(Icons.Rounded.Close, contentDescription = "End trip", tint = hw.text, modifier = Modifier.size(24.dp))
         }
     }
+}
+
+/** A small action under the trip hero. */
+@Composable
+private fun TripPill(text: String, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    Text(
+        text,
+        style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
+        color = hw.tint,
+        maxLines = 1,
+        modifier = Modifier.clip(CircleShape).background(hw.tintSoft).press(scaleTo = 0.95f, onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+    )
 }
 
 /** The hero's countdown on its own, so only it recomposes as the clock ticks. */

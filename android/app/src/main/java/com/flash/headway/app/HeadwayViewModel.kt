@@ -8,6 +8,7 @@ import com.flash.headway.data.Network
 import com.flash.headway.data.RouteId
 import com.flash.headway.engine.lineDirKey
 import com.flash.headway.engine.lineKey
+import com.flash.headway.engine.asDeparture
 import com.flash.headway.engine.DayInfo
 import com.flash.headway.engine.DayOverride
 import com.flash.headway.engine.Feed
@@ -108,7 +109,12 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                             val st = routeStatus(s, r, now, p.lastWarn, p.count, p.delayRule(r.id))
                             // The trip being followed on this route, planned again on the delays now.
                             val t = p.trip?.takeIf { it.routeId == r.id }
-                            if (t != null) st.copy(trip = s.followTrip(r, t, p.lineDelays)) else st
+                            if (t != null) {
+                                val trip = s.followTrip(r, t, p.lineDelays)
+                                st.copy(trip = trip, tripBackup = trip?.let { s.backupFor(r, it, now) })
+                            } else {
+                                st
+                            }
                         } to
                             pv?.let { route ->
                                 if (plan != null) {
@@ -490,6 +496,23 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
         Alerts.startTrip(getApplication(), route, trip)
         update { it.copy(trip = trip, reminder = null) }
         return d
+    }
+
+    /**
+     * Ways on from [station] to [route]'s end, leaving after [after]: to pick another train than
+     * the one planned. On the engine thread.
+     */
+    suspend fun optionsFrom(route: SavedRoute, station: String, after: Long): List<com.flash.headway.engine.RouteDeparture> =
+        withContext(engineThread) {
+            val p = prefs.value ?: return@withContext emptyList()
+            engine(p).journeys(station, route.to, after, 5).map { it.asDeparture() }
+        }
+
+    /** Follows [d] instead (a backup, or another train picked): from its first station on. */
+    fun switchTrip(route: SavedRoute, d: com.flash.headway.engine.RouteDeparture) {
+        val trip = followOf(route, d, d.legs?.firstOrNull()?.from) ?: return
+        Alerts.startTrip(getApplication(), route, trip)
+        update { it.copy(trip = trip, reminder = null) }
     }
 
     /** Stops following a trip (and its countdown). */

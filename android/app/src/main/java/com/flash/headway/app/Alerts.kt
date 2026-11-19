@@ -43,6 +43,7 @@ object Alerts {
     const val ACTION_NEXT = "com.flash.headway.NEXT"
     const val ACTION_STOP = "com.flash.headway.STOP"
     const val ACTION_TRIP = "com.flash.headway.TRIP"
+    const val ACTION_MISSED = "com.flash.headway.MISSED"
     private const val EXTRA_TRIP = "trip"
     private const val EXTRA_FROM = "from"
     private const val EXTRA_TO = "to"
@@ -136,6 +137,10 @@ object Alerts {
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(openApp(context))
                 .setDeleteIntent(broadcast(context, ACTION_STOP, route, at))
+                .apply {
+                    // Missed the train to catch: move on to the next way from there.
+                    if (leg != null) addAction(Notification.Action.Builder(null, "Missed it", tripIntent(context, route, trip, ACTION_MISSED)).build())
+                }
                 .addAction(Notification.Action.Builder(null, "End trip", broadcast(context, ACTION_STOP, route, at)).build())
                 .build()
             context.getSystemService(NotificationManager::class.java).notify(ID_COUNTDOWN, n)
@@ -153,10 +158,26 @@ object Alerts {
         if (leg != null) scheduleSoon(context, route, leg.dep)
     }
 
-    private fun tripIntent(context: Context, route: SavedRoute, trip: ActiveTrip): PendingIntent {
-        val intent = Intent(context, AlertReceiver::class.java).setAction(ACTION_TRIP)
+    private fun tripIntent(context: Context, route: SavedRoute, trip: ActiveTrip, action: String = ACTION_TRIP): PendingIntent {
+        val intent = Intent(context, AlertReceiver::class.java).setAction(action)
             .putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to).putExtra(EXTRA_TRIP, encodeTrip(trip))
-        return PendingIntent.getBroadcast(context, 4, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val code = if (action == ACTION_MISSED) 5 else 4
+        return PendingIntent.getBroadcast(context, code, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    /**
+     * The followed trip's next train was missed: follow the next way on from the station it was
+     * to be boarded at instead. Returns the new trip, or null when nothing else runs tonight.
+     */
+    fun missedTrain(context: Context, route: SavedRoute, trip: ActiveTrip): ActiveTrip? {
+        val app = context.applicationContext
+        val next = SharedEngine.with(app) { s ->
+            val now = s.followTrip(route, trip, Widgets.lineDelays(app)) ?: return@with null
+            s.backupFor(route, now, Clock.now())
+        } ?: return null
+        val moved = followOf(route, next, next.legs?.firstOrNull()?.from) ?: return null
+        startTrip(app, route, moved)
+        return moved
     }
 
     fun stopCountdown(context: Context) {
@@ -278,6 +299,21 @@ class AlertReceiver : BroadcastReceiver() {
             Alerts.ACTION_STOP -> {
                 Alerts.stopCountdown(context)
                 updatePrefs(context) { it.copy(reminder = null, trip = null) }
+            }
+            Alerts.ACTION_MISSED -> {
+                val trip = Alerts.tripFrom(intent)
+                if (route != null && trip != null) {
+                    val app = context.applicationContext
+                    val pending = goAsync()
+                    SharedEngine.post {
+                        try {
+                            val moved = Alerts.missedTrain(app, route, trip)
+                            if (moved != null) runBlocking { PrefsStore(app).update { it.copy(trip = moved, reminder = null) } }
+                        } finally {
+                            pending.finish()
+                        }
+                    }
+                }
             }
             Alerts.ACTION_TRIP -> {
                 val trip = Alerts.tripFrom(intent)

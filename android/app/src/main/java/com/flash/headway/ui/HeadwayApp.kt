@@ -135,6 +135,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     var stationFor by remember { mutableStateOf<String?>(null) }
     // A route whose trips already under way are listed, to follow the one the rider's on.
     var onTheWayFor by remember { mutableStateOf<String?>(null) }
+    // Other trains from a station on a followed trip: route id, station, after.
+    var optionsFor by remember { mutableStateOf<Triple<String, String, Long>?>(null) }
     val scope = rememberCoroutineScope()
     // The Lines tab: the station each card shows next trains at (by line), and the card picking one.
     var lineStations by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
@@ -265,6 +267,13 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 toast("Trip ended")
                             },
                             onTheWay = { onTheWayFor = it },
+                            missed = { id, backup ->
+                                prefs.routes.firstOrNull { it.id == id }?.let { route ->
+                                    vm.switchTrip(route, backup)
+                                    toast("Switched to ${clock(backup.dep)}")
+                                }
+                            },
+                            otherTrains = { id, station, after -> optionsFor = Triple(id, station, after) },
                         ),
                     )
                 }
@@ -385,6 +394,23 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                 onDone = { vm.setPlan(it) },
                 onDismiss = { whenOpen = false },
             )
+        }
+
+        optionsFor?.let { (id, station, after) ->
+            val route = prefs.routes.firstOrNull { it.id == id }
+            if (route == null) {
+                LaunchedEffect(id) { optionsFor = null }
+            } else {
+                TrainOptionsSheet(
+                    station = station,
+                    options = produceState<List<RouteDeparture>?>(null, id, station, after) { value = vm.optionsFrom(route, station, after) }.value,
+                    onPick = { d ->
+                        vm.switchTrip(route, d)
+                        toast("Switched to ${clock(d.dep)}")
+                    },
+                    onDismiss = { optionsFor = null },
+                )
+            }
         }
 
         onTheWayFor?.let { id ->

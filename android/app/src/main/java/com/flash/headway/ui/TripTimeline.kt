@@ -255,6 +255,56 @@ private fun DrawScope.rail(rail: Rail, from: Offset, to: Offset) {
 }
 
 /**
+ * Other ways on from a station of a followed trip: to take another train than the one planned,
+ * or a later one after missing it. [options] is null while they're worked out.
+ */
+@Composable
+fun TrainOptionsSheet(station: String, options: List<com.flash.headway.engine.RouteDeparture>?, onPick: (com.flash.headway.engine.RouteDeparture) -> Unit, onDismiss: () -> Unit) {
+    val hw = LocalHw.current
+    HwSheet(onDismiss = onDismiss) { close ->
+        Column(Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Other trains", style = HwType.headline, color = hw.text)
+            Text("From ${Network.name(station)}", style = HwType.footnote, color = hw.sub)
+        }
+        Column(
+            Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            when {
+                options == null -> Footnote("Loading…")
+                options.isEmpty() -> Footnote("No more trains from ${Network.name(station)} today.")
+                else -> ListCard(
+                    options.map { d ->
+                        @Composable {
+                            val legs = d.legs.orEmpty()
+                            val first = legs.firstOrNull()
+                            ListRow(onClick = { close { onPick(d) } }) {
+                                Box(Modifier.size(10.dp).clip(CircleShape).background(legsBrush(legs, hw)))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "${clock(d.dep)}${first?.let { " · ${legLineName(it)} towards ${Network.name(it.trip.dest)}" }.orEmpty()}",
+                                        style = HwType.body,
+                                        color = hw.text,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        "Arrives ${clock(d.arr)}" + if (legs.size > 1) " · ${changesLabel(legs)}" else "",
+                                        style = HwType.footnote,
+                                        color = hw.sub,
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    inset = 38.dp,
+                )
+            }
+        }
+    }
+}
+
+/**
  * "Which train are you on?": trips on a route already under way, newest first, each with where
  * it's got to; picking one follows it from there. Or join partway (after a bus, say): pick the
  * station and when you'll get there, and the rest of the trip is followed from it. [trips] is

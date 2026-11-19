@@ -33,6 +33,8 @@ data class RouteStatus(
     val isPreview: Boolean = false,
     /** The trip with changes the rider is following on this route, train by train. */
     val trip: RouteDeparture? = null,
+    /** If the followed trip's next train is missed: the next way on from where it's boarded. */
+    val tripBackup: RouteDeparture? = null,
 ) {
     val next: RouteDeparture? get() = departures.firstOrNull()
 
@@ -191,6 +193,15 @@ fun followOf(route: SavedRoute, d: RouteDeparture, from: String? = null): Active
 /** The rest of [route] joined partway: the first way on from [station] to its end, leaving at or after [at]. */
 fun Schedule.tripFrom(route: SavedRoute, station: String, at: Long): RouteDeparture? =
     plan(station, route.to, at)?.asDeparture()
+
+/**
+ * The way on if the next train of followed trip [trip] is missed: the earliest from the station
+ * it's boarded at, leaving after it. Null once the last train has left.
+ */
+fun Schedule.backupFor(route: SavedRoute, trip: RouteDeparture, now: Long): RouteDeparture? {
+    val leg = trip.legs?.getOrNull(trip.nextLeg(now)) ?: return null
+    return plan(leg.from, route.to, leg.dep + MINUTE)?.asDeparture()
+}
 
 /** Where a followed trip is at [now]: the next train to board (by index), or past the last one. */
 fun RouteDeparture.nextLeg(now: Long): Int = legs.orEmpty().indexOfFirst { it.dep > now }

@@ -9,6 +9,7 @@ import com.flash.headway.app.followTrip
 import com.flash.headway.app.followOf
 import com.flash.headway.app.tripsOnTheWay
 import com.flash.headway.app.tripFrom
+import com.flash.headway.app.backupFor
 import com.flash.headway.app.nextLeg
 import com.flash.headway.engine.IST
 import com.flash.headway.engine.MINUTE
@@ -84,6 +85,25 @@ class FollowTripTest {
         assertEquals(d.legs!!.map { it.dep to it.arr }, followed.legs!!.map { it.dep to it.arr })
         // Joining at the route's own start is just following it.
         assertNull(followOf(route, firstTrip(), route.from)!!.from)
+    }
+
+    @Test
+    fun aMissedTrainHasABackupFromWhereItWasToBeBoarded() {
+        val d = firstTrip()
+        val legs = d.legs!!
+        // On the first train, heading for the change: the backup leaves the change station later.
+        val now = legs[0].dep + MINUTE
+        val backup = Schedule().backupFor(route, d, now)!!
+        assertEquals(legs[1].from, backup.legs!!.first().from)
+        assertTrue(backup.dep > legs[1].dep)
+        assertTrue(backup.arr >= d.arr)
+        // Switching to it follows it from there.
+        val moved = followOf(route, backup, backup.legs!!.first().from)!!
+        assertEquals(legs[1].from, moved.from)
+        val followed = Schedule().followTrip(route, moved, emptyMap())!!
+        assertEquals(backup.dep, followed.dep)
+        // After the last train has left there's nothing left to miss.
+        assertNull(Schedule().backupFor(route, d, legs.last().dep + 1))
     }
 
     @Test
