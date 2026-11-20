@@ -391,7 +391,8 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                         "${Network.name(shown.from)} → ${Network.name(shown.to)}",
                         style = HwType.cardTitle.copy(fontSize = 18.sp, lineHeight = 23.sp),
                         color = hw.text,
-                        maxLines = 1,
+                        // Two lines rather than cut the destination off.
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -400,7 +401,12 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                         if (legs != null) {
                             Box(Modifier.size(8.dp).clip(CircleShape).background(legsBrush(legs, hw)))
                             Text(
-                                if (legs.size > 1) changesLabel(legs) else "${legLineName(legs[0])} · towards ${Network.name(legs[0].trip.dest)}",
+                                // Which trains, and where to change: said once, here.
+                                if (legs.size > 1) {
+                                    legs.joinToString(" → ") { legShort(it) } + " · change at " + legs.drop(1).joinToString(", ") { Network.name(it.from) }
+                                } else {
+                                    "${legLineName(legs[0])} · towards ${Network.name(legs[0].trip.dest)}"
+                                },
                                 style = HwType.subhead,
                                 color = hw.sub,
                                 maxLines = 1,
@@ -533,10 +539,10 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         i == 0 -> "Next train" to false
         else -> "Later train" to false
     }
+    // Tint is kept for the selected train and actions; the label is plain unless it warns.
     val labelColor = when {
         warn -> hw.warn
-        tomorrow -> hw.sub
-        else -> hw.tint
+        else -> hw.sub
     }
     val note = if (d.hasChange) " · ${span(d.arr - d.dep)}" else trainNote(d)?.let { " · $it" }.orEmpty()
     val times = when {
@@ -571,11 +577,11 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
                 HeroCountdown(d.dep, now)
             }
             Text(line, style = HwType.subhead, color = hw.sub)
+            // (Which trains is in the card's header, so no second line of them here.)
             // Leaves sooner than a later train that gets there just as early: say which.
             s.departures.drop(i + 1).firstOrNull { it.arr == d.arr }?.let { later ->
                 Text("Same arrival as ${clock(later.dep)}", style = HwType.footnote, color = hw.sub)
             }
-            d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
         }
         Box(
             Modifier
@@ -633,7 +639,7 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
     }
     val note = if (!d.hasChange) trainNote(d)?.let { " · $it" }.orEmpty() else ""
     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = HwType.subheadStrong, color = hw.tint)
+        Text(label, style = HwType.subheadStrong, color = hw.sub)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val lastDep = remember { mutableLongStateOf(d.dep) }
             val later = d.dep > lastDep.longValue

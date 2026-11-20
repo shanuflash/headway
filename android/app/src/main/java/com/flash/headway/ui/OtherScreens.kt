@@ -348,7 +348,7 @@ fun ColumnScope.SettingsScreen(
     val overrideType = prefs.override?.takeIf { it.date == today.date }?.type
     SectionTitle("Timetable")
     SettingsCard {
-        Text("Today's timetable", style = HwType.body, color = hw.text)
+        Text("Today", style = HwType.body, color = hw.text)
         Segmented(
             options = listOf(null to "Auto", DayType.WEEKDAY to "Weekday", DayType.SATURDAY to "Saturday", DayType.SUNDAY to "Holiday"),
             selected = overrideType,
@@ -457,7 +457,7 @@ private fun MetroCardSettings() {
     var text by remember { mutableStateOf(com.flash.headway.app.TopUp.upiId(context).orEmpty()) }
     var bad by remember { mutableStateOf(false) }
     SettingsCard {
-        Text("Metro card UPI ID", style = HwType.body, color = hw.text)
+        Text("UPI ID", style = HwType.body, color = hw.text)
         Row(
             Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(hw.fill).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,

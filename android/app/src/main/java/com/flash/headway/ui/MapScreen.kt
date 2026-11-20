@@ -123,7 +123,9 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                         if (hit != null) {
                             val dx = hit.value.first - x
                             val dy = hit.value.second - y
-                            if (dx * dx + dy * dy < 34f * 34f) onStation(hit.key)
+                            // A finger-sized target (24 dp around the station), whatever the zoom.
+                            val reach = 24.dp.toPx() / s
+                            if (dx * dx + dy * dy < reach * reach) onStation(hit.key)
                         }
                     }
                 },
@@ -178,18 +180,24 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                     val text = measurer.measure(Network.name(id), labelStyle.copy(fontSize = maxOf((20f * s).toSp().value, 10f).sp))
                     val w = text.size.width.toFloat()
                     val h = text.size.height.toFloat()
-                    val topLeft = when (p.third) {
-                        'l' -> Offset(o.x - 14f * s - w, o.y - h / 2)
+                    val right = Offset(o.x + 14f * s, o.y - h / 2)
+                    val left = Offset(o.x - 14f * s - w, o.y - h / 2)
+                    val preferred = when (p.third) {
+                        'l' -> left
                         'a' -> Offset(o.x + 10f * s, o.y - 12f * s - h)
                         'd' -> Offset(o.x + 10f * s, o.y + 12f * s)
                         'A' -> Offset(o.x - 10f * s - w, o.y - 12f * s - h)
                         'D' -> Offset(o.x - 10f * s - w, o.y + 12f * s)
-                        else -> Offset(o.x + 14f * s, o.y - h / 2)
+                        else -> right
                     }
-                    val box = androidx.compose.ui.geometry.Rect(topLeft, androidx.compose.ui.geometry.Size(w, h)).inflate(2f)
-                    if (placed.none { it.overlaps(box) }) {
-                        placed += box
-                        drawText(text, topLeft = topLeft)
+                    // The laid-out side first, else the other side: never cut off by the card's
+                    // edge, never over another label.
+                    val visible = androidx.compose.ui.geometry.Rect(-pan.x, -pan.y, -pan.x + size.width, -pan.y + size.height)
+                    val spot = listOf(preferred, right, left).map { androidx.compose.ui.geometry.Rect(it, androidx.compose.ui.geometry.Size(w, h)) }
+                        .firstOrNull { r -> r.left >= visible.left && r.right <= visible.right && r.top >= visible.top && r.bottom <= visible.bottom && placed.none { it.overlaps(r.inflate(2f)) } }
+                    if (spot != null) {
+                        placed += spot.inflate(2f)
+                        drawText(text, topLeft = spot.topLeft)
                     }
                 }
             }
@@ -205,12 +213,12 @@ private fun MapKey() {
         listOf(Line.BLUE, Line.GREEN, Line.YELLOW).forEach { line ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(14.dp, 4.dp).clip(CircleShape).background(hw.line(line)))
-                Text(line.label, style = HwType.footnote, color = hw.sub)
+                Text(line.label.removeSuffix(" Line"), style = HwType.footnote, color = hw.sub, maxLines = 1)
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(Modifier.size(10.dp).clip(CircleShape).border(2.dp, hw.text, CircleShape))
-            Text("Interchange", style = HwType.footnote, color = hw.sub)
+            Text("Interchange", style = HwType.footnote, color = hw.sub, maxLines = 1)
         }
     }
 }

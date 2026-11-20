@@ -152,7 +152,8 @@ fun TripTimeline(legs: List<Leg>, modifier: Modifier = Modifier, now: (() -> Lon
                         Text(
                             "Change to $to · $walkMin min walk${if (spare > 0) " · $spare min spare" else ""}",
                             style = HwType.footnote.copy(fontWeight = FontWeight.Medium),
-                            color = hw.text,
+                            // Done already on a followed trip: fades back like the stops around it.
+                            color = if (now != null && leg.dep <= now()) hw.sub else hw.text,
                         )
                     }
                 }
