@@ -332,6 +332,7 @@ class SettingsActions(
     val mock: (Int?) -> Unit,
     val allowNotifications: () -> Unit,
     val openTimetable: () -> Unit,
+    val checkUpdate: () -> Unit = {},
 )
 
 @Composable
@@ -342,6 +343,7 @@ fun ColumnScope.SettingsScreen(
     actions: SettingsActions,
 ) {
     val hw = LocalHw.current
+    val context = LocalContext.current
     TopBar(right = { RoundButton(Icons.Rounded.Check, "Done", actions.back, tint = Color.White, background = hw.tint) })
     LargeTitle("Settings")
 
@@ -415,8 +417,14 @@ fun ColumnScope.SettingsScreen(
     SectionTitle("About")
 
 
+    val version = remember { com.flash.headway.app.Updater.installedName(context) }
     ListCard(
         listOf<@Composable () -> Unit>({
+            ListRow(onClick = actions.checkUpdate) {
+                Text("Version $version", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
+                Text("Check for updates", style = HwType.subhead, color = hw.tint)
+            }
+        }, {
             ListRow(onClick = actions.openTimetable) {
                 Text("Official timetable", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
                 Text(Timetable.PUBLISHED, style = HwType.subhead, color = hw.sub)

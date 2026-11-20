@@ -80,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.flash.headway.app.Coach
+import com.flash.headway.app.HeadwayViewModel
 import androidx.compose.material.icons.rounded.Navigation
 import com.flash.headway.app.nextLeg
 import com.flash.headway.app.TopUp
@@ -133,6 +134,9 @@ class RouteActions(
     val missed: (String, RouteDeparture) -> Unit = { _, _ -> },
     /** Opens other trains from a station on a followed trip: route id, station, after. */
     val otherTrains: (String, String, Long) -> Unit = { _, _, _ -> },
+    /** The update banner's button, and hiding it. */
+    val update: () -> Unit = {},
+    val dismissUpdate: () -> Unit = {},
 )
 
 fun routeLabel(r: SavedRoute, inter: Boolean = false): String {
@@ -195,6 +199,7 @@ fun LazyListScope.routesScreen(
     feed: Feed?,
     now: () -> Long,
     actions: RouteActions,
+    update: HeadwayViewModel.UpdateState? = null,
 ) {
     item(key = "top", contentType = "top") {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -210,6 +215,7 @@ fun LazyListScope.routesScreen(
             LargeTitle("Routes")
             // In this column a hidden banner takes no space (a lazy item would leave a gap).
             if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
+            UpdateBanner(update, actions.update, actions.dismissUpdate)
             LoadCardBanner(now)
             Notices(feed, now)
         }
@@ -256,6 +262,38 @@ private fun Notices(feed: Feed?, now: () -> Long) {
                 n.body?.let { Text(it, style = HwType.footnote, color = fg, maxLines = 3, overflow = TextOverflow.Ellipsis) }
             }
         }
+    }
+}
+
+/** A newer Headway from the project's releases: download and install it in place. */
+@Composable
+private fun UpdateBanner(state: HeadwayViewModel.UpdateState?, onUpdate: () -> Unit, onDismiss: () -> Unit) {
+    state ?: return
+    val hw = LocalHw.current
+    val (title, sub, button) = when (state) {
+        is HeadwayViewModel.UpdateState.Available -> Triple("Update available", "Headway ${state.release.name}", "Update")
+        is HeadwayViewModel.UpdateState.Downloading -> Triple("Downloading update", "${state.percent}%", null)
+        is HeadwayViewModel.UpdateState.Ready -> Triple("Update ready", "Headway ${state.release.name}", "Install")
+        is HeadwayViewModel.UpdateState.Failed -> Triple("Download failed", "Headway ${state.release.name}", "Retry")
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.tintSoft).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(title, style = HwType.subheadStrong, color = hw.text)
+            Text(sub, style = HwType.footnote, color = hw.sub)
+        }
+        if (button != null) {
+            Box(
+                Modifier.height(36.dp).clip(CircleShape).background(hw.tint).press(scaleTo = 0.95f, onClick = onUpdate).padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(button, style = HwType.subheadStrong, color = Color.White)
+            }
+        }
+        if (state !is HeadwayViewModel.UpdateState.Downloading) PillIcon(Icons.Rounded.Close, "Dismiss", onClick = onDismiss)
     }
 }
 

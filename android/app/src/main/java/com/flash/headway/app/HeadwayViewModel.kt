@@ -61,6 +61,62 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     /** Whether the app is on screen. The loops below only run then (the widget and FeedWorker cover the rest). */
     private val foreground = MutableStateFlow(true)
 
+    /** An app update from the project's releases, and how far along it is. */
+    sealed interface UpdateState {
+        val release: Updater.Release
+        data class Available(override val release: Updater.Release) : UpdateState
+        data class Downloading(override val release: Updater.Release, val percent: Int) : UpdateState
+        data class Ready(override val release: Updater.Release, val download: Long) : UpdateState
+        data class Failed(override val release: Updater.Release) : UpdateState
+    }
+
+    private val _update = MutableStateFlow<UpdateState?>(null)
+    val update: StateFlow<UpdateState?> = _update.asStateFlow()
+
+    /** Checks for a newer release; returns whether there is one. Keeps a download in progress. */
+    suspend fun checkUpdate(): Boolean {
+        val r = Updater.newer(getApplication()) ?: return false
+        val cur = _update.value
+        if (cur == null || cur.release.code < r.code || cur is UpdateState.Failed) _update.value = UpdateState.Available(r)
+        return true
+    }
+
+    /** Hides the update banner until a newer release. */
+    fun dismissUpdate() {
+        _update.value = null
+    }
+
+    /** The banner's button: download, then install (asking once to allow installs from Headway). */
+    fun startUpdate() {
+        val app = getApplication<Application>()
+        when (val st = _update.value) {
+            is UpdateState.Ready -> if (Updater.canInstall(app)) Updater.install(app, st.download) else Updater.allowInstalls(app)
+            is UpdateState.Available, is UpdateState.Failed -> {
+                val id = Updater.download(app, st.release)
+                _update.value = UpdateState.Downloading(st.release, 0)
+                viewModelScope.launch {
+                    while (true) {
+                        val pct = Updater.progress(app, id)
+                        when {
+                            pct == null -> {
+                                _update.value = UpdateState.Failed(st.release)
+                                return@launch
+                            }
+                            pct >= 100 -> {
+                                _update.value = UpdateState.Ready(st.release, id)
+                                if (Updater.canInstall(app)) Updater.install(app, id) else Updater.allowInstalls(app)
+                                return@launch
+                            }
+                            else -> _update.value = UpdateState.Downloading(st.release, pct)
+                        }
+                        delay(400)
+                    }
+                }
+            }
+            else -> Unit
+        }
+    }
+
     fun setForeground(on: Boolean) {
         foreground.value = on
     }
@@ -152,6 +208,15 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                     val boundary = (list + listOfNotNull(previewNow)).mapNotNull { it.nextChange }.minOrNull()
                     val wait = boundary?.let { (it - Clock.now() + 300).coerceIn(300L, 15_000L) } ?: 15_000L
                     delay(wait)
+                }
+            }
+        }
+        viewModelScope.launch {
+            // App updates: on open, then every 6 hours while on screen.
+            foreground.collectLatest { fg ->
+                while (fg) {
+                    checkUpdate()
+                    delay(6 * 60 * 60_000L)
                 }
             }
         }

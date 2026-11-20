@@ -132,6 +132,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     val plan by vm.plan.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val feed by vm.feed.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
     var stationFor by remember { mutableStateOf<String?>(null) }
     // A route whose trips already under way are listed, to follow the one the rider's on.
     var onTheWayFor by remember { mutableStateOf<String?>(null) }
@@ -247,6 +248,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         prefs = prefs,
                         feed = feed,
                         now = now,
+                        update = update,
                         actions = RouteActions(
                             add = { picker = Picker.ADD },
                             look = { picker = Picker.LOOK },
@@ -269,6 +271,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                                 toast("Trip ended")
                             },
                             onTheWay = { onTheWayFor = it },
+                            update = vm::startUpdate,
+                            dismissUpdate = vm::dismissUpdate,
                             missed = { id, backup ->
                                 prefs.routes.firstOrNull { it.id == id }?.let { route ->
                                     vm.switchTrip(route, backup)
@@ -308,6 +312,16 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             },
                             openTimetable = {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Timetable.SOURCE_URL)))
+                            },
+                            checkUpdate = {
+                                scope.launch {
+                                    if (vm.checkUpdate()) {
+                                        settings = false
+                                        tab = Tab.ROUTES
+                                    } else {
+                                        toast("Headway is up to date")
+                                    }
+                                }
                             },
                         ),
                     )

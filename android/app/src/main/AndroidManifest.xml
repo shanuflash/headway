@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.NFC" />
     <!-- The advisory feed: CMRL service notices, extended hours and holiday timetables. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Installs app updates downloaded from the project's releases (the rider confirms each). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature
         android:name="android.hardware.nfc"
         android:required="false" />
