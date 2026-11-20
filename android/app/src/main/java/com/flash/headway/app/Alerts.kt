@@ -78,12 +78,12 @@ object Alerts {
      * too) and sets the buzz [SOON_MIN] minutes before. Runs on the background thread, in order
      * with [stopCountdown], using the timetable as the rider sees it (their override, the feed).
      */
-    fun startCountdown(context: Context, route: SavedRoute, dep: Long, rule: DelayRule = DelayRule()) {
+    fun startCountdown(context: Context, route: SavedRoute, dep: Long, rule: DelayRule = DelayRule(), alert: Boolean = false) {
         val app = context.applicationContext
         SharedEngine.post {
             val following = SharedEngine.with(app) { it.delayedDepartures(route, dep + 1, 1, rule).firstOrNull() }
-            postCountdown(app, route, dep, following?.dep, rule)
-            scheduleSoon(app, route, dep)
+            postCountdown(app, route, dep, following?.dep, rule, alert)
+            if (!alert) scheduleSoon(app, route, dep, rule)
         }
     }
 
@@ -92,7 +92,7 @@ object Alerts {
      * train, then to arrival. An alarm as each train leaves posts the next step, so it carries on
      * with the app closed; past arrival it clears itself. Planned on the rider's line delays.
      */
-    fun startTrip(context: Context, route: SavedRoute, trip: ActiveTrip) {
+    fun startTrip(context: Context, route: SavedRoute, trip: ActiveTrip, alert: Boolean = false) {
         val app = context.applicationContext
         SharedEngine.post {
             val j = SharedEngine.with(app) { it.followTrip(route, trip, Widgets.lineDelays(app)) }
@@ -101,11 +101,11 @@ object Alerts {
                 nm.cancel(ID_COUNTDOWN)
                 return@post
             }
-            postTrip(app, route, trip, j)
+            postTrip(app, route, trip, j, alert)
         }
     }
 
-    private fun postTrip(context: Context, route: SavedRoute, trip: ActiveTrip, j: RouteDeparture) {
+    private fun postTrip(context: Context, route: SavedRoute, trip: ActiveTrip, j: RouteDeparture, alert: Boolean = false) {
         val legs = j.legs ?: return
         val now = Clock.now()
         val i = j.nextLeg(now)
@@ -122,7 +122,9 @@ object Alerts {
             )
         }
         if (canNotify(context)) {
-            val n = Notification.Builder(context, CHANNEL_COUNTDOWN)
+            // One notification: a few minutes before a train it's posted again on the alert
+            // channel, so it buzzes itself instead of a second notification appearing.
+            val n = Notification.Builder(context, if (alert) CHANNEL_SOON else CHANNEL_COUNTDOWN)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
@@ -132,7 +134,7 @@ object Alerts {
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
                 .setOngoing(true)
-                .setOnlyAlertOnce(true)
+                .setOnlyAlertOnce(!alert)
                 .setCategory(Notification.CATEGORY_NAVIGATION)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(openApp(context))
@@ -143,7 +145,9 @@ object Alerts {
                 }
                 .addAction(Notification.Action.Builder(null, "End trip", broadcast(context, ACTION_STOP, route, at)).build())
                 .build()
-            context.getSystemService(NotificationManager::class.java).notify(ID_COUNTDOWN, n)
+            val nm = context.getSystemService(NotificationManager::class.java)
+            nm.cancel(ID_SOON)
+            nm.notify(ID_COUNTDOWN, n)
         }
         // The next step when this train leaves (or a minute past arrival, to clear it), and a buzz
         // a few minutes before a train to catch.
@@ -155,7 +159,7 @@ object Alerts {
         } else {
             am.setWindow(AlarmManager.RTC_WAKEUP, next, 30_000L, pi)
         }
-        if (leg != null) scheduleSoon(context, route, leg.dep)
+        if (leg != null && !alert) scheduleSoon(context, route, leg.dep, trip = trip)
     }
 
     private fun tripIntent(context: Context, route: SavedRoute, trip: ActiveTrip, action: String = ACTION_TRIP): PendingIntent {
@@ -192,10 +196,13 @@ object Alerts {
         }
     }
 
-    /** An alarm [SOON_MIN] minutes before [dep] that buzzes with [postSoon]. */
-    private fun scheduleSoon(context: Context, route: SavedRoute, dep: Long) {
+    /**
+     * An alarm [SOON_MIN] minutes before [dep] that posts the countdown (or the trip's step) again
+     * with a buzz.
+     */
+    private fun scheduleSoon(context: Context, route: SavedRoute, dep: Long, rule: DelayRule = DelayRule(), trip: ActiveTrip? = null) {
         val am = context.getSystemService(AlarmManager::class.java)
-        val pi = broadcast(context, ACTION_FIRE, route, dep)
+        val pi = broadcast(context, ACTION_FIRE, route, dep, rule, trip)
         // The app clock may be mocked; alarms run on the real one.
         val at = dep - SOON_MIN * 60_000L - Clock.offset
         if (at <= System.currentTimeMillis()) {
@@ -209,7 +216,7 @@ object Alerts {
         }
     }
 
-    /** "The 8:14 leaves in 3 min": a buzz, so the countdown isn't missed in a pocket. */
+    /** Unused since the countdown buzzes itself; kept so an alarm set by an older version still shows something. */
     internal fun postSoon(context: Context, route: SavedRoute, dep: Long) {
         if (!canNotify(context)) return
         val left = ((dep - Clock.now()) / 60_000L).coerceAtLeast(0)
@@ -226,13 +233,13 @@ object Alerts {
         context.getSystemService(NotificationManager::class.java).notify(ID_SOON, n)
     }
 
-    private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?, rule: DelayRule) {
+    private fun postCountdown(context: Context, route: SavedRoute, dep: Long, following: Long?, rule: DelayRule, alert: Boolean = false) {
         if (!canNotify(context)) return
         val text = buildString {
             append("Leaves ${clock(dep)}")
             if (following != null) append(" · Next ${clock(following)}")
         }
-        val builder = Notification.Builder(context, CHANNEL_COUNTDOWN)
+        val builder = Notification.Builder(context, if (alert) CHANNEL_SOON else CHANNEL_COUNTDOWN)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("${Network.name(route.from)} → ${Network.name(route.to)}")
             .setContentText(text)
@@ -241,7 +248,7 @@ object Alerts {
             .setUsesChronometer(true)
             .setChronometerCountDown(true)
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
+            .setOnlyAlertOnce(!alert)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(openApp(context))
@@ -254,11 +261,14 @@ object Alerts {
             )
         }
         builder.addAction(Notification.Action.Builder(null, "Stop", broadcast(context, ACTION_STOP, route, dep)).build())
-        context.getSystemService(NotificationManager::class.java).notify(ID_COUNTDOWN, builder.build())
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.cancel(ID_SOON)
+        nm.notify(ID_COUNTDOWN, builder.build())
     }
 
-    private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long, rule: DelayRule = DelayRule()): PendingIntent {
+    private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long, rule: DelayRule = DelayRule(), trip: ActiveTrip? = null): PendingIntent {
         val intent = Intent(context, AlertReceiver::class.java).setAction(action)
+        if (trip != null) intent.putExtra(EXTRA_TRIP, encodeTrip(trip))
         if (route != null) intent.putExtra(EXTRA_FROM, route.from).putExtra(EXTRA_TO, route.to)
         intent.putExtra(EXTRA_DEP, dep).putExtra(EXTRA_DELAY, encodeRule(rule))
         val code = when (action) {
@@ -335,7 +345,11 @@ class AlertReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            Alerts.ACTION_FIRE -> if (route != null) Alerts.postSoon(context, route, dep)
+            // A few minutes before a train: the same notification again, with a buzz.
+            Alerts.ACTION_FIRE -> if (route != null) {
+                val trip = Alerts.tripFrom(intent)
+                if (trip != null) Alerts.startTrip(context, route, trip, alert = true) else Alerts.startCountdown(context, route, dep, Alerts.ruleFrom(intent), alert = true)
+            }
         }
     }
 

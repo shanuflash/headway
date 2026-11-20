@@ -67,6 +67,8 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
 
     // Only touched on the engine thread.
     private var planMemo: Pair<Any, RouteStatus>? = null
+    /** The followed trip and its step when last seen, to post the next step as soon as it changes. */
+    private var lastTripStep: Pair<ActiveTrip, Int>? = null
     private var schedule = Schedule()
     private var scheduleOverride: DayOverride? = null
     private var scheduleFeed: Feed? = null
@@ -128,6 +130,18 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
                             }
                     }
                     _statuses.value = list
+                    // While the app is open, the trip notification moves on the moment a train leaves,
+                    // without waiting on its alarm.
+                    p.trip?.let { t ->
+                        val st = list.firstOrNull { it.route.id == t.routeId }
+                        val tr = st?.trip
+                        if (st != null && tr != null) {
+                            val step = t to tr.nextLeg(now)
+                            val last = lastTripStep
+                            if (last != null && last.first == t && last != step) Alerts.startTrip(getApplication(), st.route, t)
+                            lastTripStep = step
+                        }
+                    }
                     // A followed trip is over once it's arrived (or can't be found, or its route went).
                     p.trip?.let { t ->
                         val trip = list.firstOrNull { it.route.id == t.routeId }?.trip
