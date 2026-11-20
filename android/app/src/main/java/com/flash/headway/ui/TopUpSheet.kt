@@ -195,7 +195,7 @@ private fun BalanceCard(read: Read, fresh: Boolean, listening: Boolean, onReadAg
                     is Read.Done -> {
                         Text(if (fresh) "Balance on the card" else "Last read", style = HwType.subheadStrong, color = hw.tint)
                         Text("₹" + "%.2f".format(r.paise / 100.0), style = HwType.big.copy(fontSize = 56.sp, lineHeight = 60.sp), color = hw.text)
-                        Text("Read at ${clock(r.at)}", style = HwType.footnote, color = hw.sub)
+                        Text("Read ${readDay(r.at)}${clock(r.at)}", style = HwType.footnote, color = hw.sub)
                         if (r.trips.isNotEmpty()) {
                             TripList(r.trips)
                         } else if (fresh) {
@@ -255,5 +255,16 @@ private fun BalanceCard(read: Read, fresh: Boolean, listening: Boolean, onReadAg
             )
             if (showLog) Text(read.log.joinToString("\n"), style = HwType.caption, color = hw.sub)
         }
+    }
+}
+
+/** "" today, "yesterday, " or "on 18 Nov, ": a read from another day says so. */
+private fun readDay(ms: Long): String {
+    val z = java.time.Instant.ofEpochMilli(ms).atZone(com.flash.headway.engine.IST).toLocalDate()
+    val today = java.time.Instant.ofEpochMilli(com.flash.headway.app.Clock.now()).atZone(com.flash.headway.engine.IST).toLocalDate()
+    return when (z) {
+        today -> "at "
+        today.minusDays(1) -> "yesterday, "
+        else -> "on ${z.dayOfMonth} ${z.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)}, "
     }
 }

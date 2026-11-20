@@ -2,6 +2,8 @@ package com.flash.headway.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.Text
@@ -59,9 +62,10 @@ class StationBoard(val group: DestinationGroup, val platform: String?, val train
 
 @Composable
 fun ColumnScope.MapScreen(onSettings: () -> Unit, onStation: (String) -> Unit) {
-    TopBar(right = { RoundButton(Icons.Rounded.MoreHoriz, "Settings", onSettings) })
+    TopBar(right = { RoundButton(Icons.Rounded.Settings, "Settings", onSettings) })
     LargeTitle("Map")
     NetworkMap(onStation)
+    MapKey()
     Footnote("Tap a station for departures. Map data © OpenStreetMap contributors.")
 }
 
@@ -74,10 +78,11 @@ private fun NetworkMap(onStation: (String) -> Unit) {
     var pan by remember { mutableStateOf(Offset.Zero) }
     val labelStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium, color = hw.text)
 
+    // The card takes the map's own shape, so there's no empty band under it.
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .height(560.dp)
+            .aspectRatio(MapLayout.WIDTH.toFloat() / MapLayout.HEIGHT.toFloat())
             .clip(RouteCardShape)
             .background(hw.card),
     ) {
@@ -152,7 +157,11 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                     }
                     drawPath(path, hw.line(line), style = Stroke(width = 12f * s, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
-                MapLayout.stations.forEach { (id, p) ->
+                // Labels go on interchanges first, then the rest; one that would overlap a label
+                // already drawn is left out until zooming in makes room.
+                val placed = ArrayList<androidx.compose.ui.geometry.Rect>()
+                val order = MapLayout.stations.entries.sortedByDescending { Network.stations.getValue(it.key).lines.size }
+                MapLayout.stations.forEach { (id, _) ->
                     val o = at(id)
                     val lines = Network.stations.getValue(id).lines
                     if (lines.size > 1) {
@@ -162,7 +171,11 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                         drawCircle(hw.card, 8f * s, o)
                         drawCircle(hw.line(lines.first()), 8f * s, o, style = Stroke(5f * s))
                     }
-                    val text = measurer.measure(Network.name(id), labelStyle.copy(fontSize = (20f * s).toSp()))
+                }
+                order.forEach { (id, p) ->
+                    val o = at(id)
+                    // Never smaller than legible, whatever the zoom.
+                    val text = measurer.measure(Network.name(id), labelStyle.copy(fontSize = maxOf((20f * s).toSp().value, 10f).sp))
                     val w = text.size.width.toFloat()
                     val h = text.size.height.toFloat()
                     val topLeft = when (p.third) {
@@ -173,9 +186,31 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                         'D' -> Offset(o.x - 10f * s - w, o.y + 12f * s)
                         else -> Offset(o.x + 14f * s, o.y - h / 2)
                     }
-                    drawText(text, topLeft = topLeft)
+                    val box = androidx.compose.ui.geometry.Rect(topLeft, androidx.compose.ui.geometry.Size(w, h)).inflate(2f)
+                    if (placed.none { it.overlaps(box) }) {
+                        placed += box
+                        drawText(text, topLeft = topLeft)
+                    }
                 }
             }
+        }
+    }
+}
+
+/** Which colour is which line. */
+@Composable
+private fun MapKey() {
+    val hw = LocalHw.current
+    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf(Line.BLUE, Line.GREEN, Line.YELLOW).forEach { line ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(14.dp, 4.dp).clip(CircleShape).background(hw.line(line)))
+                Text(line.label, style = HwType.footnote, color = hw.sub)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.size(10.dp).clip(CircleShape).border(2.dp, hw.text, CircleShape))
+            Text("Interchange", style = HwType.footnote, color = hw.sub)
         }
     }
 }

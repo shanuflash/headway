@@ -141,6 +141,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     // The Lines tab: the station each card shows next trains at (by line), and the card picking one.
     var lineStations by rememberSaveable { mutableStateOf(mapOf<String, String>()) }
     var lineStationFor by remember { mutableStateOf<RouteId?>(null) }
+    // A direction's delay being changed from the Lines tab: its key and title.
+    var lineDelayFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     // The picked one, else where a saved route boards on that line, else mid-line.
     fun stationOn(route: RouteId): String {
         val stops = Network.routes.getValue(route).fwd.map { it.first }
@@ -283,6 +285,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         vm.todayInfo(), now, prefs.lineDelays, vm::setLineDelay,
                         boards = lineBoards,
                         onPickStation = { lineStationFor = it },
+                        onDelayChip = { key, title -> lineDelayFor = key to title },
                         onSettings = { settings = true },
                     )
                     Tab.MAP.name -> MapScreen(onSettings = { settings = true }, onStation = { stationFor = it })
@@ -446,6 +449,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             }
         }
 
+        lineDelayFor?.let { (key, title) ->
+            LineDelaySheet(title, prefs.lineDelayOf(key), onChange = { vm.setLineDelay(key, it) }, onDismiss = { lineDelayFor = null })
+        }
+
         lineStationFor?.let { r ->
             LineStationSheet(
                 title = LINE_TITLES.getValue(r),
@@ -544,7 +551,7 @@ private fun ScreenLazy(state: LazyListState, content: LazyListScope.() -> Unit) 
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = WindowInsets.navigationBars.asPaddingValues().let { nav ->
-                PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = nav.calculateBottomPadding() + 112.dp)
+                PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = nav.calculateBottomPadding() + 132.dp)
             },
             verticalArrangement = Arrangement.spacedBy(14.dp),
             content = content,
@@ -565,7 +572,7 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
                 .padding(horizontal = 16.dp)
                 .padding(top = 14.dp)
                 .navigationBarsPadding()
-                .padding(bottom = 112.dp),
+                .padding(bottom = 132.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
             content = content,
         )

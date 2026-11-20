@@ -3,6 +3,16 @@ package com.flash.headway.ui
 import android.net.Uri
 import android.content.Intent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -30,6 +40,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
@@ -192,7 +203,7 @@ fun LazyListScope.routesScreen(
                     listOf(
                         Triple(Icons.Rounded.CreditCard, "Metro card", actions.topUp),
                         Triple(Icons.Rounded.Add, "Add route", actions.add),
-                        Triple(Icons.Rounded.MoreHoriz, "Settings", actions.settings),
+                        Triple(Icons.Rounded.Settings, "Settings", actions.settings),
                     ),
                 )
             })
@@ -376,7 +387,13 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 label = "routeTitle",
             ) { shown ->
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("${Network.name(shown.from)} → ${Network.name(shown.to)}", style = HwType.cardTitle, color = hw.text)
+                    Text(
+                        "${Network.name(shown.from)} → ${Network.name(shown.to)}",
+                        style = HwType.cardTitle.copy(fontSize = 18.sp, lineHeight = 23.sp),
+                        color = hw.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         // From the next trip itself: where you change, or its train and where that's heading.
                         val legs = if (shown == r) (s.next ?: s.departures.firstOrNull())?.legs else null
@@ -450,31 +467,28 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             val directPlatform = remember(r) { platformFor(r) }
             val saved = !isPreview && prefs.routes.any { it.id == r.id }
             val ownDelay = shown.timetabled?.let { prefs.delayRule(r.id).own(it, shown.trip.dayType) } != null
-            Boarding(
-                shown.legs?.let { legPlatform(it.first()) } ?: directPlatform,
-                prefs.coaches[r.id],
-                delay = if (saved && shown.timetabled != null) shown.delay else null,
-                own = ownDelay,
-            ) { shown.timetabled?.let { actions.trainDelay(r.id, it, shown.trip.dayType, shown.legs) } }
+            Boarding(shown.legs?.let { legPlatform(it.first()) } ?: directPlatform, prefs.coaches[r.id])
             Chips(s, index, now) { picked = it }
-            shown.legs?.takeIf { it.size > 1 }?.let { legs ->
-                TripTimeline(legs, Modifier.padding(horizontal = 20.dp), walk = prefs.walk) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
-                // Taking this one: follow it, so the card and countdown move on at each change.
-                if (saved && s.plan == null) {
-                    FollowButton { actions.remind(s, shown.dep) }
-                    // Didn't tap it before setting off: pick the train you're on and follow from there.
-                    Text(
-                        "Already on board?",
-                        style = HwType.subheadStrong,
-                        color = hw.tint,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                            .clip(CircleShape)
-                            .press(scaleTo = 0.97f) { actions.onTheWay(r.id) }
-                            .padding(vertical = 6.dp),
-                    )
+            // Everything else one tap away: the trip step by step, this train's delay, and
+            // following a trip that's already under way.
+            val multi = (shown.legs?.size ?: 1) > 1
+            if (multi || saved) {
+                var details by rememberSaveable(r.id) { mutableStateOf(false) }
+                DetailsToggle(details, if (multi) "Trip details" else "Details") { details = !details }
+                AnimatedVisibility(details, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        if (multi) {
+                            shown.legs?.let { legs ->
+                                TripTimeline(legs, Modifier.padding(horizontal = 20.dp), walk = prefs.walk) { i, leg -> prefs.coachFor(r.id, if (i == 0) null else leg.from) }
+                            }
+                        }
+                        if (saved && shown.timetabled != null) {
+                            DelayRow(shown.delay, ownDelay) { shown.timetabled?.let { actions.trainDelay(r.id, it, shown.trip.dayType, shown.legs) } }
+                        }
+                        if (multi && saved && s.plan == null) {
+                            DetailsLink("Already on board?") { actions.onTheWay(r.id) }
+                        }
+                    }
                 }
             }
         }
@@ -525,10 +539,19 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         else -> hw.tint
     }
     val note = if (d.hasChange) " · ${span(d.arr - d.dep)}" else trainNote(d)?.let { " · $it" }.orEmpty()
-    val line = when {
+    val times = when {
         s.closed && i == 0 -> "First train · arrives ${clock(d.arr)}"
         tomorrow -> "Arrives ${clock(d.arr)}$note"
-        else -> "Leaves ${clock(d.dep)} · arrives ${clock(d.arr)}$note"
+        else -> "${clockTime(d.dep)} → ${clock(d.arr)}$note"
+    }
+    // The delay sits in the times, in its tone, instead of a chip of its own.
+    val saved = !s.isPreview && prefs.routes.any { it.id == s.route.id }
+    val line = buildAnnotatedString {
+        append(times)
+        if (saved && d.timetabled != null && d.delay != 0) {
+            append(" · ")
+            withStyle(SpanStyle(color = if (d.delay > 0) hw.warn else hw.info)) { append(delayText(d.delay).lowercase()) }
+        }
     }
     val reminderOn = prefs.reminder?.let { it.routeId == s.route.id && it.dep == d.dep } == true
     val bellBg by animateColorAsState(if (reminderOn) hw.tint else hw.fill, label = "bell")
@@ -565,8 +588,12 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         ) {
             Icon(
                 if (reminderOn) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
-                contentDescription = if (reminderOn) "Stop countdown" else "Start countdown",
-                tint = if (reminderOn) Color.White else hw.tint,
+                contentDescription = when {
+                    reminderOn -> "Stop countdown"
+                    d.hasChange -> "Start trip"
+                    else -> "Start countdown"
+                },
+                tint = if (reminderOn) Color.White else hw.text,
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -616,27 +643,6 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
         }
         Text("Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}$note", style = HwType.subhead, color = hw.sub)
         d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
-    }
-}
-
-/** "Start trip": under a trip with changes, so the card and countdown follow it step by step. */
-@Composable
-private fun FollowButton(onClick: () -> Unit) {
-    val hw = LocalHw.current
-    Row(
-        Modifier
-            .padding(horizontal = 20.dp)
-            .fillMaxWidth()
-            .height(44.dp)
-            .clip(CircleShape)
-            .background(hw.tintSoft)
-            .press(scaleTo = 0.97f, onClick = onClick),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Rounded.Navigation, null, tint = hw.tint, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Start trip", style = HwType.subheadStrong, color = hw.tint)
     }
 }
 
@@ -739,14 +745,59 @@ private fun LiveText(text: () -> String, style: TextStyle, color: Color) {
     Text(text(), style = style, color = color)
 }
 
-/** "Platform 2 · Front coach · 2 min late": where to wait, and the rider's delay. Hidden when none is set. */
+/** "Platform 2 · Front coach": where to wait. Hidden when neither is known. */
 @Composable
-private fun Boarding(platform: String?, coach: Coach?, delay: Int?, own: Boolean, onDelayTap: () -> Unit) {
-    if (platform == null && coach == null && delay == null) return
+private fun Boarding(platform: String?, coach: Coach?) {
+    if (platform == null && coach == null) return
     Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (platform != null) BoardingTag(platform)
         if (coach != null) BoardingTag("${coach.label.replaceFirstChar { it.uppercase() }} coach")
-        if (delay != null) DelayTag(delay, own, onDelayTap)
+    }
+}
+
+/** "Trip details ▾": shows or hides a card's details. */
+@Composable
+private fun DetailsToggle(open: Boolean, label: String, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    Row(
+        Modifier.padding(horizontal = 12.dp).clip(CircleShape).press(scaleTo = 0.97f, onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(if (open) "Hide details" else label, style = HwType.subheadStrong, color = hw.sub)
+        Icon(if (open) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, null, tint = hw.sub, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** A text action inside a card's details. */
+@Composable
+private fun DetailsLink(text: String, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    Text(
+        text,
+        style = HwType.subheadStrong,
+        color = hw.tint,
+        modifier = Modifier.padding(horizontal = 12.dp).clip(CircleShape).press(scaleTo = 0.97f, onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp),
+    )
+}
+
+/** "Delay · 2 min late ›": this train's delay, tap to change it. */
+@Composable
+private fun DelayRow(delay: Int, own: Boolean, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    val tone = when {
+        delay > 0 -> hw.warn
+        delay < 0 -> hw.info
+        else -> hw.sub
+    }
+    Row(
+        Modifier.fillMaxWidth().press(scaleTo = 0.98f, onClick = onClick).padding(horizontal = 20.dp, vertical = 4.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "Delay, ${delayText(delay)}${if (own) ", this train" else ""}. Edit" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Delay", style = HwType.subhead, color = hw.text, modifier = Modifier.weight(1f))
+        Text(delayText(delay) + if (own) " · this train" else "", style = HwType.subhead, color = tone)
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -760,39 +811,6 @@ private fun BoardingTag(text: String) {
         maxLines = 1,
         modifier = Modifier.clip(CircleShape).background(hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
     )
-}
-
-/**
- * The shown train's delay: "3 min late" in amber, "2 min early" in blue, "On time" in grey, with
- * "· this train" when it has its own. Tap to set this train's delay.
- */
-@Composable
-private fun DelayTag(delay: Int, own: Boolean, onClick: () -> Unit) {
-    val hw = LocalHw.current
-    val (fg, bg) = when {
-        delay > 0 -> hw.warn to hw.warnBg
-        delay < 0 -> hw.info to hw.infoBg
-        else -> hw.sub to hw.fill2
-    }
-    Row(
-        Modifier.press(onClick = onClick).clip(CircleShape).background(bg).padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "${delayText(delay)}${if (own) ", this train" else ""}. Edit delay" },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(
-            when {
-                delay > 0 -> Icons.Rounded.MoreTime
-                delay < 0 -> Icons.Rounded.History
-                else -> Icons.Rounded.Schedule
-            },
-            null,
-            tint = fg,
-            modifier = Modifier.size(16.dp),
-        )
-        Text(delayText(delay), style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold), color = fg, maxLines = 1)
-        if (own) Text("· this train", style = HwType.footnote, color = fg.copy(alpha = 0.75f), maxLines = 1)
-    }
 }
 
 /** A trip that takes more than one train. */
