@@ -73,12 +73,15 @@ class HeadwayViewModel(app: Application) : AndroidViewModel(app) {
     private val _update = MutableStateFlow<UpdateState?>(null)
     val update: StateFlow<UpdateState?> = _update.asStateFlow()
 
-    /** Checks for a newer release; returns whether there is one. Keeps a download in progress. */
-    suspend fun checkUpdate(): Boolean {
-        val r = Updater.newer(getApplication()) ?: return false
-        val cur = _update.value
-        if (cur == null || cur.release.code < r.code || cur is UpdateState.Failed) _update.value = UpdateState.Available(r)
-        return true
+    /** Checks for a newer release and offers it; keeps a download in progress. */
+    suspend fun checkUpdate(): Updater.Check {
+        val result = Updater.check(getApplication())
+        if (result is Updater.Check.Newer) {
+            val r = result.release
+            val cur = _update.value
+            if (cur == null || cur.release.code < r.code || cur is UpdateState.Failed) _update.value = UpdateState.Available(r)
+        }
+        return result
     }
 
     /** Hides the update banner until a newer release. */

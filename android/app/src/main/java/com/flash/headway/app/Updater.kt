@@ -34,8 +34,15 @@ object Updater {
     fun installedName(context: Context): String =
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
 
-    /** The latest release if it's newer than this install, else null (also when offline). */
-    suspend fun newer(context: Context): Release? = withContext(Dispatchers.IO) {
+    /** What a check found. */
+    sealed interface Check {
+        data class Newer(val release: Release) : Check
+        data object UpToDate : Check
+        /** Offline, or the releases couldn't be read (they're unreadable while the repository is private). */
+        data object Failed : Check
+    }
+
+    suspend fun check(context: Context): Check = withContext(Dispatchers.IO) {
         runCatching {
             val conn = URL(LATEST).openConnection() as HttpURLConnection
             conn.connectTimeout = 10_000
@@ -49,9 +56,9 @@ object Updater {
             val assets = json.getJSONArray("assets")
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.getString("name") == "headway.apk" }
-                ?.getString("browser_download_url") ?: return@runCatching null
-            Release(code, name, apk).takeIf { code > installedCode(context) }
-        }.getOrNull()
+                ?.getString("browser_download_url") ?: return@runCatching Check.Failed
+            if (code > installedCode(context)) Check.Newer(Release(code, name, apk)) else Check.UpToDate
+        }.getOrDefault(Check.Failed)
     }
 
     /** Starts downloading [r]'s APK; returns the download's id. */

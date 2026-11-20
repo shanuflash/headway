@@ -27,8 +27,9 @@ jobs:
 
   deploy:
     needs: test
-    # Pages needs a public repo on the free plan; run this job by hand once it's enabled.
-    if: github.event_name == 'workflow_dispatch'
+    # Pages needs a public repo on the free plan: deploy on every push once the repo is public
+    # (or by hand).
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     environment:
       name: github-pages

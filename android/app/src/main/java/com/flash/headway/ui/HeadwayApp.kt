@@ -315,11 +315,13 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             },
                             checkUpdate = {
                                 scope.launch {
-                                    if (vm.checkUpdate()) {
-                                        settings = false
-                                        tab = Tab.ROUTES
-                                    } else {
-                                        toast("Headway is up to date")
+                                    when (vm.checkUpdate()) {
+                                        is com.flash.headway.app.Updater.Check.Newer -> {
+                                            settings = false
+                                            tab = Tab.ROUTES
+                                        }
+                                        com.flash.headway.app.Updater.Check.UpToDate -> toast("Headway is up to date")
+                                        com.flash.headway.app.Updater.Check.Failed -> toast("Couldn't check for updates")
                                     }
                                 }
                             },
