@@ -417,54 +417,38 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(top = 18.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // The departure shown big; the bell in the header counts down to it (or starts its trip).
+        val shownDep = s.departures.getOrNull(index)
+        val following = s.trip != null && !isPreview
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             AnimatedContent(
                 targetState = r,
                 transitionSpec = { fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith fadeOut() },
                 modifier = Modifier.weight(1f),
                 label = "routeTitle",
             ) { shown ->
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        "${Network.name(shown.from)} → ${Network.name(shown.to)}",
-                        style = HwType.cardTitle.copy(fontSize = 18.sp, lineHeight = 23.sp),
-                        color = hw.text,
-                        // Two lines rather than cut the destination off.
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        // From the next trip itself: where you change, or its train and where that's heading.
-                        val legs = if (shown == r) (s.next ?: s.departures.firstOrNull())?.legs else null
-                        if (legs != null) {
-                            Box(Modifier.size(8.dp).clip(CircleShape).background(legsBrush(legs, hw)))
-                            Text(
-                                // Which trains, and where to change: said once, here.
-                                if (legs.size > 1) {
-                                    legs.joinToString(" → ") { legShort(it) } + " · change at " + legs.drop(1).joinToString(", ") { Network.name(it.from) }
-                                } else {
-                                    "${legLineName(legs[0])} · towards ${Network.name(legs[0].trip.dest)}"
-                                },
-                                style = HwType.subhead,
-                                color = hw.sub,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        } else {
-                            val inter = shown == r && interOnly(s)
-                            val label = remember(shown, inter) { routeLabel(shown, inter) }
-                            val line = remember(shown) { routeLine(shown) }
-                            Box(
-                                Modifier.size(8.dp).clip(CircleShape).then(
-                                    if (inter) Modifier.background(Brush.verticalGradient(listOf(hw.green, hw.blue))) else Modifier.background(hw.line(line)),
-                                ),
-                            )
-                            Text(label, style = HwType.subhead, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
+                // A small label: the countdown is what leads the card.
+                Text(
+                    "${Network.name(shown.from)} → ${Network.name(shown.to)}".uppercase(),
+                    style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
+                    color = hw.sub,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Row(Modifier.height(36.dp).clip(CircleShape).background(hw.fill).edge(CircleShape)) {
+                if (!isPreview && !following && shownDep != null && s.plan == null) {
+                    val on = prefs.reminder?.let { it.routeId == r.id && it.dep == shownDep.dep } == true
+                    PillIcon(
+                        if (on) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
+                        when {
+                            on -> "Stop countdown"
+                            shownDep.hasChange -> "Start trip"
+                            else -> "Start countdown"
+                        },
+                        tint = if (on) hw.tint else null,
+                    ) { actions.remind(s, shownDep.dep) }
+                }
                 // Blue when the route also switches by itself at a set time.
                 val auto = if (isPreview) null else prefs.flips[pairKey(r)]?.takeIf { f -> prefs.routes.none { it.id == reverseId(r.id) } }
                 PillIcon(
@@ -507,18 +491,23 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         } else {
-            if (s.plan != null) PlanHero(s, shown, index) else Hero(s, shown, index, prefs, now, actions)
+            var details by rememberSaveable(r.id) { mutableStateOf(false) }
+            if (s.plan != null) PlanHero(s, shown, index) else Hero(s, shown, index, prefs, now, actions) { details = !details }
             val directPlatform = remember(r) { platformFor(r) }
             val saved = !isPreview && prefs.routes.any { it.id == r.id }
             val ownDelay = shown.timetabled?.let { prefs.delayRule(r.id).own(it, shown.trip.dayType) } != null
-            Boarding(shown.legs?.let { legPlatform(it.first()) } ?: directPlatform, prefs.coaches[r.id])
-            Chips(s, index, now) { picked = it }
+            LineBadges(
+                shown,
+                platform = shown.legs?.let { legPlatform(it.first()) } ?: directPlatform,
+                coach = prefs.coaches[r.id],
+                showDelay = saved,
+                open = details,
+            ) { details = !details }
+            DepartureSwitcher(s, index) { picked = it }
             // Everything else one tap away: the trip step by step, this train's delay, and
             // following a trip that's already under way.
             val multi = (shown.legs?.size ?: 1) > 1
             if (multi || saved) {
-                var details by rememberSaveable(r.id) { mutableStateOf(false) }
-                DetailsToggle(details, if (multi) "Trip details" else "Details") { details = !details }
                 AnimatedVisibility(details, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         if (multi) {
@@ -564,81 +553,141 @@ private fun isTomorrow(s: RouteStatus, i: Int) = s.closed || (s.tomorrowFrom in 
 private fun lastIndex(s: RouteStatus): Int = if (s.closed) -1 else s.departures.indexOfFirst { it.dep == s.last?.dep }
 
 @Composable
-private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: () -> Long, actions: RouteActions) {
+private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: () -> Long, actions: RouteActions, onToggle: () -> Unit) {
     val hw = LocalHw.current
     val tomorrow = isTomorrow(s, i)
     val lastIdx = lastIndex(s)
+    // A label only when it says something the countdown doesn't: last trains, tomorrow, closed.
     val (label, warn) = when {
         s.closed && i == 0 -> (if (s.running) "No more trains tonight" else "Metro is closed") to true
         s.closed -> "Tomorrow" to false
         tomorrow -> (if (i == s.tomorrowFrom) "First train tomorrow" else "Tomorrow") to false
         i == lastIdx -> "Last train" to true
         s.late && lastIdx > i -> "Last ${lastIdx - i + 1} trains" to true
-        i == 0 -> "Next train" to false
-        else -> "Later train" to false
+        else -> null to false
     }
-    // Tint is kept for the selected train and actions; the label is plain unless it warns.
-    val labelColor = when {
-        warn -> hw.warn
-        else -> hw.sub
-    }
-    val note = if (d.hasChange) " · ${span(d.arr - d.dep)}" else trainNote(d)?.let { " · $it" }.orEmpty()
-    val times = when {
-        s.closed && i == 0 -> "First train · arrives ${clock(d.arr)}"
-        tomorrow -> "Arrives ${clock(d.arr)}$note"
-        else -> "${clockTime(d.dep)} → ${clock(d.arr)}$note"
-    }
-    // The delay sits in the times, in its tone, instead of a chip of its own.
-    val saved = !s.isPreview && prefs.routes.any { it.id == s.route.id }
-    val line = buildAnnotatedString {
-        append(times)
-        if (saved && d.timetabled != null && d.delay != 0) {
-            append(" · ")
-            withStyle(SpanStyle(color = if (d.delay > 0) hw.warn else hw.info)) { append(delayText(d.delay).lowercase()) }
-        }
-    }
-    val reminderOn = prefs.reminder?.let { it.routeId == s.route.id && it.dep == d.dep } == true
-    val bellBg by animateColorAsState(if (reminderOn) hw.tint else hw.fill, label = "bell")
-
-    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = HwType.subheadStrong, color = labelColor)
-            if (tomorrow) {
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val lastDep = remember { mutableLongStateOf(d.dep) }
-                    val later = d.dep > lastDep.longValue
-                    SideEffect { lastDep.longValue = d.dep }
-                    RollingText(clockTime(d.dep), HwType.bigClock, hw.text, up = later)
-                    Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
+    Column(
+        Modifier.padding(horizontal = 20.dp).clip(RoundedCornerShape(12.dp)).press(scaleTo = 0.99f, onClick = onToggle),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (label != null) Text(label, style = HwType.subheadStrong, color = if (warn) hw.warn else hw.sub)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(Modifier.weight(1f)) {
+                if (tomorrow) {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val lastDep = remember { mutableLongStateOf(d.dep) }
+                        val later = d.dep > lastDep.longValue
+                        SideEffect { lastDep.longValue = d.dep }
+                        RollingText(clockTime(d.dep), HwType.bigClock, hw.text, up = later)
+                        Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
+                    }
+                } else {
+                    HeroCountdown(d.dep, now)
                 }
-            } else {
-                HeroCountdown(d.dep, now)
             }
-            Text(line, style = HwType.subhead, color = hw.sub)
-            // (Which trains is in the card's header, so no second line of them here.)
-            // Leaves sooner than a later train that gets there just as early: say which.
-            s.departures.drop(i + 1).firstOrNull { it.arr == d.arr }?.let { later ->
-                Text("Same arrival as ${clock(later.dep)}", style = HwType.footnote, color = hw.sub)
+            // What you'd glance for on the platform: when you get there.
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 4.dp)) {
+                Text(clock(d.arr), style = HwType.cardTitle.copy(fontFeatureSettings = "tnum"), color = hw.text)
+                Text("arrive · ${span(d.arr - d.dep)}", style = HwType.footnote, color = hw.sub)
             }
         }
-        Box(
-            Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(bellBg)
-                .edge(CircleShape)
-                .press(scaleTo = 0.9f) { actions.remind(s, d.dep) },
-            contentAlignment = Alignment.Center,
+        // Leaves sooner than a later train that gets there just as early: say which.
+        s.departures.drop(i + 1).firstOrNull { it.arr == d.arr }?.let { later ->
+            Text("Same arrival as ${clock(later.dep)}", style = HwType.footnote, color = hw.sub)
+        }
+    }
+}
+
+/**
+ * Which trains, as coloured line badges ("Inter-corridor › Yellow"), then when and where to board:
+ * "6:03 PM · Platform 1 or 2 · Front coach · 5 min early". Tapping it opens the trip's details.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LineBadges(d: RouteDeparture, platform: String?, coach: Coach?, showDelay: Boolean, open: Boolean, onToggle: () -> Unit) {
+    val hw = LocalHw.current
+    val legs = d.legs.orEmpty()
+    Column(
+        Modifier.padding(horizontal = 20.dp).clip(RoundedCornerShape(12.dp)).press(scaleTo = 0.99f, onClick = onToggle),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(
-                if (reminderOn) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
-                contentDescription = when {
-                    reminderOn -> "Stop countdown"
-                    d.hasChange -> "Start trip"
-                    else -> "Start countdown"
+            legs.forEachIndexed { k, leg ->
+                if (k > 0) Text("›", style = HwType.subhead, color = hw.sub)
+                val colors = legColors(leg, hw)
+                val inter = colors.size > 1
+                Text(
+                    legShort(leg),
+                    style = HwType.footnote.copy(fontWeight = FontWeight.Bold),
+                    color = if (inter || leg.trip.line != Line.YELLOW) Color.White else Color.Black,
+                    maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(if (inter) Brush.horizontalGradient(colors) else androidx.compose.ui.graphics.SolidColor(colors[0]))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+            if (legs.size == 1) Text("towards ${Network.name(legs[0].trip.dest)}", style = HwType.footnote, color = hw.sub, maxLines = 1)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                buildAnnotatedString {
+                    append(clock(d.dep))
+                    platform?.let { append(" · $it") }
+                    coach?.let { append(" · ${it.label.replaceFirstChar { c -> c.uppercase() }} coach") }
+                    if (showDelay && d.timetabled != null && d.delay != 0) {
+                        append(" · ")
+                        withStyle(SpanStyle(color = if (d.delay > 0) hw.warn else hw.info)) { append(delayText(d.delay).lowercase()) }
+                    }
                 },
-                tint = if (reminderOn) Color.White else hw.text,
-                modifier = Modifier.size(24.dp),
+                style = HwType.footnote,
+                color = hw.sub,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (open) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                if (open) "Hide trip details" else "Show trip details",
+                tint = hw.sub,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/** The next departures as a compact switcher; the one shown big is selected. */
+@Composable
+private fun DepartureSwitcher(s: RouteStatus, selected: Int, onPick: (Long) -> Unit) {
+    val hw = LocalHw.current
+    val lastIdx = if (s.plan != null) -1 else lastIndex(s)
+    val shown = s.departures.take(5)
+    if (shown.size < 2) return
+    Row(
+        Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(hw.fill).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        shown.forEachIndexed { k, d ->
+            val on = k == selected
+            val tomorrow = s.plan == null && isTomorrow(s, k)
+            Text(
+                clockTime(d.dep),
+                style = HwType.subhead.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, fontFeatureSettings = "tnum"),
+                color = when {
+                    on -> hw.text
+                    k == lastIdx -> hw.warn
+                    tomorrow -> hw.sub.copy(alpha = 0.7f)
+                    else -> hw.sub
+                },
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (on) hw.fill2 else Color.Transparent)
+                    .press(scaleTo = 0.95f) { onPick(pickKey(d)) }
+                    .semantics { contentDescription = "${clock(d.dep)}${if (on) ", selected" else ""}" }
+                    .padding(vertical = 8.dp),
             )
         }
     }
@@ -686,7 +735,6 @@ private fun PlanHero(s: RouteStatus, d: RouteDeparture, i: Int) {
             Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
         }
         Text("Arrives ${clock(d.arr)} · ${span(d.arr - d.dep)}$note", style = HwType.subhead, color = hw.sub)
-        d.legs?.takeIf { it.size > 1 }?.let { LegsLine(it) }
     }
 }
 
