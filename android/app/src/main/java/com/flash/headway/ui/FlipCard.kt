@@ -1,5 +1,6 @@
 package com.flash.headway.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -62,11 +63,12 @@ fun FlipCard(
     val hw = LocalHw.current
     val on = flip != null && !bothSaved
     Column(
-        Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp),
+        Modifier.fillMaxWidth().clip(CardShape).background(hw.button).animateContentSize(androidx.compose.material3.MaterialTheme.motionScheme.defaultSpatialSpec())
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(hw.tintSoft), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape).background(hw.tintSoft), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.SwapVert, null, tint = hw.tint, modifier = Modifier.size(20.dp))
             }
             Column(Modifier.weight(1f)) {

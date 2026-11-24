@@ -1,5 +1,6 @@
 package com.flash.headway.ui
 
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -191,17 +192,18 @@ fun TrainDelaySheet(
 @Composable
 fun JourneyDelays(lines: List<TripLine>, lineDelays: Map<String, Int>, onLineDelay: (String, Int) -> Unit) {
     val hw = LocalHw.current
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            "Each train uses its line’s delay. Changes apply to every route, as in Lines.",
-            style = HwType.footnote,
-            color = hw.sub,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        Column(
-            Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
+    Column(
+        Modifier.fillMaxWidth().clip(CardShape).background(hw.button).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            LeadIcon(androidx.compose.material.icons.Icons.Rounded.Schedule, hw.fill2, hw.sub)
+            Column(Modifier.weight(1f)) {
+                Text("Delay", style = HwType.headline, color = hw.text)
+                Text("Each train uses its line’s delay, on every route", style = HwType.footnote, color = hw.sub)
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             lines.forEach { l -> LineDelayRow(l.name, l.boards, l.colors, lineDelays[l.key] ?: 0) { onLineDelay(l.key, it) } }
         }
     }

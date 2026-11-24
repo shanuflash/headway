@@ -1,5 +1,6 @@
 package com.flash.headway.ui
 
+import androidx.compose.material.icons.rounded.Train
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -379,11 +380,17 @@ fun RouteMenu(
                 Modifier.fillMaxWidth().clip(CardShape).background(hw.button).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Where to board", style = HwType.headline, color = hw.text)
+                Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LeadIcon(Icons.Rounded.Train)
+                    Column(Modifier.weight(1f)) {
+                        Text("Where to board", style = HwType.headline, color = hw.text)
+                        Text("The coach nearest your exit", style = HwType.footnote, color = hw.sub)
+                    }
+                }
                 val options = listOf<Pair<Coach?, String>>(null to "Any", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear")
                 if (coaches.size <= 1) {
                     Segmented(options = options, selected = coaches.firstOrNull()?.coach, onSelect = { onCoach(null, it) })
-                    Text("Board the coach nearest your exit. Shown on the card.", style = HwType.footnote, color = hw.sub)
+                    Text("Shown on the card.", style = HwType.footnote, color = hw.sub, modifier = Modifier.padding(start = 4.dp))
                 } else {
                     // A trip with changes: where to stand differs train to train.
                     coaches.forEach { c ->
@@ -399,7 +406,6 @@ fun RouteMenu(
                 }
             }
             if (journeyLines != null) {
-                Text("Delay", style = HwType.headline, color = hw.text, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
                 if (journeyLines.isEmpty()) {
                     Footnote("Trips with changes use each line’s delay. Set them in Lines.")
                 } else {

@@ -1,5 +1,6 @@
 package com.flash.headway.ui
 
+import androidx.compose.foundation.layout.heightIn
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
@@ -174,12 +175,19 @@ fun HwSheet(
         )
         // The sheet stops short of the status bar, so a tall one never pushes its heading under
         // the clock: its content scrolls instead.
-        Box(Modifier.fillMaxSize().then(if (fullScreen) Modifier else Modifier.statusBarsPadding().padding(top = 12.dp))) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().then(if (fullScreen) Modifier else Modifier.statusBarsPadding().padding(top = 12.dp))) {
+        val cap = maxHeight * 0.8f
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .then(if (fullScreen) Modifier.fillMaxHeight() else if (heightFraction != null) Modifier.fillMaxHeight(heightFraction) else Modifier)
+                .then(
+                    when {
+                        fullScreen -> Modifier.fillMaxHeight()
+                        heightFraction != null -> Modifier.fillMaxHeight(heightFraction)
+                        else -> Modifier.heightIn(max = cap)
+                    },
+                )
                 .onSizeChanged { heightPx = it.height.coerceAtLeast(1) }
                 .graphicsLayer {
                     if (transform) {
@@ -211,7 +219,7 @@ fun HwSheet(
             ) {
                 Box(Modifier.size(32.dp, 4.dp).clip(CircleShape).background(hw.sub.copy(alpha = 0.4f)))
             }
-            androidx.compose.runtime.CompositionLocalProvider(LocalStagger provides androidx.compose.runtime.remember { StaggerCounter() }) { content(this) { then -> close(then) } }
+            content(this) { then -> close(then) }
         }
         }
     }

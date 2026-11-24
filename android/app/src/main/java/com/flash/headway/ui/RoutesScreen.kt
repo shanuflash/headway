@@ -252,7 +252,7 @@ fun LazyListScope.routesScreen(
 /** CMRL advisories in force now (extended hours, holiday timings, disruptions). Tap for the announcement. */
 @Composable
 private fun Notices(feed: Feed?, now: () -> Long) {
-    val notices = activeNotices(feed, now())
+    val notices = activeNotices(feed, rememberTick(now, 60_000))
     if (notices.isEmpty()) return
     val hw = LocalHw.current
     val context = LocalContext.current
@@ -331,7 +331,7 @@ fun Banner(
 fun LoadCardBanner(now: () -> Long) {
     val context = LocalContext.current
     // Re-read every few seconds (now ticks each second), so it appears on return from the UPI app.
-    val pending = remember(now() / 5_000) { TopUp.loadPending(context) }
+    val pending = remember(rememberTick(now, 5_000)) { TopUp.loadPending(context) }
     var hidden by remember { mutableStateOf(false) }
     if (!pending || hidden) return
     val hw = LocalHw.current
@@ -891,7 +891,7 @@ private fun TripHero(
 ) {
     val hw = LocalHw.current
     val legs = trip.legs ?: return
-    val t = now()
+    val t = rememberTick(now, 5_000)
     val i = trip.nextLeg(t)
     val leg = legs.getOrNull(i)
     fun coach(l: Leg, first: Boolean) = prefs.coachFor(routeId, if (first) null else l.from)?.let { "${it.label.replaceFirstChar { c -> c.uppercase() }} coach" }
@@ -932,7 +932,7 @@ private fun TripHero(
                 Icon(Icons.Rounded.NotificationsActive, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
                 Text(label, style = HwType.subheadStrong, color = scheme.onPrimaryContainer)
             }
-            BigCountdown(target - t, scheme.onPrimaryContainer)
+            LiveCountdown(target, now, scheme.onPrimaryContainer)
             lines.forEach { Text(it, style = HwType.subhead, color = scheme.onPrimaryContainer.copy(alpha = 0.85f)) }
             // In case the train to catch is missed: the next way on, and a choice of others.
             if (leg != null) {
@@ -964,6 +964,12 @@ private fun TripPill(text: String, onClick: () -> Unit) {
     androidx.compose.material3.FilledTonalButton(onClick = onClick, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.SmallContentPadding) {
         Text(text, style = HwType.subheadStrong)
     }
+}
+
+/** A big countdown that alone reads the per-second clock. */
+@Composable
+private fun LiveCountdown(target: Long, now: () -> Long, color: androidx.compose.ui.graphics.Color) {
+    BigCountdown(target - now(), color)
 }
 
 /** The hero's countdown on its own, so only it recomposes as the clock ticks. */

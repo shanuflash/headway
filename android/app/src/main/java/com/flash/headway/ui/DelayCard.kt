@@ -106,9 +106,9 @@ fun DelayCard(routeId: String, delay: Int, preview: suspend (Int) -> DelayPrevie
         label = "delay tone bg",
     )
 
-    Column(Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)) {
+    Column(Modifier.fillMaxWidth().clip(CardShape).background(hw.button).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)) {
         Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(toneBg), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(toneBg), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.Schedule, null, tint = tone, modifier = Modifier.size(20.dp))
             }
             Column {

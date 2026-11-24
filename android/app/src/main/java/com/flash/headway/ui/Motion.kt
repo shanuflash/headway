@@ -94,3 +94,13 @@ fun Modifier.autoStagger(): Modifier {
     return staggerIn(index)
 }
 
+/**
+ * The clock floored to [every] ms. Reading it recomposes only when it moves on a step, unlike
+ * reading the per-second clock, which would redo a whole screen each second.
+ */
+@Composable
+fun rememberTick(now: () -> Long, every: Long): Long {
+    val tick by remember(now, every) { androidx.compose.runtime.derivedStateOf { now() / every * every } }
+    return tick
+}
+

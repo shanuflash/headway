@@ -108,7 +108,9 @@ fun ColumnScope.LinesScreen(
 ) {
     val hw = LocalHw.current
     val spec = Timetable.day(today.type)
-    val z = Instant.ofEpochMilli(now()).atZone(IST)
+    // Ten-second steps: the screen doesn't need redoing every second.
+    val tick = rememberTick(now, 10_000)
+    val z = Instant.ofEpochMilli(tick).atZone(IST)
     val nowMin = z.hour * 60 + z.minute
     val reason = if (today.reason != "Weekday" && today.reason != "Saturday" && today.reason != "Sunday") ", ${today.reason}" else ""
     LargeTitle("Lines") {
@@ -194,7 +196,8 @@ private fun LineCard(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(dirTitle, style = HwType.subheadStrong, color = hw.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(nextText(board, dir, end, now()), style = HwType.footnote, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val tick = rememberTick(now, 10_000)
+                        Text(nextText(board, dir, end, tick), style = HwType.footnote, color = hw.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DelayChip(delays[key] ?: 0) { onDelayChip(key, "$title · $dirTitle") }
                 }

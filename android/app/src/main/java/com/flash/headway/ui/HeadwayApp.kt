@@ -211,6 +211,8 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
 
     // Each screen keeps its saved state (picked trains, scroll) while another is showing.
     val screens = rememberSaveableStateHolder()
+    // Leaving Routes puts its list back at the top for next time.
+    LaunchedEffect(tab) { if (tab != Tab.ROUTES) routesList.requestScrollToItem(0) }
 
     // The bell asks for permission and saves the countdown at once; it can only be posted once
     // allowed. Refused, there's no countdown, so the bell goes out rather than pretend.
@@ -589,7 +591,7 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
             Modifier
                 .widthIn(max = 560.dp)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(remember { androidx.compose.foundation.ScrollState(0) })
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(horizontal = 16.dp)
                 .padding(top = 14.dp)
