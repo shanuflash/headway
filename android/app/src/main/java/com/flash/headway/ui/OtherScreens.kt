@@ -2,6 +2,8 @@
 
 package com.flash.headway.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
@@ -204,9 +206,15 @@ private fun LineCard(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(if (timetable) "Hide timetable" else "Timetable", style = HwType.subheadStrong, color = hw.sub)
-            Icon(if (timetable) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, null, tint = hw.sub, modifier = Modifier.size(20.dp))
+            val turn by androidx.compose.animation.core.animateFloatAsState(if (timetable) 180f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "chevron")
+            Icon(Icons.Rounded.KeyboardArrowDown, null, tint = hw.sub, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = turn })
         }
-        if (timetable) {
+        androidx.compose.animation.AnimatedVisibility(
+            timetable,
+            enter = androidx.compose.animation.expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+            exit = androidx.compose.animation.shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + androidx.compose.animation.fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("${Network.name(a)} to ${Network.name(b)}$extra", style = HwType.footnote, color = hw.sub)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row {
@@ -241,6 +249,7 @@ private fun LineCard(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -452,11 +461,17 @@ fun ColumnScope.SettingsScreen(
         listOf<@Composable () -> Unit>({
             ListRow(onClick = { developer = !developer }) {
                 Text("Developer", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-                Icon(if (developer) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, null, tint = hw.chev, modifier = Modifier.size(20.dp))
+                val turn by androidx.compose.animation.core.animateFloatAsState(if (developer) 180f else 0f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "chevron")
+                Icon(Icons.Rounded.KeyboardArrowDown, null, tint = hw.chev, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = turn })
             }
         }),
     )
-    if (developer) {
+    androidx.compose.animation.AnimatedVisibility(
+        developer,
+        enter = androidx.compose.animation.expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+        exit = androidx.compose.animation.shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + androidx.compose.animation.fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SettingsCard {
             Text("Mock time", style = HwType.body, color = hw.text)
             Segmented(
@@ -466,6 +481,7 @@ fun ColumnScope.SettingsScreen(
             )
         }
         Footnote("For testing. Runs the app from the chosen time.")
+      }
     }
 }
 
@@ -532,7 +548,7 @@ private fun MetroCardSettings() {
 @Composable
 private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(CardShape).background(LocalHw.current.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
+        Modifier.autoStagger().fillMaxWidth().clip(CardShape).background(LocalHw.current.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         content = content,
     )

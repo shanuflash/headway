@@ -211,7 +211,7 @@ fun HwSheet(
             ) {
                 Box(Modifier.size(32.dp, 4.dp).clip(CircleShape).background(hw.sub.copy(alpha = 0.4f)))
             }
-            content(this) { then -> close(then) }
+            androidx.compose.runtime.CompositionLocalProvider(LocalStagger provides androidx.compose.runtime.remember { StaggerCounter() }) { content(this) { then -> close(then) } }
         }
         }
     }

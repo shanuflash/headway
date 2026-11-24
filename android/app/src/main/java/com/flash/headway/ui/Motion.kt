@@ -66,7 +66,7 @@ fun Modifier.staggerIn(index: Int): Modifier {
     val rise = remember { Animatable(1f) }
     val shift = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.toPx() }
     LaunchedEffect(Unit) {
-        delay(minOf(index, 10) * 24L)
+        delay(minOf(index, 12) * 30L)
         coroutineScope {
             launch { alpha.animateTo(1f, effects) }
             launch { rise.animateTo(0f, spatial) }
@@ -77,3 +77,20 @@ fun Modifier.staggerIn(index: Int): Modifier {
         translationY = rise.value * shift
     }
 }
+
+/** Hands out entrance order to the sections of one screen as they compose. */
+class StaggerCounter {
+    var next = 0
+}
+
+/** Set by a screen; absent (no stagger) in lazy lists and sheets that do their own. */
+val LocalStagger = androidx.compose.runtime.staticCompositionLocalOf<StaggerCounter?> { null }
+
+/** Staggers in after the sections composed before it on this screen. No-op outside a screen. */
+@Composable
+fun Modifier.autoStagger(): Modifier {
+    val counter = LocalStagger.current ?: return this
+    val index = remember(counter) { counter.next++ }
+    return staggerIn(index)
+}
+

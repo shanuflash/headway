@@ -582,7 +582,9 @@ private fun ScreenLazy(state: LazyListState, content: LazyListScope.() -> Unit) 
 @Composable
 private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
     // Opaque, so a screen sliding in covers the one underneath instead of showing through it.
+    val stagger = remember { StaggerCounter() }
     Box(Modifier.fillMaxSize().background(LocalHw.current.bg), contentAlignment = Alignment.TopCenter) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalStagger provides stagger) {
         Column(
             Modifier
                 .widthIn(max = 560.dp)
@@ -596,6 +598,7 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
             content = content,
         )
+        }
     }
 }
 

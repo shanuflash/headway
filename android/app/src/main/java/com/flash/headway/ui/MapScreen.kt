@@ -236,6 +236,7 @@ private fun NetworkMap(onStation: (String) -> Unit) {
             Modifier
                 .statusBarsPadding()
                 .padding(start = 16.dp, top = 12.dp, end = 16.dp)
+                .staggerIn(0)
                 .shadow(6.dp, com.flash.headway.ui.theme.HwShape.extraLarge)
                 .clip(com.flash.headway.ui.theme.HwShape.extraLarge)
                 .background(hw.card)
@@ -253,6 +254,7 @@ private fun NetworkMap(onStation: (String) -> Unit) {
             colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .staggerIn(2)
                 .navigationBarsPadding()
                 .padding(end = 16.dp, bottom = 96.dp),
         ) {

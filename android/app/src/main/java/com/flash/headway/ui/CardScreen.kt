@@ -139,7 +139,14 @@ fun ColumnScope.CardScreen(now: () -> Long) {
         },
     )
     val shown = read
-    if (shown is Read.Done && shown.trips.isNotEmpty()) TripList(shown.trips)
+    val trips = (shown as? Read.Done)?.trips.orEmpty()
+    androidx.compose.animation.AnimatedVisibility(
+        trips.isNotEmpty(),
+        enter = androidx.compose.animation.expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + androidx.compose.animation.fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+        exit = androidx.compose.animation.shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + androidx.compose.animation.fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { TripList(trips) }
+    }
 
     SectionTitle("Top up")
     ListCard(

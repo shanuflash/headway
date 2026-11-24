@@ -1,5 +1,6 @@
 package com.flash.headway.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -149,7 +150,7 @@ fun TopBar(left: @Composable RowScope.() -> Unit = {}, right: @Composable RowSco
 @Composable
 fun LargeTitle(title: String, subtitle: (@Composable () -> Unit)? = null) {
     val hw = LocalHw.current
-    Column(Modifier.padding(start = 4.dp, end = 4.dp, top = 40.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.autoStagger().padding(start = 4.dp, end = 4.dp, top = 40.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = HwType.largeTitle, color = hw.text)
         subtitle?.invoke()
     }
@@ -162,13 +163,13 @@ fun SectionTitle(text: String) {
         text,
         style = HwType.section,
         color = LocalHw.current.tint,
-        modifier = Modifier.padding(start = 4.dp, top = 12.dp),
+        modifier = Modifier.autoStagger().padding(start = 4.dp, top = 12.dp),
     )
 }
 
 @Composable
 fun Footnote(text: String) {
-    Text(text, style = HwType.footnote, color = LocalHw.current.sub, modifier = Modifier.padding(horizontal = 16.dp))
+    Text(text, style = HwType.footnote, color = LocalHw.current.sub, modifier = Modifier.autoStagger().padding(horizontal = 16.dp))
 }
 
 /** A filled card (surface-container, 28dp corners). */
@@ -176,7 +177,9 @@ fun Footnote(text: String) {
 fun HwCard(modifier: Modifier = Modifier, padding: Dp = 16.dp, gap: Dp = 12.dp, color: Color? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = modifier
+            .autoStagger()
             .fillMaxWidth()
+            .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
             .clip(CardShape)
             .background(color ?: LocalHw.current.card)
             .padding(padding),
@@ -200,7 +203,7 @@ fun ListCard(rows: List<@Composable () -> Unit>, @Suppress("UNUSED_PARAMETER") i
             val spec = MaterialTheme.motionScheme.fastSpatialSpec<Dp>()
             val top by animateDpAsState(if (pressed) 20.dp else if (i == 0) 16.dp else 4.dp, spec, label = "segTop")
             val bottom by animateDpAsState(if (pressed) 20.dp else if (i == rows.lastIndex) 16.dp else 4.dp, spec, label = "segBottom")
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(top, top, bottom, bottom)).background(color ?: hw.card)) {
+            Box(Modifier.autoStagger().fillMaxWidth().clip(RoundedCornerShape(top, top, bottom, bottom)).background(color ?: hw.card)) {
                 androidx.compose.runtime.CompositionLocalProvider(LocalPressSource provides source) { row() }
             }
         }
