@@ -61,10 +61,19 @@ fun HwSheet(
     heightFraction: Float? = null,
     /** Full-screen search view: covers the app, no handle or rounded top. */
     fullScreen: Boolean = false,
+    /**
+     * For a full-screen sheet: the on-screen rect it grows out of (the search bar or add button),
+     * so it opens as a container transform and shrinks back into it on close.
+     */
+    from: androidx.compose.ui.geometry.Rect? = null,
     content: @Composable ColumnScope.(close: (() -> Unit) -> Unit) -> Unit,
 ) {
     val hw = LocalHw.current
     val scope = rememberCoroutineScope()
+    val openSpec = androidx.compose.material3.MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val closeSpec = androidx.compose.material3.MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val transform = fullScreen && from != null
+    val fromRadius = with(androidx.compose.ui.platform.LocalDensity.current) { 28.dp.toPx() }
     // 0 = fully open, 1 = fully hidden below the screen.
     var hidden by remember { mutableFloatStateOf(1f) }
     var heightPx by remember { mutableIntStateOf(1) }
@@ -74,7 +83,8 @@ fun HwSheet(
     fun settle(target: Float, then: (() -> Unit)? = null) {
         anim?.cancel()
         anim = scope.launch {
-            val spec: AnimationSpec<Float> = if (target == 0f) spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow) else tween(220)
+            // Opening rides the expressive spatial spring; closing is quick and doesn't bounce.
+            val spec: AnimationSpec<Float> = if (target == 0f) openSpec else closeSpec
             // A close must always finish (run its action and dismiss), even if interrupted:
             // a sheet left half-closed would keep its scrim over the screen.
             try {
@@ -99,7 +109,16 @@ fun HwSheet(
     }
 
     LaunchedEffect(Unit) { settle(0f) }
-    BackHandler { close(onDismiss) }
+    // Predictive back: the sheet follows the back swipe, then closes, or springs back if cancelled.
+    androidx.activity.compose.PredictiveBackHandler { progress ->
+        try {
+            progress.collect { e -> if (!closing) hidden = e.progress * 0.35f }
+            close(onDismiss)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (!closing) settle(0f)
+            throw e
+        }
+    }
 
     fun dragBy(dy: Float) {
         // Closing already: a drag or scroll now mustn't cancel the close.
@@ -162,9 +181,19 @@ fun HwSheet(
                 .fillMaxWidth()
                 .then(if (fullScreen) Modifier.fillMaxHeight() else if (heightFraction != null) Modifier.fillMaxHeight(heightFraction) else Modifier)
                 .onSizeChanged { heightPx = it.height.coerceAtLeast(1) }
-                .graphicsLayer { translationY = hidden * size.height }
+                .graphicsLayer {
+                    if (transform) {
+                        // Container transform: grow out of the tapped bar or button.
+                        clip = true
+                        shape = ContainerTransformShape(from!!, minOf(fromRadius, from.height / 2), 1f - hidden)
+                    } else {
+                        translationY = hidden * size.height
+                    }
+                }
                 .clip(if (fullScreen) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .background(if (fullScreen) hw.button else hw.sheet)
+                // The content fades in once the container has mostly grown (and out first on close).
+                .graphicsLayer { if (transform) alpha = ((0.65f - hidden) / 0.65f).coerceIn(0f, 1f) }
                 .then(if (fullScreen) Modifier.statusBarsPadding() else Modifier)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .nestedScroll(connection),

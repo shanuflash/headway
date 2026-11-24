@@ -373,6 +373,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                     pickFrom = null
                 },
                 startFrom = pickFrom,
+                from = remember(mode) { TapOrigin.rect.also { TapOrigin.rect = null } },
             )
         }
 
@@ -669,9 +670,13 @@ private fun Dock(tab: Tab, onTab: (Tab) -> Unit, showFab: Boolean, onAdd: () -> 
             // The gap travels with the FAB, so nothing is left behind when it goes.
             Row {
                 Spacer(Modifier.width(12.dp))
+                val fabBounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
                 androidx.compose.material3.FloatingActionButton(
-                    onClick = onAdd,
-                    modifier = Modifier.size(androidx.compose.material3.FloatingToolbarDefaults.ContainerSize),
+                    onClick = {
+                        TapOrigin.rect = fabBounds[0]
+                        onAdd()
+                    },
+                    modifier = Modifier.size(androidx.compose.material3.FloatingToolbarDefaults.ContainerSize).originOf { fabBounds[0] = it },
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
                     containerColor = hw.tint,
                     contentColor = hw.onTint,

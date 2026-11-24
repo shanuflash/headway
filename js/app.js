@@ -2186,6 +2186,37 @@ document.addEventListener('input', (e) => {
   setDelay(el.dataset.route, d);
 });
 
+/* ---------- expressive press ---------- */
+// Every tappable thing squishes on touch and springs back past full size on release (M3 Expressive,
+// fast spatial spring). Uses the CSS `scale` property, so it composes with any transform.
+const PRESSABLE = 'button, a[href], .tab, .row.tap, .tchip, .searchbar, label.icon-btn, [data-act]';
+const SPRING_FAST = getComputedStyle(document.documentElement).getPropertyValue('--md-spring-spatial-fast').trim() || 'ease-out';
+let pressedEl = null;
+const pressAnims = new WeakMap();
+document.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (reduceMotion.matches || e.button > 0) return;
+    const el = e.target.closest(PRESSABLE);
+    if (!el || el.disabled || el.closest('.map-wrap svg')) return;
+    pressedEl = el;
+    // Lists and wide controls squish less than small buttons.
+    const k = el.offsetWidth > 200 ? 0.98 : 0.94;
+    pressAnims.set(el, el.animate([{ scale: 1 }, { scale: k }], { duration: 110, easing: 'cubic-bezier(0.2, 0, 0, 1)', fill: 'forwards' }));
+  },
+  { passive: true },
+);
+const release = () => {
+  const el = pressedEl;
+  pressedEl = null;
+  if (!el) return;
+  const from = getComputedStyle(el).scale;
+  pressAnims.get(el)?.cancel();
+  el.animate([{ scale: from === 'none' ? 1 : from }, { scale: 1 }], { duration: 350, easing: SPRING_FAST });
+};
+document.addEventListener('pointerup', release, { passive: true });
+document.addEventListener('pointercancel', release, { passive: true });
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && sheetOpen) history.back();
 });

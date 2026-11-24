@@ -1,5 +1,18 @@
 package com.flash.headway.ui
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -67,13 +80,14 @@ import kotlinx.coroutines.launch
 /** Station first, then a destination reachable without changing trains. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDismiss: () -> Unit, startFrom: String? = null) {
+fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDismiss: () -> Unit, startFrom: String? = null, from: androidx.compose.ui.geometry.Rect? = null) {
     val hw = LocalHw.current
+    val origin = from
     var from by remember { mutableStateOf(startFrom) }
     var query by remember { mutableStateOf("") }
     val spatial = androidx.compose.material3.MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
 
-    HwSheet(onDismiss = onDismiss, fullScreen = true) { close ->
+    HwSheet(onDismiss = onDismiss, fullScreen = true, from = origin) { close ->
         AnimatedContent(
             targetState = from,
             transitionSpec = {
@@ -160,32 +174,91 @@ internal fun SearchField(query: String, onChange: (String) -> Unit) {
     }
 }
 
+/** "Guindy" with the part matching the search in bold, as the rows filter. */
+private fun highlight(name: String, q: String): AnnotatedString = buildAnnotatedString {
+    append(name)
+    if (q.isNotEmpty()) {
+        val i = name.lowercase().indexOf(q)
+        if (i >= 0) addStyle(SpanStyle(fontWeight = FontWeight.Bold), i, i + q.length)
+    }
+}
+
+/**
+ * One row of an M3 Expressive segmented list inside a lazy list. Corners follow its place in the
+ * group (and morph rounder while pressed); when the list filters it travels to its new place on
+ * the spatial spring, fades in or out, and on first show it staggers in after the rows above it.
+ */
+@Composable
+private fun LazyItemScope.Segment(i: Int, n: Int, order: Int, color: Color, content: @Composable () -> Unit) {
+    val motion = androidx.compose.material3.MaterialTheme.motionScheme
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val spec = motion.fastSpatialSpec<androidx.compose.ui.unit.Dp>()
+    val top by animateDpAsState(if (pressed) 20.dp else if (i == 0) 16.dp else 4.dp, spec, label = "segTop")
+    val bottom by animateDpAsState(if (pressed) 20.dp else if (i == n - 1) 16.dp else 4.dp, spec, label = "segBottom")
+    Box(
+        Modifier
+            .animateItem(fadeInSpec = motion.defaultEffectsSpec(), placementSpec = motion.defaultSpatialSpec(), fadeOutSpec = motion.fastEffectsSpec())
+            .staggerIn(order)
+            .padding(bottom = 2.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(top, top, bottom, bottom))
+            .background(color),
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalPressSource provides source) { content() }
+    }
+}
+
+/** A group heading that travels with its rows. */
+@Composable
+private fun LazyItemScope.GroupHeading(line: Line, text: String) {
+    val hw = LocalHw.current
+    val motion = androidx.compose.material3.MaterialTheme.motionScheme
+    Row(
+        Modifier
+            .animateItem(fadeInSpec = motion.defaultEffectsSpec(), placementSpec = motion.defaultSpatialSpec(), fadeOutSpec = motion.fastEffectsSpec())
+            .padding(start = 4.dp, top = 14.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(line)))
+        Text(text, style = HwType.section, color = hw.tint)
+    }
+}
+
+private val listPadding: PaddingValues
+    @Composable get() {
+        val nav = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        return PaddingValues(start = 16.dp, end = 16.dp, bottom = nav + 24.dp)
+    }
+
 @Composable
 internal fun StationList(query: String, onPick: (String) -> Unit) {
+    val hw = LocalHw.current
     val q = query.trim().lowercase()
-    Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = listPadding) {
+        var order = 0
         Network.pickerGroups.forEach { (line, ids) ->
             val shown = ids.filter { id ->
                 val st = Network.stations.getValue(id)
                 q.isEmpty() || st.name.lowercase().contains(q) || st.long.orEmpty().lowercase().contains(q)
             }
             if (shown.isNotEmpty()) {
-                SectionTitle(line.label)
-                ListCard(
-                    shown.map { id ->
-                        @Composable {
-                            val st = Network.stations.getValue(id)
-                            ListRow(onClick = { onPick(id) }) {
-                                RowText(st.name, st.long, modifier = Modifier.weight(1f))
-                                st.lines.filter { it != line }.forEach { LineTag(it) }
+                item(key = "h-${line.name}") { GroupHeading(line, line.label) }
+                val base = order
+                itemsIndexed(shown, key = { _, id -> "${line.name}-$id" }) { i, id ->
+                    Segment(i, shown.size, base + i, hw.hero) {
+                        val st = Network.stations.getValue(id)
+                        ListRow(onClick = { onPick(id) }) {
+                            Column(Modifier.weight(1f)) {
+                                Text(highlight(st.name, q), style = HwType.body, color = hw.text)
+                                st.long?.let { Text(it, style = HwType.subhead, color = hw.sub) }
                             }
+                            st.lines.filter { it != line }.forEach { LineTag(it) }
                         }
-                    },
-                    inset = 16.dp,
-                )
+                    }
+                }
+                order += shown.size
             }
         }
     }
@@ -202,60 +275,54 @@ private fun DestinationList(from: String, query: String, onPick: (String) -> Uni
     }
     val direct = remember(from) { directDestinations(from) }
     val changes = remember(from) { transferDestinations(from) }
-    Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        direct.forEach { g ->
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = listPadding) {
+        var order = 0
+        direct.forEachIndexed { gi, g ->
             val shown = g.stations.filter { matches(it.first) }
-            if (shown.isEmpty()) return@forEach
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(g.line)))
-                Text("Towards ${g.terminals.joinToString(" or ") { Network.name(it) }}", style = HwType.section, color = hw.tint)
-            }
-            ListCard(
-                shown.map { (id, minutes) ->
-                    @Composable {
-                        val st = Network.stations.getValue(id)
-                        ListRow(onClick = { onPick(id) }) {
-                            Text(st.name, style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
-                            st.lines.filter { it != g.line }.forEach { LineTag(it) }
-                            Text("$minutes min", style = HwType.subheadStrong.copy(fontWeight = FontWeight.Medium), color = hw.sub)
-                        }
+            if (shown.isEmpty()) return@forEachIndexed
+            item(key = "dh-$gi") { GroupHeading(g.line, "Towards ${g.terminals.joinToString(" or ") { Network.name(it) }}") }
+            val base = order
+            itemsIndexed(shown, key = { _, it -> "d-$gi-${it.first}" }) { i, (id, minutes) ->
+                Segment(i, shown.size, base + i, hw.hero) {
+                    val st = Network.stations.getValue(id)
+                    ListRow(onClick = { onPick(id) }) {
+                        Text(highlight(st.name, q), style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
+                        st.lines.filter { it != g.line }.forEach { LineTag(it) }
+                        Text("$minutes min", style = HwType.subheadStrong.copy(fontWeight = FontWeight.Medium), color = hw.sub)
                     }
-                },
-                inset = 16.dp,
-            )
+                }
+            }
+            order += shown.size
         }
 
         // Each station once, under its first line.
         val listed = HashSet<String>()
         val groups = Network.pickerGroups.map { (line, ids) -> line to ids.filter { it in changes && matches(it) && listed.add(it) } }.filter { it.second.isNotEmpty() }
-        if (groups.isNotEmpty()) SectionTitle("With a change")
-        groups.forEach { (line, ids) ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(line)))
-                Text(line.label, style = HwType.section, color = hw.tint)
+        if (groups.isNotEmpty()) {
+            item(key = "with-change") {
+                Box(Modifier.animateItem()) { SectionTitle("With a change") }
             }
-            ListCard(
-                ids.map { id ->
-                    @Composable {
-                        val st = Network.stations.getValue(id)
-                        val via = changes.getValue(id).via.joinToString(", then ") { Network.name(it) }
-                        ListRow(onClick = { onPick(id) }) {
-                            Column(Modifier.weight(1f)) {
-                                Text(st.name, style = HwType.body, color = hw.text)
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(Icons.Rounded.TransferWithinAStation, null, tint = hw.sub, modifier = Modifier.size(15.dp))
-                                    Text("Change at $via", style = HwType.footnote, color = hw.sub)
-                                }
+        }
+        groups.forEach { (line, ids) ->
+            item(key = "ch-${line.name}") { GroupHeading(line, line.label) }
+            val base = order
+            itemsIndexed(ids, key = { _, id -> "c-${line.name}-$id" }) { i, id ->
+                Segment(i, ids.size, base + i, hw.hero) {
+                    val st = Network.stations.getValue(id)
+                    val via = changes.getValue(id).via.joinToString(", then ") { Network.name(it) }
+                    ListRow(onClick = { onPick(id) }) {
+                        Column(Modifier.weight(1f)) {
+                            Text(highlight(st.name, q), style = HwType.body, color = hw.text)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Rounded.TransferWithinAStation, null, tint = hw.sub, modifier = Modifier.size(15.dp))
+                                Text("Change at $via", style = HwType.footnote, color = hw.sub)
                             }
-                            st.lines.filter { it != line }.forEach { LineTag(it) }
                         }
+                        st.lines.filter { it != line }.forEach { LineTag(it) }
                     }
-                },
-                inset = 16.dp,
-            )
+                }
+            }
+            order += ids.size
         }
     }
 }

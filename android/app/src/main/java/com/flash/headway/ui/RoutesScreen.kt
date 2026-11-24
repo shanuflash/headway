@@ -2,6 +2,10 @@
 
 package com.flash.headway.ui
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.graphicsLayer
 import android.net.Uri
 import android.content.Intent
 import androidx.compose.animation.AnimatedContent
@@ -232,13 +236,13 @@ fun LazyListScope.routesScreen(
         }
     }
 
-    if (preview != null) item(key = "preview", contentType = "card") { RouteCard(preview, prefs, now, actions, isPreview = true) }
+    if (preview != null) item(key = "preview", contentType = "card") { Box(travelModifier()) { RouteCard(preview, prefs, now, actions, isPreview = true) } }
     if (statuses == null) return
     if (statuses.isEmpty() && preview == null) {
         item(key = "empty", contentType = "empty") { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { EmptyRoutes(actions) } }
         return
     }
-    items(statuses, key = { it.route.id }, contentType = { "card" }) { s -> RouteCard(s, prefs, now, actions, isPreview = false) }
+    items(statuses, key = { it.route.id }, contentType = { "card" }) { s -> Box(travelModifier()) { RouteCard(s, prefs, now, actions, isPreview = false) } }
 }
 
 /** CMRL advisories in force now (extended hours, holiday timings, disruptions). Tap for the announcement. */
@@ -428,9 +432,14 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         val shownDep = s.departures.getOrNull(index)
         val following = s.trip != null && !isPreview
         Row(Modifier.padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val titleSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
             AnimatedContent(
                 targetState = r,
-                transitionSpec = { fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith fadeOut() },
+                transitionSpec = {
+                    val spatial = titleSpatial
+                    (androidx.compose.animation.slideInVertically(spatial) { it } + fadeIn()) togetherWith
+                        (androidx.compose.animation.slideOutVertically(spatial) { -it } + fadeOut())
+                },
                 modifier = Modifier.weight(1f),
                 label = "routeTitle",
             ) { shown ->
@@ -458,12 +467,36 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                             checkedContentColor = hw.onTint,
                         ),
                     ) {
+                        // Ring: a quick swing either way, dying out, pivoting at the top of the bell.
+                        val ring = remember { androidx.compose.animation.core.Animatable(0f) }
+                        val first = remember { booleanArrayOf(true) }
+                        LaunchedEffect(on) {
+                            if (first[0]) { first[0] = false; return@LaunchedEffect }
+                            if (on) {
+                                ring.animateTo(
+                                    0f,
+                                    androidx.compose.animation.core.keyframes {
+                                        durationMillis = 700
+                                        24f at 70
+                                        -20f at 160
+                                        14f at 250
+                                        -9f at 340
+                                        5f at 430
+                                        -2f at 520
+                                    },
+                                )
+                            }
+                        }
                         Icon(
                             if (on) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
                             when {
                                 on -> "Stop countdown"
                                 shownDep.hasChange -> "Start trip"
                                 else -> "Start countdown"
+                            },
+                            Modifier.graphicsLayer {
+                                rotationZ = ring.value
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.1f)
                             },
                         )
                     }
@@ -592,7 +625,17 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         s.late && lastIdx > i -> "Last ${lastIdx - i + 1} trains" to true
         else -> null to false
     }
-    val panel by androidx.compose.animation.animateColorAsState(if (warn) hw.warnBg else hw.hero, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "panel")
+    val counting = prefs.reminder?.let { it.routeId == s.route.id && it.dep == d.dep } == true
+    val scheme = MaterialTheme.colorScheme
+    val panel by androidx.compose.animation.animateColorAsState(
+        when {
+            counting -> scheme.primaryContainer
+            warn -> hw.warnBg
+            else -> hw.hero
+        },
+        MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "panel",
+    )
     Column(
         Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(com.flash.headway.ui.theme.HwShape.extraLarge).background(panel)
             .press(onClick = onToggle).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
@@ -617,6 +660,16 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 8.dp)) {
                 Text(clock(d.arr), style = HwType.cardTitle.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold), color = if (warn) hw.onWarnBg else hw.text)
                 Text("arrive · ${span(d.arr - d.dep)}", style = HwType.footnote, color = if (warn) hw.onWarnBg else hw.sub)
+            }
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            counting,
+            enter = androidx.compose.animation.expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+            exit = androidx.compose.animation.shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+        ) {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.NotificationsActive, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
+                Text("Countdown on · leaves ${clock(d.dep)}", style = HwType.subheadStrong, color = scheme.onPrimaryContainer)
             }
         }
         // Leaves sooner than a later train that gets there just as early: say which.
@@ -684,45 +737,67 @@ private fun LineBadges(d: RouteDeparture, platform: String?, coach: Coach?, show
     }
 }
 
-/** The next departures as a compact switcher; the one shown big is selected. */
+/**
+ * The next departures as a track with a sliding thumb: picking a time moves the thumb there on the
+ * spatial spring, its leading edge on the fast spring so it stretches on the way.
+ */
 @Composable
 private fun DepartureSwitcher(s: RouteStatus, selected: Int, onPick: (Long) -> Unit) {
     val hw = LocalHw.current
+    val motion = MaterialTheme.motionScheme
     val lastIdx = if (s.plan != null) -1 else lastIndex(s)
     val shown = s.departures.take(5)
     if (shown.size < 2) return
-    Row(
-        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    val sel = selected.coerceIn(0, shown.lastIndex)
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(48.dp).clip(CircleShape).background(hw.fill).padding(4.dp),
     ) {
-        shown.forEachIndexed { k, d ->
-            val on = k == selected
-            val tomorrow = s.plan == null && isTomorrow(s, k)
-            // Connected group: big outer corners, small inner ones; the picked item goes fully round.
-            val outer = 20.dp
-            val inner = 8.dp
-            val start by animateDpAsState(if (on || k == 0) outer else inner, MaterialTheme.motionScheme.fastSpatialSpec(), label = "segStart")
-            val end by animateDpAsState(if (on || k == shown.lastIndex) outer else inner, MaterialTheme.motionScheme.fastSpatialSpec(), label = "segEnd")
-            val segBg by androidx.compose.animation.animateColorAsState(if (on) hw.secondary else hw.fill, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "segBg")
-            Text(
-                clockTime(d.dep),
-                style = HwType.subhead.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, fontFeatureSettings = "tnum"),
-                color = when {
-                    on -> hw.onSecondary
-                    k == lastIdx -> hw.warn
-                    tomorrow -> hw.sub.copy(alpha = 0.7f)
-                    else -> hw.sub
-                },
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(topStart = start, bottomStart = start, topEnd = end, bottomEnd = end))
-                    .background(segBg)
-                    .press { onPick(pickKey(d)) }
-                    .semantics { contentDescription = "${clock(d.dep)}${if (on) ", selected" else ""}" }
-                    .padding(vertical = 12.dp),
-            )
+        val slot = maxWidth / shown.size
+        val last = remember { intArrayOf(sel) }
+        val right = remember(sel) { (sel >= last[0]).also { last[0] = sel } }
+        val lead = motion.fastSpatialSpec<androidx.compose.ui.unit.Dp>()
+        val trail = motion.defaultSpatialSpec<androidx.compose.ui.unit.Dp>()
+        val start by animateDpAsState(slot * sel, if (right) trail else lead, label = "thumbStart")
+        val end by animateDpAsState(slot * (sel + 1), if (right) lead else trail, label = "thumbEnd")
+        Box(
+            Modifier
+                .offset(x = start)
+                .width((end - start).coerceAtLeast(slot * 0.6f))
+                .fillMaxHeight()
+                .clip(CircleShape)
+                .background(hw.secondary),
+        )
+        Row(Modifier.fillMaxSize()) {
+            shown.forEachIndexed { k, d ->
+                val on = k == sel
+                val tomorrow = s.plan == null && isTomorrow(s, k)
+                val fg by androidx.compose.animation.animateColorAsState(
+                    when {
+                        on -> hw.onSecondary
+                        k == lastIdx -> hw.warn
+                        tomorrow -> hw.sub.copy(alpha = 0.7f)
+                        else -> hw.sub
+                    },
+                    motion.defaultEffectsSpec(),
+                    label = "segFg",
+                )
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .press { onPick(pickKey(d)) }
+                        .semantics { contentDescription = "${clock(d.dep)}${if (on) ", selected" else ""}" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        clockTime(d.dep),
+                        style = HwType.subhead.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, fontFeatureSettings = "tnum"),
+                        color = fg,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
@@ -1008,13 +1083,18 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
 @Composable
 fun SearchBarButton(text: String, onClick: () -> Unit) {
     val hw = LocalHw.current
+    val bounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
     Row(
         Modifier
             .fillMaxWidth()
             .height(56.dp)
+            .originOf { bounds[0] = it }
             .clip(CircleShape)
             .background(hw.button)
-            .press(onClick = onClick)
+            .press {
+                TapOrigin.rect = bounds[0]
+                onClick()
+            }
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1022,4 +1102,11 @@ fun SearchBarButton(text: String, onClick: () -> Unit) {
         Icon(Icons.Rounded.Search, null, tint = hw.sub)
         Text(text, style = HwType.body, color = hw.sub)
     }
+}
+
+/** A lazy-list item that travels to its new place on the spatial spring when the list changes. */
+@Composable
+private fun androidx.compose.foundation.lazy.LazyItemScope.travelModifier(): Modifier {
+    val motion = MaterialTheme.motionScheme
+    return Modifier.animateItem(fadeInSpec = motion.defaultEffectsSpec(), placementSpec = motion.defaultSpatialSpec(), fadeOutSpec = motion.fastEffectsSpec())
 }

@@ -1,5 +1,10 @@
 package com.flash.headway.ui
 
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
@@ -66,14 +71,31 @@ val RouteCardShape = HwShape.extraLarge
 
 /** Clickable with the M3 ripple and a light haptic. */
 @Composable
-fun Modifier.press(enabled: Boolean = true, scaleTo: Float = 1f, role: Role = Role.Button, onClick: () -> Unit): Modifier {
+fun Modifier.press(enabled: Boolean = true, scaleTo: Float = 0.96f, role: Role = Role.Button, onClick: () -> Unit): Modifier {
     val haptics = LocalHapticFeedback.current
-    val source = remember { MutableInteractionSource() }
-    return this.clickable(interactionSource = source, indication = ripple(), enabled = enabled, role = role) {
-        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        onClick()
-    }
+    // A list row shares its press with the segment around it, so the segment can morph too.
+    val source = LocalPressSource.current ?: remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val motion = MaterialTheme.motionScheme
+    // M3 Expressive press: squish quickly on touch, then spring back past full size on release.
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) scaleTo.coerceAtMost(0.98f) else 1f,
+        animationSpec = if (pressed) motion.fastEffectsSpec() else motion.fastSpatialSpec(),
+        label = "press",
+    )
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clickable(interactionSource = source, indication = ripple(), enabled = enabled, role = role) {
+            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+            onClick()
+        }
 }
+
+/** The press source a [ListCard] segment hands its row, so the segment's corners follow the press. */
+val LocalPressSource = androidx.compose.runtime.staticCompositionLocalOf<MutableInteractionSource?> { null }
 
 /** A tonal surface (surface-container) with an optional fill. Replaces the old glass. */
 @Composable
@@ -172,9 +194,15 @@ fun ListCard(rows: List<@Composable () -> Unit>, @Suppress("UNUSED_PARAMETER") i
     val hw = LocalHw.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         rows.forEachIndexed { i, row ->
-            val top = if (i == 0) 16.dp else 4.dp
-            val bottom = if (i == rows.lastIndex) 16.dp else 4.dp
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(top, top, bottom, bottom)).background(color ?: hw.card)) { row() }
+            // Expressive segmented list: while a row is held its corners round up, on the bouncy spring.
+            val source = remember { MutableInteractionSource() }
+            val pressed by source.collectIsPressedAsState()
+            val spec = MaterialTheme.motionScheme.fastSpatialSpec<Dp>()
+            val top by animateDpAsState(if (pressed) 20.dp else if (i == 0) 16.dp else 4.dp, spec, label = "segTop")
+            val bottom by animateDpAsState(if (pressed) 20.dp else if (i == rows.lastIndex) 16.dp else 4.dp, spec, label = "segBottom")
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(top, top, bottom, bottom)).background(color ?: hw.card)) {
+                androidx.compose.runtime.CompositionLocalProvider(LocalPressSource provides source) { row() }
+            }
         }
     }
 }
