@@ -2,6 +2,7 @@
 
 package com.flash.headway.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -425,7 +426,8 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
     val index = s.departures.indexOfFirst { pickKey(it) == picked }.let { if (it < 0) s.best else it }
 
     Column(
-        Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(top = 16.dp, bottom = 20.dp),
+        Modifier.fillMaxWidth().animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()).clip(RouteCardShape).background(hw.card)
+            .padding(top = 16.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // The departure shown big; the bell in the header counts down to it (or starts its trip).
@@ -525,7 +527,22 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
         if (isPreview) WhenPill(s.plan, actions.whenOpen)
 
         val shown = s.departures.getOrNull(index)
-        val trip = s.trip?.takeIf { !isPreview }
+        val tripNow = s.trip?.takeIf { !isPreview }
+        val heroSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+        val heroSize = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntSize>()
+        val heroIn = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+        val heroOut = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+        AnimatedContent(
+            targetState = tripNow != null,
+            transitionSpec = {
+                (fadeIn(heroIn) + androidx.compose.animation.scaleIn(heroSpatial, initialScale = 0.9f)) togetherWith
+                    (fadeOut(heroOut) + androidx.compose.animation.scaleOut(heroSpatial, targetScale = 0.94f)) using
+                    androidx.compose.animation.SizeTransform(clip = false) { _, _ -> heroSize }
+            },
+            label = "tripHero",
+        ) { following ->
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        val trip = if (following) tripNow else null
         if (trip != null) {
             // On a trip with changes: count down to whatever's next, train by train.
             TripHero(
@@ -566,7 +583,11 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             // following a trip that's already under way.
             val multi = (shown.legs?.size ?: 1) > 1
             if (multi || saved) {
-                AnimatedVisibility(details, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                AnimatedVisibility(
+                    details,
+                    enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+                    exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()),
+                ) {
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         if (multi) {
                             shown.legs?.let { legs ->
@@ -582,6 +603,8 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
                     }
                 }
             }
+        }
+        }
         }
 
         val last = s.last
@@ -894,15 +917,24 @@ private fun TripHero(
             lines += listOfNotNull(getOff, "$walk min walk", legPlatform(leg), coach(leg, false)).joinToString(" · ")
         }
     }
-    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(com.flash.headway.ui.theme.HwShape.extraLarge).background(scheme.primaryContainer)
+            .padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = HwType.subheadStrong, color = hw.tint)
-            BigCountdown(target - t)
-            lines.forEach { Text(it, style = HwType.subhead, color = hw.sub) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Rounded.NotificationsActive, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
+                Text(label, style = HwType.subheadStrong, color = scheme.onPrimaryContainer)
+            }
+            BigCountdown(target - t, scheme.onPrimaryContainer)
+            lines.forEach { Text(it, style = HwType.subhead, color = scheme.onPrimaryContainer.copy(alpha = 0.85f)) }
             // In case the train to catch is missed: the next way on, and a choice of others.
             if (leg != null) {
                 if (backup != null) {
-                    Text("If missed: ${clock(backup.dep)} · arrives ${clock(backup.arr)}", style = HwType.footnote, color = hw.sub)
+                    Text("If missed: ${clock(backup.dep)} · arrives ${clock(backup.arr)}", style = HwType.footnote, color = scheme.onPrimaryContainer.copy(alpha = 0.85f))
                 }
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (backup != null) TripPill("Missed it") { onMissed(backup) }
@@ -916,7 +948,7 @@ private fun TripHero(
             onClick = onEnd,
             shapes = IconButtonDefaults.shapes(),
             modifier = Modifier.size(IconButtonDefaults.mediumContainerSize()),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = hw.selected, contentColor = hw.onSelected),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = scheme.primary, contentColor = scheme.onPrimary),
         ) {
             Icon(Icons.Rounded.Close, contentDescription = "End trip")
         }
