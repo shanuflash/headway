@@ -56,13 +56,13 @@ jobs:
         continue-on-error: true
 
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk "headway-2.0.${GITHUB_RUN_NUMBER}.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "headway-2.0.$((GITHUB_RUN_NUMBER + 2000)).apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: headway-2.0.${{ github.run_number }}
-          path: android/headway-2.0.${{ github.run_number }}.apk
+          name: headway-2.0-run-${{ github.run_number }}
+          path: android/headway-2.0.*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -74,7 +74,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          version="2.0.${GITHUB_RUN_NUMBER}"
+          # The versionCode: 2000 + the run (see build.gradle.kts); the updater reads it from the tag.
+          version="2.0.$((GITHUB_RUN_NUMBER + 2000))"
           tag="v${version}"
           prev=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
           {

@@ -15,9 +15,11 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI run number, so each build is a newer version than the last.
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        // 2.0: the Material 3 Expressive redesign. The last part stays the CI run number (= versionCode).
-        versionName = "2.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        // 2.0 (the Material 3 Expressive redesign) numbers builds from 2000 + the CI run, above every
+        // 1.x build and the 2.0 test builds (1.0.200). The name's last part is the versionCode, which is
+        // all the in-app updater compares.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(2000) ?: 1
+        versionName = "2.0.$versionCode"
     }
 
     // One fixed key, committed on purpose: CI otherwise signs every build with a fresh random
