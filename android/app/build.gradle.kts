@@ -2,13 +2,13 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.flash.headway"
-    compileSdk = 36
+    // Material3 1.5 (Expressive) needs compileSdk 37; targetSdk stays 36, so runtime behaviour is unchanged.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.flash.headway"
@@ -41,19 +41,24 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
-    }
 
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+}
+
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
 }
 
 dependencies {
@@ -63,13 +68,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
 
-    implementation("androidx.compose.ui:ui:1.9.4")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.9.4")
-    implementation("androidx.compose.foundation:foundation:1.9.4")
-    implementation("androidx.compose.animation:animation:1.9.4")
+    implementation("androidx.compose.ui:ui:1.12.0")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.12.0")
+    implementation("androidx.compose.foundation:foundation:1.12.0")
+    implementation("androidx.compose.animation:animation:1.12.0")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
-    implementation("androidx.compose.material3:material3:1.4.0")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.9.4")
+    implementation("androidx.compose.material3:material3:1.5.0")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.12.0")
 
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     // Refreshes the advisory feed in the background, so the widget and countdown stay current.

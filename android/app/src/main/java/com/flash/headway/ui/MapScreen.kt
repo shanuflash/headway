@@ -56,17 +56,24 @@ import com.flash.headway.engine.DestinationGroup
 import com.flash.headway.engine.RouteDeparture
 import com.flash.headway.ui.theme.HwType
 import com.flash.headway.ui.theme.LocalHw
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material3.Icon
 
 /** Next departures each way from a station: the direction, its platform, and trains with their terminal. */
 class StationBoard(val group: DestinationGroup, val platform: String?, val trains: List<Pair<RouteDeparture, String>>)
 
+/**
+ * The map tab, edge to edge behind the floating bar. The map is landscape, so on a phone it opens
+ * filling the screen height and centred on the network; pinch or the zoom toolbar goes from the
+ * whole network (zoom 1) up to 4x.
+ */
 @Composable
-fun ColumnScope.MapScreen(onSettings: () -> Unit, onStation: (String) -> Unit) {
-    TopBar(right = { RoundButton(Icons.Rounded.Settings, "Settings", onSettings) })
-    LargeTitle("Map")
+fun MapScreen(onStation: (String) -> Unit) {
     NetworkMap(onStation)
-    MapKey()
-    Footnote("Tap a station for departures. Map data © OpenStreetMap contributors.")
 }
 
 /** The schematic network: pinch to zoom, drag to pan, tap a station. */
@@ -74,29 +81,50 @@ fun ColumnScope.MapScreen(onSettings: () -> Unit, onStation: (String) -> Unit) {
 private fun NetworkMap(onStation: (String) -> Unit) {
     val hw = LocalHw.current
     val measurer = rememberTextMeasurer()
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
-    val labelStyle = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium, color = hw.text)
+    val scope = rememberCoroutineScope()
+    val labelStyle = TextStyle(fontFamily = com.flash.headway.ui.theme.SansFlex, fontSize = 22.sp, fontWeight = FontWeight.Medium, color = hw.text)
+    val zoomSpec = androidx.compose.material3.MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
 
-    // The card takes the map's own shape, so there's no empty band under it.
-    BoxWithConstraints(
-        Modifier
-            .fillMaxWidth()
-            .aspectRatio(MapLayout.WIDTH.toFloat() / MapLayout.HEIGHT.toFloat())
-            .clip(RouteCardShape)
-            .background(hw.card),
-    ) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(hw.hero)) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
-        // At zoom 1 the whole network fits the card.
+        // At zoom 1 the whole network fits the screen; "cover" fills it.
         val base = minOf(widthPx / MapLayout.WIDTH, heightPx / MapLayout.HEIGHT)
+        val cover = maxOf(widthPx / MapLayout.WIDTH, heightPx / MapLayout.HEIGHT) / base
+        val maxZoom = maxOf(4f, cover * 2f)
 
         fun clampPan(p: Offset, z: Float): Offset {
             val w = MapLayout.WIDTH * base * z
             val h = MapLayout.HEIGHT * base * z
-            val minX = minOf(0f, widthPx - w)
-            val minY = minOf(0f, heightPx - h)
-            return Offset(p.x.coerceIn(minX, 0f), p.y.coerceIn(minY, 0f))
+            // Smaller than the screen on an axis: centre it there; larger: keep the edges inside.
+            val x = if (w <= widthPx) (widthPx - w) / 2 else p.x.coerceIn(widthPx - w, 0f)
+            val y = if (h <= heightPx) (heightPx - h) / 2 else p.y.coerceIn(heightPx - h, 0f)
+            return Offset(x, y)
+        }
+
+        // Opens filled to the screen and centred on the middle of the network.
+        val mid = remember {
+            val xs = MapLayout.stations.values.map { it.first }
+            val ys = MapLayout.stations.values.map { it.second }
+            Offset((xs.min() + xs.max()) / 2f, (ys.min() + ys.max()) / 2f)
+        }
+        var zoom by remember(widthPx, heightPx) { mutableFloatStateOf(cover) }
+        var pan by remember(widthPx, heightPx) {
+            mutableStateOf(clampPan(Offset(widthPx / 2 - mid.x * base * cover, heightPx / 2 - mid.y * base * cover), cover))
+        }
+
+        /** Zooms about the middle of the screen, with the expressive spatial spring. */
+        fun zoomBy(k: Float) {
+            val from = zoom
+            val to = (zoom * k).coerceIn(1f, maxZoom)
+            val c = Offset(widthPx / 2, heightPx / 2)
+            val startPan = pan
+            scope.launch {
+                androidx.compose.animation.core.animate(from, to, animationSpec = zoomSpec) { z, _ ->
+                    pan = clampPan((startPan - c) * (z / from) + c, z)
+                    zoom = z
+                }
+            }
         }
 
         Canvas(
@@ -104,7 +132,7 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTransformGestures { centroid, panChange, zoomChange, _ ->
-                        val newZoom = (zoom * zoomChange).coerceIn(1f, 4f)
+                        val newZoom = (zoom * zoomChange).coerceIn(1f, maxZoom)
                         // Zoom about the fingers, then apply the drag.
                         val k = newZoom / zoom
                         val next = (pan - centroid) * k + centroid + panChange
@@ -133,8 +161,8 @@ private fun NetworkMap(onStation: (String) -> Unit) {
             val s = base * zoom
             translate(pan.x, pan.y) {
                 // Water first, under the lines: sea and lakes filled, coast and rivers stroked.
-                val waterFill = androidx.compose.ui.graphics.lerp(hw.card, hw.blue, 0.12f)
-                val waterLine = androidx.compose.ui.graphics.lerp(hw.card, hw.blue, 0.25f)
+                val waterFill = androidx.compose.ui.graphics.lerp(hw.hero, hw.blue, 0.12f)
+                val waterLine = androidx.compose.ui.graphics.lerp(hw.hero, hw.blue, 0.25f)
                 MapLayout.features.forEach { (kind, pts) ->
                     val path = Path()
                     pts.forEachIndexed { i, (x, y) -> if (i == 0) path.moveTo(x * s, y * s) else path.lineTo(x * s, y * s) }
@@ -167,10 +195,10 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                     val o = at(id)
                     val lines = Network.stations.getValue(id).lines
                     if (lines.size > 1) {
-                        drawCircle(hw.card, 13f * s, o)
+                        drawCircle(hw.hero, 13f * s, o)
                         drawCircle(hw.text, 13f * s, o, style = Stroke(5f * s))
                     } else {
-                        drawCircle(hw.card, 8f * s, o)
+                        drawCircle(hw.hero, 8f * s, o)
                         drawCircle(hw.line(lines.first()), 8f * s, o, style = Stroke(5f * s))
                     }
                 }
@@ -202,6 +230,52 @@ private fun NetworkMap(onStation: (String) -> Unit) {
                 }
             }
         }
+
+        // Floating title card, top left, with the line key.
+        Column(
+            Modifier
+                .statusBarsPadding()
+                .padding(start = 16.dp, top = 12.dp, end = 16.dp)
+                .shadow(6.dp, com.flash.headway.ui.theme.HwShape.extraLarge)
+                .clip(com.flash.headway.ui.theme.HwShape.extraLarge)
+                .background(hw.card)
+                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("Map", style = HwType.sheetTitle.copy(fontSize = 28.sp, lineHeight = 36.sp), color = hw.text)
+            Text("Tap a station for departures", style = HwType.footnote, color = hw.sub)
+            MapKey()
+        }
+
+        // Vibrant vertical floating toolbar for zoom, 16dp in, above the navigation bar.
+        androidx.compose.material3.VerticalFloatingToolbar(
+            expanded = true,
+            colors = androidx.compose.material3.FloatingToolbarDefaults.vibrantFloatingToolbarColors(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 16.dp, bottom = 96.dp),
+        ) {
+            androidx.compose.material3.IconButton(onClick = { zoomBy(1.6f) }, enabled = zoom < maxZoom, shapes = androidx.compose.material3.IconButtonDefaults.shapes()) {
+                Icon(Icons.Rounded.Add, contentDescription = "Zoom in")
+            }
+            androidx.compose.material3.IconButton(onClick = { zoomBy(1 / 1.6f) }, enabled = zoom > 1f, shapes = androidx.compose.material3.IconButtonDefaults.shapes()) {
+                Icon(Icons.Rounded.Remove, contentDescription = "Zoom out")
+            }
+        }
+
+        Text(
+            "© OpenStreetMap contributors",
+            style = HwType.caption,
+            color = hw.sub,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, bottom = 92.dp)
+                .clip(com.flash.headway.ui.theme.HwShape.small)
+                .background(hw.hero.copy(alpha = 0.8f))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -209,7 +283,7 @@ private fun NetworkMap(onStation: (String) -> Unit) {
 @Composable
 private fun MapKey() {
     val hw = LocalHw.current
-    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         listOf(Line.BLUE, Line.GREEN, Line.YELLOW).forEach { line ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(14.dp, 4.dp).clip(CircleShape).background(hw.line(line)))

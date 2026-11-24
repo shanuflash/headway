@@ -51,7 +51,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * A bottom sheet that behaves like iOS: drag the grabber or pull a list down from its top to
+ * An M3 bottom sheet (28dp corners, surface-container-low, 32% scrim): drag the handle or pull a list down from its top to
  * dismiss. Scrolling to the end of a list never moves the sheet, so nothing jumps at the bottom.
  * [content] gets a `close` that animates the sheet away before running its callback.
  */
@@ -59,6 +59,8 @@ import kotlinx.coroutines.launch
 fun HwSheet(
     onDismiss: () -> Unit,
     heightFraction: Float? = null,
+    /** Full-screen search view: covers the app, no handle or rounded top. */
+    fullScreen: Boolean = false,
     content: @Composable ColumnScope.(close: (() -> Unit) -> Unit) -> Unit,
 ) {
     val hw = LocalHw.current
@@ -148,28 +150,29 @@ fun HwSheet(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = 1f - hidden }
-                .background(Color.Black.copy(alpha = if (hw.dark) 0.6f else 0.32f))
+                .background(Color.Black.copy(alpha = 0.32f))
                 .pointerInput(Unit) { detectTapGestures { close(onDismiss) } },
         )
         // The sheet stops short of the status bar, so a tall one never pushes its heading under
         // the clock: its content scrolls instead.
-        Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 12.dp)) {
+        Box(Modifier.fillMaxSize().then(if (fullScreen) Modifier else Modifier.statusBarsPadding().padding(top = 12.dp))) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .then(if (heightFraction != null) Modifier.fillMaxHeight(heightFraction) else Modifier)
+                .then(if (fullScreen) Modifier.fillMaxHeight() else if (heightFraction != null) Modifier.fillMaxHeight(heightFraction) else Modifier)
                 .onSizeChanged { heightPx = it.height.coerceAtLeast(1) }
                 .graphicsLayer { translationY = hidden * size.height }
-                .clip(RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp))
-                .background(hw.bg)
+                .clip(if (fullScreen) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                .background(if (fullScreen) hw.button else hw.sheet)
+                .then(if (fullScreen) Modifier.statusBarsPadding() else Modifier)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .nestedScroll(connection),
         ) {
-            Box(
+            if (!fullScreen) Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(24.dp)
+                    .height(36.dp)
                     .draggable(
                         orientation = Orientation.Vertical,
                         state = rememberDraggableState { dragBy(it) },
@@ -177,7 +180,7 @@ fun HwSheet(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(36.dp, 5.dp).clip(CircleShape).background(hw.chev))
+                Box(Modifier.size(32.dp, 4.dp).clip(CircleShape).background(hw.sub.copy(alpha = 0.4f)))
             }
             content(this) { then -> close(then) }
         }

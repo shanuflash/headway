@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.flash.headway.ui
 
 import android.net.Uri
@@ -108,6 +110,23 @@ import com.flash.headway.ui.theme.LocalHw
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import com.flash.headway.data.DayType
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledIconToggleButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Commute
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.foundation.layout.RowScope
 
 class RouteActions(
     val add: () -> Unit,
@@ -203,16 +222,8 @@ fun LazyListScope.routesScreen(
 ) {
     item(key = "top", contentType = "top") {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            TopBar(right = {
-                GlassGroup(
-                    listOf(
-                        Triple(Icons.Rounded.CreditCard, "Metro card", actions.topUp),
-                        Triple(Icons.Rounded.Add, "Add route", actions.add),
-                        Triple(Icons.Rounded.Settings, "Settings", actions.settings),
-                    ),
-                )
-            })
             LargeTitle("Routes")
+            SearchBarButton("Search stations", actions.look)
             // In this column a hidden banner takes no space (a lazy item would leave a gap).
             if (prefs.mockAt != null) MockBanner(now, prefs.mockOffset, actions.mockOff)
             UpdateBanner(update, actions.update, actions.dismissUpdate)
@@ -276,59 +287,64 @@ private fun UpdateBanner(state: HeadwayViewModel.UpdateState?, onUpdate: () -> U
         is HeadwayViewModel.UpdateState.Ready -> Triple("Update ready", "Headway ${state.release.name}", "Install")
         is HeadwayViewModel.UpdateState.Failed -> Triple("Download failed", "Headway ${state.release.name}", "Retry")
     }
+    Banner(Icons.Rounded.SystemUpdate, title, sub, hw.infoBg, hw.info) {
+        if (button != null) Button(onClick = onUpdate, shapes = ButtonDefaults.shapes()) { Text(button) }
+        if (state !is HeadwayViewModel.UpdateState.Downloading) {
+            TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes(), colors = ButtonDefaults.textButtonColors(contentColor = hw.info)) { Text("Dismiss") }
+        }
+    }
+}
+
+/** A filled banner card in a container role, with actions underneath. */
+@Composable
+fun Banner(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    container: Color,
+    content: Color,
+    actions: (@Composable RowScope.() -> Unit)? = null,
+) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.tintSoft).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().clip(com.flash.headway.ui.theme.HwShape.largeIncreased).background(container).padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-            Text(title, style = HwType.subheadStrong, color = hw.text)
-            Text(sub, style = HwType.footnote, color = hw.sub)
+        Icon(icon, null, tint = content, modifier = Modifier.padding(top = 2.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = HwType.headline.copy(fontWeight = FontWeight.Bold), color = content)
+            Text(body, style = HwType.subhead, color = content.copy(alpha = 0.9f))
+            if (actions != null) Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), content = actions)
         }
-        if (button != null) {
-            Box(
-                Modifier.height(36.dp).clip(CircleShape).background(hw.tint).press(scaleTo = 0.95f, onClick = onUpdate).padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(button, style = HwType.subheadStrong, color = Color.White)
-            }
-        }
-        if (state !is HeadwayViewModel.UpdateState.Downloading) PillIcon(Icons.Rounded.Close, "Dismiss", onClick = onDismiss)
     }
 }
 
 /** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
 @Composable
-private fun LoadCardBanner(now: () -> Long) {
+fun LoadCardBanner(now: () -> Long) {
     val context = LocalContext.current
     // Re-read every few seconds (now ticks each second), so it appears on return from the UPI app.
     val pending = remember(now() / 5_000) { TopUp.loadPending(context) }
     var hidden by remember { mutableStateOf(false) }
     if (!pending || hidden) return
     val hw = LocalHw.current
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.tintSoft).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text("Top-up pending", style = HwType.subheadStrong, color = hw.text)
-            Text("Tap the card in Airtel to add the balance.", style = HwType.footnote, color = hw.sub)
-        }
-        Box(
-            Modifier.height(36.dp).clip(CircleShape).background(hw.tint).press(scaleTo = 0.95f) {
+    Banner(Icons.Rounded.CreditCard, "Top-up pending", "Tap the card in Airtel to add the balance.", hw.tertiaryBg, hw.onTertiaryBg) {
+        Button(
+            onClick = {
                 TopUp.clearLoadPending(context)
                 hidden = true
                 TopUp.openAirtel(context)
-            }.padding(horizontal = 14.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Open Airtel", style = HwType.subheadStrong, color = Color.White)
-        }
-        PillIcon(Icons.Rounded.Close, "Dismiss") {
-            TopUp.clearLoadPending(context)
-            hidden = true
-        }
+            },
+            shapes = ButtonDefaults.shapes(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary),
+        ) { Text("Open Airtel") }
+        TextButton(
+            onClick = {
+                TopUp.clearLoadPending(context)
+                hidden = true
+            },
+            shapes = ButtonDefaults.shapes(),
+            colors = ButtonDefaults.textButtonColors(contentColor = hw.onTertiaryBg),
+        ) { Text("Dismiss") }
     }
 }
 
@@ -337,71 +353,62 @@ private fun LoadCardBanner(now: () -> Long) {
 private fun MockBanner(now: () -> Long, offset: Long, onOff: () -> Unit) {
     val hw = LocalHw.current
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(hw.warnBg).padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.fillMaxWidth().clip(com.flash.headway.ui.theme.HwShape.largeIncreased).background(hw.warnBg).padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(Modifier.weight(1f)) {
-            LiveText({ "Mock time · ${clock(now())}" }, HwType.subheadStrong, hw.warn)
-            LiveText({ "Real time: ${clock(now() - offset)}" }, HwType.footnote, hw.warn)
-        }
-        Box(
-            Modifier.height(36.dp).clip(CircleShape).background(hw.warnButton).press(scaleTo = 0.95f, onClick = onOff).padding(horizontal = 14.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Turn off", style = HwType.subheadStrong, color = hw.warn)
+        Icon(Icons.Rounded.Schedule, null, tint = hw.onWarnBg, modifier = Modifier.padding(top = 2.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LiveText({ "Mock time · ${clock(now())}" }, HwType.headline.copy(fontWeight = FontWeight.Bold), hw.onWarnBg)
+            LiveText({ "Real time: ${clock(now() - offset)}" }, HwType.subhead, hw.onWarnBg)
+            Button(
+                onClick = onOff,
+                shapes = ButtonDefaults.shapes(),
+                colors = ButtonDefaults.buttonColors(containerColor = hw.warn, contentColor = hw.onWarn),
+                modifier = Modifier.padding(top = 10.dp),
+            ) { Text("Turn off") }
         }
     }
 }
 
+/** The empty state: the app's one big "add" moment, with a slowly turning cookie shape. */
 @Composable
 private fun EmptyRoutes(actions: RouteActions) {
-    val hw = LocalHw.current
+    val scheme = MaterialTheme.colorScheme
+    val spin by androidx.compose.animation.core.rememberInfiniteTransition(label = "cookie").animateFloat(
+        0f,
+        360f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(24_000, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "spin",
+    )
     Column(
-        Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxWidth().clip(com.flash.headway.ui.theme.HwShape.extraExtraLarge).background(scheme.primaryContainer)
+            .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("No saved routes", style = HwType.title, color = hw.text, modifier = Modifier.padding(top = 4.dp))
-        Text(
-            "Save a route to see its next trains. Tap ⇅ to reverse it for the trip back.",
-            style = HwType.subhead,
-            color = hw.sub,
-        )
-        PrimaryButton("Add route", Icons.Rounded.Add, actions.add)
-    }
-    SectionTitle("Or search a station")
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .clip(CircleShape)
-            .background(hw.card)
-            .press(scaleTo = 0.98f, onClick = actions.look)
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(Icons.Rounded.Search, null, tint = hw.sub, modifier = Modifier.size(22.dp))
-        Text("Search stations", style = HwType.body, color = hw.sub)
+        Box(Modifier.padding(bottom = 8.dp).size(96.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(96.dp).rotate(spin).clip(MaterialShapes.Cookie9Sided.toShape()).background(scheme.primary))
+            Icon(Icons.Rounded.Commute, null, tint = scheme.onPrimary, modifier = Modifier.size(44.dp))
+        }
+        Text("No saved routes", style = HwType.title, color = scheme.onPrimaryContainer)
+        Text("Save a route to see its next trains. Tap ⇅ to reverse it for the trip back.", style = HwType.body, color = scheme.onPrimaryContainer)
+        Button(
+            onClick = actions.add,
+            modifier = Modifier.padding(top = 8.dp).height(56.dp),
+            shapes = ButtonDefaults.shapes(),
+            contentPadding = ButtonDefaults.MediumContentPadding,
+        ) {
+            Icon(Icons.Rounded.Add, null)
+            Text("Add route", style = HwType.headline, modifier = Modifier.padding(start = 8.dp))
+        }
     }
 }
 
+/** A full-width filled button (56dp, round, morphs squarer while pressed). */
 @Composable
 fun PrimaryButton(text: String, icon: ImageVector, onClick: () -> Unit) {
-    val hw = LocalHw.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .clip(CircleShape)
-            .background(hw.tint)
-            .press(scaleTo = 0.97f, onClick = onClick),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(text, style = HwType.headline, color = Color.White)
+    Button(onClick = onClick, modifier = Modifier.fillMaxWidth().height(56.dp), shapes = ButtonDefaults.shapes()) {
+        Icon(icon, null)
+        Text(text, style = HwType.headline, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
@@ -414,13 +421,13 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
     val index = s.departures.indexOfFirst { pickKey(it) == picked }.let { if (it < 0) s.best else it }
 
     Column(
-        Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(top = 18.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        Modifier.fillMaxWidth().clip(RouteCardShape).background(hw.card).padding(top = 16.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // The departure shown big; the bell in the header counts down to it (or starts its trip).
         val shownDep = s.departures.getOrNull(index)
         val following = s.trip != null && !isPreview
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AnimatedContent(
                 targetState = r,
                 transitionSpec = { fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith fadeOut() },
@@ -429,37 +436,55 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
             ) { shown ->
                 // A small label: the countdown is what leads the card.
                 Text(
-                    "${Network.name(shown.from)} → ${Network.name(shown.to)}".uppercase(),
-                    style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
-                    color = hw.sub,
+                    "${Network.name(shown.from)} → ${Network.name(shown.to)}",
+                    style = HwType.headline.copy(fontWeight = FontWeight.Bold),
+                    color = hw.text,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Row(Modifier.height(36.dp).clip(CircleShape).background(hw.fill).edge(CircleShape)) {
+            // Standard button group: countdown (a toggle that morphs squarer when on), reverse, options.
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (!isPreview && !following && shownDep != null && s.plan == null) {
                     val on = prefs.reminder?.let { it.routeId == r.id && it.dep == shownDep.dep } == true
-                    PillIcon(
-                        if (on) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
-                        when {
-                            on -> "Stop countdown"
-                            shownDep.hasChange -> "Start trip"
-                            else -> "Start countdown"
-                        },
-                        tint = if (on) hw.tint else null,
-                    ) { actions.remind(s, shownDep.dep) }
+                    FilledIconToggleButton(
+                        checked = on,
+                        onCheckedChange = { actions.remind(s, shownDep.dep) },
+                        shapes = IconButtonDefaults.toggleableShapes(),
+                        colors = IconButtonDefaults.filledIconToggleButtonColors(
+                            containerColor = hw.selected,
+                            contentColor = hw.onSelected,
+                            checkedContainerColor = hw.tint,
+                            checkedContentColor = hw.onTint,
+                        ),
+                    ) {
+                        Icon(
+                            if (on) Icons.Rounded.NotificationsActive else Icons.Rounded.Notifications,
+                            when {
+                                on -> "Stop countdown"
+                                shownDep.hasChange -> "Start trip"
+                                else -> "Start countdown"
+                            },
+                        )
+                    }
                 }
-                // Blue when the route also switches by itself at a set time.
+                // Filled when the route also switches by itself at a set time.
                 val auto = if (isPreview) null else prefs.flips[pairKey(r)]?.takeIf { f -> prefs.routes.none { it.id == reverseId(r.id) } }
-                PillIcon(
-                    Icons.Rounded.SwapVert,
-                    if (auto != null) "Reverse (automatic at ${minutesLabel(auto.at)})" else "Reverse",
-                    tint = if (auto != null) hw.tint else null,
-                ) { if (isPreview) actions.swapPreview() else actions.swap(r.id) }
+                FilledTonalIconButton(
+                    onClick = { if (isPreview) actions.swapPreview() else actions.swap(r.id) },
+                    shapes = IconButtonDefaults.shapes(),
+                    colors = if (auto != null) {
+                        IconButtonDefaults.filledTonalIconButtonColors(containerColor = hw.tint, contentColor = hw.onTint)
+                    } else {
+                        IconButtonDefaults.filledTonalIconButtonColors(containerColor = hw.fill, contentColor = hw.sub)
+                    },
+                ) {
+                    Icon(Icons.Rounded.SwapVert, if (auto != null) "Reverse (automatic at ${minutesLabel(auto.at)})" else "Reverse")
+                }
                 if (isPreview) {
                     PillIcon(Icons.Rounded.Close, "Close quick look", onClick = actions.closePreview)
                 } else {
-                    PillIcon(Icons.Rounded.MoreHoriz, "Route options") { actions.menu(r.id) }
+                    PillIcon(Icons.Rounded.MoreVert, "Route options") { actions.menu(r.id) }
                 }
             }
         }
@@ -528,9 +553,9 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
 
         val last = s.last
         if (s.late && last != null) {
-            Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Rounded.Bedtime, null, tint = hw.sub, modifier = Modifier.size(16.dp).padding(top = 1.dp))
-                Text("Last train tonight: ${clock(last.dep)}", style = HwType.footnote, color = hw.sub)
+            Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Bedtime, null, tint = hw.warn, modifier = Modifier.size(20.dp))
+                Text("Last train tonight: ${clock(last.dep)}", style = HwType.subhead, color = hw.sub)
             }
         }
 
@@ -540,11 +565,12 @@ private fun RouteCard(s: RouteStatus, prefs: Prefs, now: () -> Long, actions: Ro
     }
 }
 
+/** A standard icon button (40dp in a 48dp target) that morphs squarer while pressed. */
 @Composable
 private fun PillIcon(icon: ImageVector, description: String, tint: Color? = null, onClick: () -> Unit) {
     val hw = LocalHw.current
-    Box(Modifier.size(42.dp, 36.dp).clip(CircleShape).press(scaleTo = 0.9f, onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = description, tint = tint ?: hw.text, modifier = Modifier.size(20.dp))
+    IconButton(onClick = onClick, shapes = IconButtonDefaults.shapes()) {
+        Icon(icon, contentDescription = description, tint = tint ?: hw.sub)
     }
 }
 
@@ -566,11 +592,13 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
         s.late && lastIdx > i -> "Last ${lastIdx - i + 1} trains" to true
         else -> null to false
     }
+    val panel by androidx.compose.animation.animateColorAsState(if (warn) hw.warnBg else hw.hero, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "panel")
     Column(
-        Modifier.padding(horizontal = 20.dp).clip(RoundedCornerShape(12.dp)).press(scaleTo = 0.99f, onClick = onToggle),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.padding(horizontal = 8.dp).fillMaxWidth().clip(com.flash.headway.ui.theme.HwShape.extraLarge).background(panel)
+            .press(onClick = onToggle).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (label != null) Text(label, style = HwType.subheadStrong, color = if (warn) hw.warn else hw.sub)
+        if (label != null) Text(label, style = HwType.subheadStrong, color = if (warn) hw.onWarnBg else hw.sub)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(Modifier.weight(1f)) {
                 if (tomorrow) {
@@ -579,16 +607,16 @@ private fun Hero(s: RouteStatus, d: RouteDeparture, i: Int, prefs: Prefs, now: (
                         val later = d.dep > lastDep.longValue
                         SideEffect { lastDep.longValue = d.dep }
                         RollingText(clockTime(d.dep), HwType.bigClock, hw.text, up = later)
-                        Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.text, modifier = Modifier.padding(bottom = 4.dp))
+                        Text(clockAmPm(d.dep), style = HwType.bigUnit, color = hw.sub, modifier = Modifier.padding(bottom = 8.dp))
                     }
                 } else {
                     HeroCountdown(d.dep, now)
                 }
             }
             // What you'd glance for on the platform: when you get there.
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 4.dp)) {
-                Text(clock(d.arr), style = HwType.cardTitle.copy(fontFeatureSettings = "tnum"), color = hw.text)
-                Text("arrive · ${span(d.arr - d.dep)}", style = HwType.footnote, color = hw.sub)
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 8.dp)) {
+                Text(clock(d.arr), style = HwType.cardTitle.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold), color = if (warn) hw.onWarnBg else hw.text)
+                Text("arrive · ${span(d.arr - d.dep)}", style = HwType.footnote, color = if (warn) hw.onWarnBg else hw.sub)
             }
         }
         // Leaves sooner than a later train that gets there just as early: say which.
@@ -624,7 +652,7 @@ private fun LineBadges(d: RouteDeparture, platform: String?, coach: Coach?, show
                     style = HwType.footnote.copy(fontWeight = FontWeight.Bold),
                     color = if (inter || leg.trip.line != Line.YELLOW) Color.White else Color.Black,
                     maxLines = 1,
-                    modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                    modifier = Modifier.clip(com.flash.headway.ui.theme.HwShape.small)
                         .background(if (inter) Brush.horizontalGradient(colors) else androidx.compose.ui.graphics.SolidColor(colors[0]))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 )
@@ -664,17 +692,23 @@ private fun DepartureSwitcher(s: RouteStatus, selected: Int, onPick: (Long) -> U
     val shown = s.departures.take(5)
     if (shown.size < 2) return
     Row(
-        Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(hw.fill).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         shown.forEachIndexed { k, d ->
             val on = k == selected
             val tomorrow = s.plan == null && isTomorrow(s, k)
+            // Connected group: big outer corners, small inner ones; the picked item goes fully round.
+            val outer = 20.dp
+            val inner = 8.dp
+            val start by animateDpAsState(if (on || k == 0) outer else inner, MaterialTheme.motionScheme.fastSpatialSpec(), label = "segStart")
+            val end by animateDpAsState(if (on || k == shown.lastIndex) outer else inner, MaterialTheme.motionScheme.fastSpatialSpec(), label = "segEnd")
+            val segBg by androidx.compose.animation.animateColorAsState(if (on) hw.secondary else hw.fill, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "segBg")
             Text(
                 clockTime(d.dep),
-                style = HwType.subhead.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, fontFeatureSettings = "tnum"),
+                style = HwType.subhead.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, fontFeatureSettings = "tnum"),
                 color = when {
-                    on -> hw.text
+                    on -> hw.onSecondary
                     k == lastIdx -> hw.warn
                     tomorrow -> hw.sub.copy(alpha = 0.7f)
                     else -> hw.sub
@@ -683,11 +717,11 @@ private fun DepartureSwitcher(s: RouteStatus, selected: Int, onPick: (Long) -> U
                 maxLines = 1,
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (on) hw.fill2 else Color.Transparent)
-                    .press(scaleTo = 0.95f) { onPick(pickKey(d)) }
+                    .clip(RoundedCornerShape(topStart = start, bottomStart = start, topEnd = end, bottomEnd = end))
+                    .background(segBg)
+                    .press { onPick(pickKey(d)) }
                     .semantics { contentDescription = "${clock(d.dep)}${if (on) ", selected" else ""}" }
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 12.dp),
             )
         }
     }
@@ -697,15 +731,15 @@ private fun DepartureSwitcher(s: RouteStatus, selected: Int, onPick: (Long) -> U
 @Composable
 private fun WhenPill(plan: PlanTime?, onClick: () -> Unit) {
     val hw = LocalHw.current
-    val fg = if (plan != null) hw.tint else hw.text
+    val fg = if (plan != null) hw.onSelected else hw.text
     Row(
         Modifier
             .padding(horizontal = 20.dp)
-            .height(34.dp)
-            .clip(CircleShape)
-            .background(if (plan != null) hw.tintSoft else hw.fill2)
-            .press(scaleTo = 0.96f, onClick = onClick)
-            .padding(start = 12.dp, end = 10.dp),
+            .height(32.dp)
+            .clip(com.flash.headway.ui.theme.HwShape.small)
+            .then(if (plan != null) Modifier.background(hw.selected) else Modifier.border(1.dp, hw.sep, com.flash.headway.ui.theme.HwShape.small))
+            .press(onClick = onClick)
+            .padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -803,26 +837,23 @@ private fun TripHero(
                 }
             }
         }
-        Box(
-            Modifier.size(52.dp).clip(CircleShape).background(hw.fill).edge(CircleShape).press(scaleTo = 0.9f, onClick = onEnd),
-            contentAlignment = Alignment.Center,
+        FilledTonalIconButton(
+            onClick = onEnd,
+            shapes = IconButtonDefaults.shapes(),
+            modifier = Modifier.size(IconButtonDefaults.mediumContainerSize()),
+            colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = hw.selected, contentColor = hw.onSelected),
         ) {
-            Icon(Icons.Rounded.Close, contentDescription = "End trip", tint = hw.text, modifier = Modifier.size(24.dp))
+            Icon(Icons.Rounded.Close, contentDescription = "End trip")
         }
     }
 }
 
-/** A small action under the trip hero. */
+/** A small action under the trip hero: a tonal button. */
 @Composable
 private fun TripPill(text: String, onClick: () -> Unit) {
-    val hw = LocalHw.current
-    Text(
-        text,
-        style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
-        color = hw.tint,
-        maxLines = 1,
-        modifier = Modifier.clip(CircleShape).background(hw.tintSoft).press(scaleTo = 0.95f, onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
-    )
+    androidx.compose.material3.FilledTonalButton(onClick = onClick, shapes = ButtonDefaults.shapes(), contentPadding = ButtonDefaults.SmallContentPadding) {
+        Text(text, style = HwType.subheadStrong)
+    }
 }
 
 /** The hero's countdown on its own, so only it recomposes as the clock ticks. */
@@ -901,7 +932,7 @@ private fun BoardingTag(text: String) {
         style = HwType.footnote.copy(fontWeight = FontWeight.SemiBold),
         color = hw.text,
         maxLines = 1,
-        modifier = Modifier.clip(CircleShape).background(hw.fill).edge(CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+        modifier = Modifier.clip(com.flash.headway.ui.theme.HwShape.small).border(1.dp, hw.sep, com.flash.headway.ui.theme.HwShape.small).padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }
 
@@ -932,7 +963,8 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
         s.departures.forEachIndexed { i, d ->
             val on = i == selected
             val tomorrow = s.plan == null && isTomorrow(s, i)
-            val shape = RoundedCornerShape(20.dp)
+            val corner by animateDpAsState(if (on) 28.dp else 16.dp, MaterialTheme.motionScheme.fastSpatialSpec(), label = "chipShape")
+            val shape = RoundedCornerShape(corner)
             val fixed = when {
                 s.plan != null -> "to ${clockTime(d.arr)}"
                 s.closed && i == 0 -> "first"
@@ -941,26 +973,29 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
             }
             Column(
                 Modifier
-                    .widthIn(min = 74.dp)
+                    .widthIn(min = 84.dp)
                     .clip(shape)
-                    .background(if (on) hw.tintSoft else hw.fill)
-                    .then(if (on) Modifier.border(1.5.dp, hw.tint, shape) else Modifier.edge(shape))
-                    .press(scaleTo = 0.94f) { onPick(pickKey(d)) }
-                    .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 9.dp),
+                    .background(if (on) hw.tint else hw.fill)
+                    .press { onPick(pickKey(d)) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
                     clock(d.dep),
-                    style = HwType.headline.copy(fontFeatureSettings = "tnum"),
+                    style = HwType.headline.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold),
                     color = when {
-                        on -> hw.tint
+                        on -> hw.onTint
                         tomorrow && !s.closed -> hw.sub
                         else -> hw.text
                     },
                 )
                 val subStyle = HwType.footnote.copy(fontWeight = if (i == lastIdx) FontWeight.SemiBold else FontWeight.Normal)
-                val subColor = if (i == lastIdx) hw.warn else hw.sub
+                val subColor = when {
+                    on -> hw.onTint
+                    i == lastIdx -> hw.warn
+                    else -> hw.sub
+                }
                 if (fixed != null) Text(fixed, style = subStyle, color = subColor) else LiveText({ chipSpan(d.dep - now()) }, subStyle, subColor)
                 // Bars only on cards that mix trips: then a direct train shows as one colour.
                 if (anyChange) d.legs?.let { LegBar(it) }
@@ -969,3 +1004,22 @@ private fun Chips(s: RouteStatus, selected: Int, now: () -> Long, onPick: (Long)
     }
 }
 
+/** An M3 search bar (56dp, full corners) that opens the station search. */
+@Composable
+fun SearchBarButton(text: String, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(CircleShape)
+            .background(hw.button)
+            .press(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Rounded.Search, null, tint = hw.sub)
+        Text(text, style = HwType.body, color = hw.sub)
+    }
+}

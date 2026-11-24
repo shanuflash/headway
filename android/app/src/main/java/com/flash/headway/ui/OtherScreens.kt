@@ -1,5 +1,17 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.flash.headway.ui
 
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.material.icons.rounded.Train
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.foundation.background
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -96,7 +108,6 @@ fun ColumnScope.LinesScreen(
     val spec = Timetable.day(today.type)
     val z = Instant.ofEpochMilli(now()).atZone(IST)
     val nowMin = z.hour * 60 + z.minute
-    TopBar(right = { RoundButton(Icons.Rounded.Settings, "Settings", onSettings) })
     val reason = if (today.reason != "Weekday" && today.reason != "Saturday" && today.reason != "Sunday") ", ${today.reason}" else ""
     LargeTitle("Lines") {
         Text("${today.type.label} timetable$reason", style = HwType.body, color = hw.sub)
@@ -140,14 +151,15 @@ private fun LineCard(
     fun hhmm(m: Int) = minutesClock(m)
     var timetable by rememberSaveable(route) { mutableStateOf(false) }
     HwCard(gap = 14.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (bar != null) {
-                Box(Modifier.size(6.dp, 36.dp).clip(RoundedCornerShape(3.dp)).background(bar))
-            } else {
-                LineBar(color, width = 6.dp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(
+                Modifier.size(48.dp).clip(MaterialShapes.Cookie4Sided.toShape()).background(bar ?: androidx.compose.ui.graphics.SolidColor(color)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Train, null, tint = if (color == hw.yellow && bar == null) Color(0xFF3E2E00) else Color.White)
             }
             Column(Modifier.weight(1f)) {
-                Text(title, style = HwType.headline, color = hw.text)
+                Text(title, style = HwType.cardTitle, color = hw.text)
                 // How often trains run right now: what most people come here for.
                 Text(
                     if (current != null) {
@@ -155,7 +167,7 @@ private fun LineCard(
                     } else {
                         "Closed · first train ${hhmm(minOf(spec.firstFwd, spec.firstRev))}"
                     },
-                    style = HwType.footnote,
+                    style = HwType.subhead,
                     color = if (current != null) hw.tint else hw.sub,
                 )
             }
@@ -164,7 +176,8 @@ private fun LineCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Departures from", style = HwType.subhead, color = hw.sub, modifier = Modifier.weight(1f))
                 Row(
-                    Modifier.height(32.dp).clip(CircleShape).background(hw.fill2).press(scaleTo = 0.95f, onClick = onPickStation).padding(start = 12.dp, end = 8.dp),
+                    Modifier.height(32.dp).clip(com.flash.headway.ui.theme.HwShape.small).border(1.dp, hw.sep, com.flash.headway.ui.theme.HwShape.small)
+                        .press(onClick = onPickStation).padding(start = 12.dp, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -215,14 +228,14 @@ private fun LineCard(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(if (on) CircleShape else com.flash.headway.ui.theme.HwShape.small)
                             .background(if (on) hw.selected else Color.Transparent)
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
                         val to = if (band.to >= 24 * 60) "close" else hhmm(band.to)
                         val peak = if (band.kind == BandKind.PEAK) ", peak" else ""
                         val style = if (on) HwType.subheadStrong else HwType.subhead
-                        val c = if (on) hw.tint else hw.text
+                        val c = if (on) hw.onSelected else hw.text
                         Text("${hhmm(band.from)} to $to$peak", style = style, color = c, modifier = Modifier.weight(1f))
                         Text("every ${band.headway} min", style = style, color = c)
                     }
@@ -344,7 +357,6 @@ fun ColumnScope.SettingsScreen(
 ) {
     val hw = LocalHw.current
     val context = LocalContext.current
-    TopBar(right = { RoundButton(Icons.Rounded.Check, "Done", actions.back, tint = Color.White, background = hw.tint) })
     LargeTitle("Settings")
 
     val overrideType = prefs.override?.takeIf { it.date == today.date }?.type
@@ -393,6 +405,7 @@ fun ColumnScope.SettingsScreen(
         run {
             rows.add {
                 ListRow(onClick = actions.allowNotifications) {
+                    LeadIcon(Icons.Rounded.Notifications)
                     RowText("Allow notifications", "Required for countdowns", modifier = Modifier.weight(1f))
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
                 }
@@ -411,9 +424,6 @@ fun ColumnScope.SettingsScreen(
         )
     }
 
-    SectionTitle("Metro card")
-    MetroCardSettings()
-
     SectionTitle("About")
 
 
@@ -421,11 +431,13 @@ fun ColumnScope.SettingsScreen(
     ListCard(
         listOf<@Composable () -> Unit>({
             ListRow(onClick = actions.checkUpdate) {
+                LeadIcon(Icons.Rounded.SystemUpdate)
                 Text("Version $version", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
                 Text("Check for updates", style = HwType.subhead, color = hw.tint)
             }
         }, {
             ListRow(onClick = actions.openTimetable) {
+                LeadIcon(Icons.Rounded.CalendarMonth)
                 Text("Official timetable", style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
                 Text(Timetable.PUBLISHED, style = HwType.subhead, color = hw.sub)
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = hw.chev, modifier = Modifier.size(20.dp))
@@ -526,36 +538,30 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
+/**
+ * A connected button group (M3 Expressive's replacement for segmented buttons): inner corners
+ * small, the selected item fills and goes fully round, and a check marks it.
+ */
 @Composable
 fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     val hw = LocalHw.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .clip(CircleShape)
-            .background(hw.fill)
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        options.forEach { (value, label) ->
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        options.forEachIndexed { i, (value, label) ->
             val on = value == selected
-            val thumb = if (hw.dark) Brush.verticalGradient(listOf(Color(0xFF7A7A80), Color(0xFF5E5E63))) else Brush.verticalGradient(listOf(Color.White, Color.White))
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(32.dp)
-                    .then(if (on) Modifier.shadow(if (hw.dark) 4.dp else 3.dp, CircleShape) else Modifier)
-                    .clip(CircleShape)
-                    .then(if (on) Modifier.background(thumb).edge(CircleShape) else Modifier)
-                    .press(scaleTo = 0.97f) { onSelect(value) },
-                contentAlignment = Alignment.Center,
+            ToggleButton(
+                checked = on,
+                onCheckedChange = { onSelect(value) },
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { role = Role.RadioButton },
+                shapes = when (i) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                colors = ToggleButtonDefaults.colors(checkedContainerColor = hw.secondary, checkedContentColor = hw.onSecondary),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
             ) {
-                Text(
-                    label,
-                    style = HwType.subhead.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium),
-                    color = hw.text,
-                )
+                if (on) Icon(Icons.Rounded.Check, null, modifier = Modifier.size(18.dp).padding(end = 2.dp))
+                Text(label, maxLines = 1, overflow = TextOverflow.Clip)
             }
         }
     }

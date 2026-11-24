@@ -1,5 +1,18 @@
 package com.flash.headway.ui
 
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.rounded.LinearScale
+import androidx.compose.material.icons.outlined.LinearScale
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.rounded.Contactless
+import androidx.compose.material.icons.outlined.Contactless
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.Add
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -102,7 +115,14 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.flash.headway.data.DayType
 import androidx.lifecycle.compose.LifecycleStartEffect
 
-enum class Tab { ROUTES, LINES, MAP }
+/** The five destinations in the floating bar, in the bar's order. */
+enum class Tab(val label: String, val on: androidx.compose.ui.graphics.vector.ImageVector, val off: androidx.compose.ui.graphics.vector.ImageVector) {
+    ROUTES("Routes", androidx.compose.material.icons.Icons.Rounded.Route, androidx.compose.material.icons.Icons.Outlined.Route),
+    LINES("Lines", androidx.compose.material.icons.Icons.Rounded.LinearScale, androidx.compose.material.icons.Icons.Outlined.LinearScale),
+    MAP("Map", androidx.compose.material.icons.Icons.Rounded.Map, androidx.compose.material.icons.Icons.Outlined.Map),
+    CARD("Metro card", androidx.compose.material.icons.Icons.Rounded.Contactless, androidx.compose.material.icons.Icons.Outlined.Contactless),
+    SETTINGS("Settings", androidx.compose.material.icons.Icons.Rounded.Settings, androidx.compose.material.icons.Icons.Outlined.Settings),
+}
 
 private enum class Picker { ADD, LOOK }
 
@@ -124,7 +144,6 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     val now: () -> Long = remember(clockState) { { clockState.value } }
 
     var tab by rememberSaveable { mutableStateOf(Tab.ROUTES) }
-    var settings by rememberSaveable { mutableStateOf(false) }
     var picker by remember { mutableStateOf<Picker?>(null) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var whenOpen by remember { mutableStateOf(false) }
@@ -153,15 +172,14 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     }
     // Worked out on the engine thread while the tab shows, again when a delay or station changes,
     // and every 20 s so trains drop off as they leave.
-    val lineBoards by produceState(emptyMap<RouteId, LineBoard>(), tab, settings, lineStations, prefs.lineDelays, prefs.routes) {
-        if (tab != Tab.LINES || settings) return@produceState
+    val lineBoards by produceState(emptyMap<RouteId, LineBoard>(), tab, lineStations, prefs.lineDelays, prefs.routes) {
+        if (tab != Tab.LINES) return@produceState
         while (true) {
             value = LINE_CARDS.associateWith { r -> stationOn(r).let { st -> LineBoard(st, vm.lineBoard(r, st)) } }
             delay(20_000)
         }
     }
     var pickFrom by remember { mutableStateOf<String?>(null) }
-    var topUp by remember { mutableStateOf(false) }
 
     // Work out trains only while the app is on screen.
     LifecycleStartEffect(vm) {
@@ -176,7 +194,6 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
     LaunchedEffect(openRoute) {
         val id = openRoute ?: return@LaunchedEffect
         vm.closePreview()
-        settings = false
         tab = Tab.ROUTES
         val i = prefs.routes.indexOfFirst { it.id == id || it.id == reverseId(id) }
         // Item 0 is the title and banners; the cards follow in saved order.
@@ -184,9 +201,10 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
         onRouteOpened()
     }
 
-    BackHandler(enabled = settings) { settings = false }
+    // Back from any other tab returns to Routes before leaving the app.
+    BackHandler(enabled = tab != Tab.ROUTES) { tab = Tab.ROUTES }
     // Back closes a quick look before it leaves the app. (Sheets, composed later, go first.)
-    BackHandler(enabled = !settings && previewStatus != null) { vm.closePreview() }
+    BackHandler(enabled = tab == Tab.ROUTES && previewStatus != null) { vm.closePreview() }
 
     // Each screen keeps its saved state (picked trains, scroll) while another is showing.
     val screens = rememberSaveableStateHolder()
@@ -220,22 +238,15 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
         toast(if (on) "Countdown off" else vm.reminderToast(s.route, dep))
     }
 
-    val screen = if (settings) "settings" else tab.name
+    val screen = tab.name
 
     Box(Modifier.fillMaxSize().background(hw.bg)) {
+        val effects = androidx.compose.material3.MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+        val fastEffects = androidx.compose.material3.MaterialTheme.motionScheme.fastEffectsSpec<Float>()
         AnimatedContent(
             targetState = screen,
-            transitionSpec = {
-                val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
-                when {
-                    targetState == "settings" ->
-                        slideInHorizontally(slide) { it } togetherWith (slideOutHorizontally(slide) { -it / 4 } + fadeOut(targetAlpha = 0.6f))
-                    initialState == "settings" ->
-                        ((slideInHorizontally(slide) { -it / 4 } + fadeIn(initialAlpha = 0.6f)) togetherWith slideOutHorizontally(slide) { it })
-                            .apply { targetContentZIndex = -1f }
-                    else -> fadeIn(tween(220)) togetherWith fadeOut(tween(140))
-                }
-            },
+            // Fade through between top-level destinations (M3).
+            transitionSpec = { (fadeIn(effects) + androidx.compose.animation.scaleIn(effects, initialScale = 0.96f)) togetherWith fadeOut(fastEffects) },
             label = "screens",
         ) { key ->
             screens.SaveableStateProvider(key) {
@@ -252,13 +263,13 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         actions = RouteActions(
                             add = { picker = Picker.ADD },
                             look = { picker = Picker.LOOK },
-                            settings = { settings = true },
+                            settings = { tab = Tab.SETTINGS },
                             swap = vm::swapRoute,
                             remind = ::remind,
                             menu = { menuFor = it },
                             closePreview = vm::closePreview,
                             mockOff = { vm.setMock(null) },
-                            topUp = { topUp = true },
+                            topUp = { tab = Tab.CARD },
                             savePreview = {
                                 vm.savePreview()
                                 toast("Route saved")
@@ -283,6 +294,9 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         ),
                     )
                 }
+            } else if (key == Tab.MAP.name) {
+                // Edge to edge, behind the floating bar.
+                MapScreen(onStation = { stationFor = it })
             } else ScreenColumn {
                 when (key) {
                     Tab.LINES.name -> LinesScreen(
@@ -290,15 +304,15 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                         boards = lineBoards,
                         onPickStation = { lineStationFor = it },
                         onDelayChip = { key, title -> lineDelayFor = key to title },
-                        onSettings = { settings = true },
+                        onSettings = { tab = Tab.SETTINGS },
                     )
-                    Tab.MAP.name -> MapScreen(onSettings = { settings = true }, onStation = { stationFor = it })
+                    Tab.CARD.name -> CardScreen(now)
                     else -> SettingsScreen(
                         prefs = prefs,
                         today = vm.todayInfo(),
                         notificationsAllowed = Alerts.canNotify(context),
                         actions = SettingsActions(
-                            back = { settings = false },
+                            back = { tab = Tab.ROUTES },
                             override = vm::setOverride,
                             count = vm::setCount,
                             lastWarn = vm::setLastWarn,
@@ -316,10 +330,7 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
                             checkUpdate = {
                                 scope.launch {
                                     when (vm.checkUpdate()) {
-                                        is com.flash.headway.app.Updater.Check.Newer -> {
-                                            settings = false
-                                            tab = Tab.ROUTES
-                                        }
+                                        is com.flash.headway.app.Updater.Check.Newer -> tab = Tab.ROUTES
                                         com.flash.headway.app.Updater.Check.UpToDate -> toast("Headway is up to date")
                                         com.flash.headway.app.Updater.Check.Failed -> toast("Couldn't check for updates")
                                     }
@@ -332,23 +343,13 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             }
         }
 
-        AnimatedContent(
-            targetState = settings,
-            transitionSpec = { (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { it } + fadeOut()) },
+        Dock(
+            tab = tab,
+            onTab = { tab = it },
+            showFab = tab == Tab.ROUTES && prefs.routes.isNotEmpty(),
+            onAdd = { picker = Picker.ADD },
             modifier = Modifier.align(Alignment.BottomCenter),
-            label = "dock",
-        ) { hidden ->
-            if (!hidden) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(start = 21.dp, end = 21.dp, bottom = 21.dp),
-                ) {
-                    TabDock(tab = tab, onTab = { tab = it }, onSearch = { picker = Picker.LOOK })
-                }
-            }
-        }
+        )
 
         picker?.let { mode ->
             RoutePicker(
@@ -372,7 +373,6 @@ fun HeadwayApp(vm: HeadwayViewModel, prefs: Prefs, openRoute: String?, onRouteOp
             )
         }
 
-        if (topUp) TopUpSheet(onDismiss = { topUp = false })
 
         trainDelayFor?.let { (id, at, type, legs) ->
             val route = prefs.routes.firstOrNull { it.id == id }
@@ -595,36 +595,74 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
+/**
+ * The floating navigation bar (M3 Expressive floating toolbar, 64dp, 16dp from the edges):
+ * icon-only destinations with a filled circle on the current one, and the add-route FAB riding
+ * beside it on Routes.
+ */
 @Composable
-private fun TabDock(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit) {
+private fun Dock(tab: Tab, onTab: (Tab) -> Unit, showFab: Boolean, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     val hw = LocalHw.current
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Glass(Modifier.weight(1f).height(62.dp)) {
-            BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
-                val w = maxWidth / 3
-                val x by animateDpAsState(w * tab.ordinal, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow), label = "tab")
-                Box(Modifier.offset(x = x).width(w).fillMaxHeight().clip(CircleShape).background(hw.selected))
-                Row(Modifier.fillMaxSize()) {
-                    listOf(Tab.ROUTES to ("Routes" to Icons.Rounded.Commute), Tab.LINES to ("Lines" to Icons.Rounded.Schedule), Tab.MAP to ("Map" to Icons.Rounded.Map)).forEach { (t, labelIcon) ->
-                        val (label, icon) = labelIcon
-                        val on = t == tab
-                        Column(
-                            Modifier.weight(1f).fillMaxHeight().clip(CircleShape).press(scaleTo = 0.92f) { onTab(t) },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Icon(icon, null, tint = if (on) hw.tint else hw.text, modifier = Modifier.size(24.dp))
-                            Text(label, style = HwType.tab, color = if (on) hw.tint else hw.text)
-                        }
-                    }
-                }
-            }
+    val spatial = androidx.compose.material3.MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    Row(
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.HorizontalFloatingToolbar(
+            expanded = true,
+            modifier = Modifier.weight(1f, fill = false).widthIn(max = 480.dp),
+            colors = androidx.compose.material3.FloatingToolbarDefaults.standardFloatingToolbarColors(toolbarContainerColor = hw.card),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+        ) {
+            Tab.entries.forEach { t -> NavItem(t, t == tab) { onTab(t) } }
         }
-        Glass(Modifier.size(62.dp).press(scaleTo = 0.92f, onClick = onSearch)) {
-            Icon(Icons.Rounded.Search, "Check any station", tint = hw.text, modifier = Modifier.size(24.dp))
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showFab,
+            enter = androidx.compose.animation.scaleIn(spatial) + fadeIn(),
+            exit = androidx.compose.animation.scaleOut(spatial) + fadeOut(),
+        ) {
+            androidx.compose.material3.FloatingActionButton(
+                onClick = onAdd,
+                modifier = Modifier.size(androidx.compose.material3.FloatingToolbarDefaults.ContainerSize),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                containerColor = hw.tint,
+                contentColor = hw.onTint,
+            ) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Add, contentDescription = "Add route", modifier = Modifier.size(28.dp))
+            }
         }
     }
 }
+
+@Composable
+private fun NavItem(t: Tab, selected: Boolean, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    val spec = androidx.compose.material3.MaterialTheme.motionScheme.defaultEffectsSpec<androidx.compose.ui.graphics.Color>()
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) hw.selected else hw.card, spec, label = "navBg")
+    val fg by androidx.compose.animation.animateColorAsState(if (selected) hw.onSelected else hw.sub, spec, label = "navFg")
+    Box(
+        Modifier
+            .size(52.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(bg)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = androidx.compose.ui.semantics.Role.Tab,
+                interactionSource = null,
+                indication = androidx.compose.material3.ripple(),
+            )
+            .semantics { contentDescription = t.label },
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.material3.Icon(if (selected) t.on else t.off, contentDescription = null, tint = fg)
+    }
+}
+
 
 /** The train whose own delay is being set: its route, timetabled departure, kind of day and legs. */
 private data class TrainDelayTarget(val routeId: String, val at: Long, val type: DayType, val legs: List<Leg>?)

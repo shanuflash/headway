@@ -1,5 +1,6 @@
 package com.flash.headway.ui
 
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -70,21 +71,22 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
     val hw = LocalHw.current
     var from by remember { mutableStateOf(startFrom) }
     var query by remember { mutableStateOf("") }
+    val spatial = androidx.compose.material3.MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
 
-    HwSheet(onDismiss = onDismiss, heightFraction = 0.96f) { close ->
+    HwSheet(onDismiss = onDismiss, fullScreen = true) { close ->
         AnimatedContent(
             targetState = from,
             transitionSpec = {
-                val slide = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMedium)
+                // Shared axis X with the expressive spatial spring.
                 if (targetState != null) {
-                    (slideInHorizontally(slide) { it } + fadeIn()) togetherWith (slideOutHorizontally(slide) { -it / 3 } + fadeOut())
+                    (slideInHorizontally(spatial) { it / 4 } + fadeIn()) togetherWith (slideOutHorizontally(spatial) { -it / 4 } + fadeOut())
                 } else {
-                    (slideInHorizontally(slide) { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally(slide) { it } + fadeOut())
+                    (slideInHorizontally(spatial) { -it / 4 } + fadeIn()) togetherWith (slideOutHorizontally(spatial) { it / 4 } + fadeOut())
                 }
             },
             label = "pickerStep",
         ) { station ->
-            Column(Modifier.fillMaxSize().background(hw.bg)) {
+            Column(Modifier.fillMaxSize().background(hw.button)) {
                 if (station == null) {
                     SheetHeader(title, null, Icons.Rounded.Close, "Close") { close(onDismiss) }
                     SearchField(query) { query = it }
@@ -94,7 +96,7 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
                     SheetHeader(
                         "Choose destination",
                         "From ${Network.name(station)}",
-                        Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                        Icons.AutoMirrored.Rounded.ArrowBack,
                         "Back",
                     ) {
                         from = null
@@ -110,13 +112,19 @@ fun RoutePicker(title: String, onPick: (from: String, to: String) -> Unit, onDis
 @Composable
 private fun SheetHeader(title: String, sub: String?, icon: ImageVector, description: String, onIcon: () -> Unit) {
     val hw = LocalHw.current
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        RoundButton(icon, description, onIcon, background = hw.card)
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, style = HwType.headline, color = hw.text)
-            if (sub != null) Text(sub, style = HwType.footnote, color = hw.sub)
+    // Back (a step back) leads; close trails, as in an M3 search view.
+    val back = icon != Icons.Rounded.Close
+    Row(
+        Modifier.fillMaxWidth().padding(start = if (back) 4.dp else 16.dp, end = 12.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (back) RoundButton(icon, description, onIcon, background = Color.Transparent)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = HwType.sheetTitle, color = hw.text)
+            if (sub != null) Text(sub, style = HwType.subhead, color = hw.sub)
         }
-        Spacer(Modifier.size(44.dp))
+        if (!back) RoundButton(icon, description, onIcon)
     }
 }
 
@@ -125,16 +133,16 @@ internal fun SearchField(query: String, onChange: (String) -> Unit) {
     val hw = LocalHw.current
     Row(
         Modifier
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .fillMaxWidth()
-            .height(48.dp)
+            .height(56.dp)
             .clip(CircleShape)
-            .background(hw.card)
+            .background(hw.fill)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(Icons.Rounded.Search, null, tint = hw.sub, modifier = Modifier.size(22.dp))
+        Icon(Icons.Rounded.Search, null, tint = hw.sub)
         BasicTextField(
             value = query,
             onValueChange = onChange,
@@ -203,7 +211,7 @@ private fun DestinationList(from: String, query: String, onPick: (String) -> Uni
             if (shown.isEmpty()) return@forEach
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(g.line)))
-                Text("Towards ${g.terminals.joinToString(" or ") { Network.name(it) }}", style = HwType.section, color = hw.text)
+                Text("Towards ${g.terminals.joinToString(" or ") { Network.name(it) }}", style = HwType.section, color = hw.tint)
             }
             ListCard(
                 shown.map { (id, minutes) ->
@@ -212,7 +220,7 @@ private fun DestinationList(from: String, query: String, onPick: (String) -> Uni
                         ListRow(onClick = { onPick(id) }) {
                             Text(st.name, style = HwType.body, color = hw.text, modifier = Modifier.weight(1f))
                             st.lines.filter { it != g.line }.forEach { LineTag(it) }
-                            Text("$minutes min", style = HwType.body, color = hw.sub)
+                            Text("$minutes min", style = HwType.subheadStrong.copy(fontWeight = FontWeight.Medium), color = hw.sub)
                         }
                     }
                 },
@@ -227,7 +235,7 @@ private fun DestinationList(from: String, query: String, onPick: (String) -> Uni
         groups.forEach { (line, ids) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 4.dp, top = 6.dp)) {
                 Box(Modifier.size(10.dp).clip(CircleShape).background(hw.line(line)))
-                Text(line.label, style = HwType.section, color = hw.text)
+                Text(line.label, style = HwType.section, color = hw.tint)
             }
             ListCard(
                 ids.map { id ->
@@ -258,8 +266,8 @@ fun LineTag(line: Line) {
     Text(
         line.label,
         style = HwType.caption.copy(fontWeight = FontWeight.SemiBold),
-        color = hw.line(line),
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(hw.line(line).copy(alpha = 0.16f)).padding(horizontal = 7.dp, vertical = 2.dp),
+        color = hw.lineText(line),
+        modifier = Modifier.clip(com.flash.headway.ui.theme.HwShape.small).background(hw.line(line).copy(alpha = 0.16f)).padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }
 
@@ -292,19 +300,19 @@ fun RouteMenu(
         // The title stays put while the options scroll under it.
         Text(
             title,
-            style = HwType.headline,
+            style = HwType.sheetTitle,
             color = hw.text,
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            modifier = Modifier.padding(start = 20.dp, end = 16.dp, bottom = 12.dp),
         )
         Column(
             Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Column(
-                Modifier.fillMaxWidth().clip(CardShape).background(hw.card).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.fillMaxWidth().clip(CardShape).background(hw.button).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Where to board", style = HwType.body, color = hw.text)
+                Text("Where to board", style = HwType.headline, color = hw.text)
                 val options = listOf<Pair<Coach?, String>>(null to "Any", Coach.FRONT to "Front", Coach.MIDDLE to "Middle", Coach.REAR to "Rear")
                 if (coaches.size <= 1) {
                     Segmented(options = options, selected = coaches.firstOrNull()?.coach, onSelect = { onCoach(null, it) })
@@ -334,8 +342,7 @@ fun RouteMenu(
                 DelayCard(routeId, delay, delayPreview, onDelay)
             }
             flipCard()
-            // System red, lighter on dark so it stays readable.
-            val danger = if (hw.dark) Color(0xFFFF453A) else Color(0xFFD70015)
+            val danger = hw.danger
             ListCard(
                 listOfNotNull<@Composable () -> Unit>(
                     { MenuRow(Icons.Rounded.Schedule, "Plan a trip", "Depart at or arrive by a set time", hw.text) { close(onPlan) } },
@@ -344,6 +351,7 @@ fun RouteMenu(
                     { MenuRow(Icons.Rounded.Delete, "Remove route", null, danger) { close(onRemove) } },
                 ),
                 inset = 50.dp,
+                color = hw.button,
             )
         }
     }
@@ -351,8 +359,10 @@ fun RouteMenu(
 
 @Composable
 private fun MenuRow(icon: ImageVector, title: String, sub: String?, color: Color, onClick: () -> Unit) {
+    val hw = LocalHw.current
+    val danger = color == hw.danger
     ListRow(onClick = onClick) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
-        RowText(title, sub, titleColor = color, modifier = Modifier.weight(1f))
+        if (danger) LeadIcon(icon, hw.dangerBg, hw.onDangerBg) else LeadIcon(icon)
+        RowText(title, sub, titleColor = if (danger) color else null, modifier = Modifier.weight(1f))
     }
 }
