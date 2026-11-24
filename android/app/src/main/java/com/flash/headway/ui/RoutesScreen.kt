@@ -243,7 +243,10 @@ fun LazyListScope.routesScreen(
         item(key = "empty", contentType = "empty") { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { EmptyRoutes(actions) } }
         return
     }
-    items(statuses, key = { it.route.id }, contentType = { "card" }) { s -> Box(travelModifier()) { RouteCard(s, prefs, now, actions, isPreview = false) } }
+    // A reversed card keeps its identity (so it doesn't fade out and back in), unless both
+    // directions are saved as their own cards.
+    val ids = statuses.mapTo(HashSet()) { it.route.id }
+    items(statuses, key = { s -> if (reverseId(s.route.id) in ids) s.route.id else pairKey(s.route) }, contentType = { "card" }) { s -> Box(travelModifier()) { RouteCard(s, prefs, now, actions, isPreview = false) } }
 }
 
 /** CMRL advisories in force now (extended hours, holiday timings, disruptions). Tap for the announcement. */
