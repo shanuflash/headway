@@ -2,6 +2,9 @@ name: Android CI
 
 'on':
   push:
+    # Branches only: a release tag (CI's own or one published from a local build) mustn't start
+    # another build and release.
+    branches: ['**']
     paths: ['android/**', '.github/workflows/android.yml']
   pull_request:
     paths: ['android/**', '.github/workflows/android.yml']
