@@ -230,7 +230,7 @@ export function postsFromRss(xml) {
 export function timetableFromMedia(json) {
   if (!Array.isArray(json)) return null;
   const pdfs = json
-    .filter((m) => /\.pdf($|\?)/i.test(m.source_url ?? '') && /time[\s_-]*table/i.test(`${m.source_url} ${m.title?.rendered ?? ''}`))
+    .filter((m) => /\.pdf($|\?)/i.test(m.source_url ?? '') && /time[\s_-]*table|train[\s_-]*timings/i.test(`${m.source_url} ${m.title?.rendered ?? ''}`))
     .sort((a, b) => String(b.modified_gmt ?? b.date).localeCompare(String(a.modified_gmt ?? a.date)));
   return pdfs[0]?.source_url ?? null;
 }

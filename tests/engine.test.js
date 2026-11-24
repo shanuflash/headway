@@ -31,7 +31,7 @@ test('terminal first and last trains match the official timetable', () => {
   check('green', 'fwd', '05:02', '23:00');
   check('inter', 'fwd', '04:55', '23:17');
   check('inter', 'rev', '05:02', '23:08');
-  check('yellow', 'fwd', '07:00', '21:00');
+  check('yellow', 'fwd', '06:00', '21:00');
 });
 
 test('headways follow the peak bands', () => {
@@ -90,7 +90,9 @@ test('after a line closes, trips that need it start from its first train tomorro
   const js = s.journeys('guindy', 'porur-junction', at(2026, 10, 12, 21, 45), 2);
   assert.ok(js.length > 0, 'finds a journey');
   const yellow = js[0].legs.find((l) => l.trip.route === 'yellow');
-  assert.equal(hhmm(yellow.dep), '07:00');
+  // The first Yellow train leaves Vadapalani at 6:00, but from Guindy that early the only way
+  // there is north via Central (5:55), so the 6:15 is the first one that can be caught.
+  assert.equal(hhmm(yellow.dep), '06:15');
   // Leaves as late as possible for that connection instead of waiting an hour at Vadapalani.
   const wait = (yellow.dep - js[0].legs[js[0].legs.indexOf(yellow) - 1].arr) / 60_000;
   assert.ok(wait < 20, `waits ${wait} min at Vadapalani`);
