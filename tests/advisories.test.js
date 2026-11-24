@@ -144,3 +144,18 @@ test('the same PDF at a new address is not a new timetable', () => {
   assert.equal(moved.timetableChanged, false);
   assert.equal(Object.keys(moved.feed.watch.timetables).at(-1), 'https://example.org/2026/12/Time-Table.pdf');
 });
+
+test('the timetable PDF comes from the Time Table page, not other PDFs on it', async () => {
+  const { timetableFromPage } = await import('../tools/advisories-lib.mjs');
+  const page = 'https://chennaimetrorail.org/time-table/';
+  const html = `
+    <a href="/wp-content/uploads/2023/11/Line-Map.pdf">Map</a>
+    <a href="/wp-content/uploads/2026/10/first-and-last-train-timings_terminal_phase1-and-Phase2-dated-23.10.2026.pdf">Timings</a>
+    <a href="/wp-content/uploads/2023/12/CMRL-Brochrue.pdf">Brochure</a>`;
+  assert.equal(
+    timetableFromPage(html, page),
+    'https://chennaimetrorail.org/wp-content/uploads/2026/10/first-and-last-train-timings_terminal_phase1-and-Phase2-dated-23.10.2026.pdf',
+  );
+  assert.equal(timetableFromPage('<a href="/x/Line-Map.pdf">Map</a>', page), null);
+  assert.equal(timetableFromPage(null, page), null);
+});

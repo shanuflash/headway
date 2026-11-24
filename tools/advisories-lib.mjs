@@ -226,6 +226,19 @@ export function postsFromRss(xml) {
   return items;
 }
 
+/**
+ * The timetable PDF linked from CMRL's Time Table page (chennaimetrorail.org/time-table/), if
+ * any. The page also carries site-wide PDFs (maps, brochures), so only a link that names a
+ * timetable or train timings counts. Relative links are resolved against `base`.
+ */
+export function timetableFromPage(html, base) {
+  if (typeof html !== 'string') return null;
+  for (const m of html.matchAll(/href="([^"]+\.pdf)"/gi)) {
+    if (/time[\s_-]*table|timings?/i.test(m[1])) return new URL(m[1], base).href;
+  }
+  return null;
+}
+
 /** The newest timetable PDF in the WordPress media library, if any. */
 export function timetableFromMedia(json) {
   if (!Array.isArray(json)) return null;

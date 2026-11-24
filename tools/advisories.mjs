@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import { TIMETABLE_SOURCE } from '../js/timetable.js';
-import { nextFeed, postsFromRss, postsFromWp, timetableFromMedia } from './advisories-lib.mjs';
+import { nextFeed, postsFromRss, postsFromWp, timetableFromMedia, timetableFromPage } from './advisories-lib.mjs';
 
 const SITE = 'https://chennaimetrorail.org';
 const FEED_FILE = new URL('../advisories.json', import.meta.url);
@@ -51,6 +51,15 @@ const posts = await first('Announcements', [
 ]);
 
 const timetable = await first('Timetable PDF', [
+  [
+    'the PDF linked from the Time Table page',
+    async () => {
+      const page = `${SITE}/time-table/`;
+      const url = timetableFromPage(await get(page, 'text'), page);
+      if (!url) throw new Error('no timetable link');
+      return { ...(await fingerprint(url)), fromLibrary: true };
+    },
+  ],
   [
     'newest timetable in the media library',
     async () => {
