@@ -50,7 +50,7 @@ GitHub Actions (`.github/workflows/android.yml`) runs the engine unit tests and 
 
 | What | Source | Confidence |
 | --- | --- | --- |
-| First and last trains, headway bands, day types | [CMRL first and last train timings](https://chennaimetrorail.org/wp-content/uploads/2026/10/first-and-last-train-timings_terminal_phase1-and-Phase2-dated-23.10.2026.pdf), dated 23 Oct 2026 | Official |
+| First and last trains, headway bands, day types | [CMRL first and last train timings](https://chennaimetrorail.org/wp-content/uploads/2026/11/First-and-last-train-timings_terminal_w.e.f.-24.11.2026.pdf), with effect from 24 Nov 2026 | Official |
 | Run times between stations, Blue and Green | ChennaiGTFS (CUMTA) `stop_times`, median per direction | Good |
 | Wimco Nagar Depot and Tiruvottiyur Theradi offsets | Interpolated, because they are missing from the GTFS feed | Estimate |
 | Yellow Line run times | End-to-end of about 30 min (press reports), split by hand | Estimate |

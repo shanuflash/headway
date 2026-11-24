@@ -48,7 +48,7 @@ class ScheduleTest {
         check(RouteId.GREEN, Dir.FWD, "05:02", "23:00")
         check(RouteId.INTER, Dir.FWD, "04:55", "23:17")
         check(RouteId.INTER, Dir.REV, "05:02", "23:08")
-        check(RouteId.YELLOW, Dir.FWD, "06:00", "21:00")
+        check(RouteId.YELLOW, Dir.FWD, "07:00", "21:00")
     }
 
     @Test
@@ -98,9 +98,8 @@ class ScheduleTest {
         assertTrue(js.isNotEmpty())
         val legs = js[0].legs
         val yellow = legs.first { it.trip.route == RouteId.YELLOW }
-        // The first Yellow train leaves Vadapalani at 6:00; from Guindy that early the only way there
-        // is north via Central (5:55), so the 6:15 is the first that can be caught.
-        assertEquals("06:15", hhmm(yellow.dep))
+        // The first Yellow train leaves Vadapalani at 7:00, and from Guindy it can be caught.
+        assertEquals("07:00", hhmm(yellow.dep))
         val wait = (yellow.dep - legs[legs.indexOf(yellow) - 1].arr) / 60_000
         assertTrue("waits $wait min at Vadapalani", wait < 20)
     }

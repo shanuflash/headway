@@ -2,18 +2,7 @@
   "updated": "2026-11-24T14:58:08.889Z",
   "source": "Headway bundled advisories",
   "holidays": {},
-  "notices": [
-    {
-      "id": "timetable-cdeebd81",
-      "level": "warn",
-      "title": "CMRL has published a new timetable",
-      "body": "Some train times may change. Headway will update to it soon; until then, check the timetable for first and last trains.",
-      "link": "https://chennaimetrorail.org/wp-content/uploads/2026/11/First-and-last-train-timings_terminal_w.e.f.-24.11.2026.pdf",
-      "from": "2026-11-24T14:58:08.889Z",
-      "to": "2026-12-08T14:58:08.889Z",
-      "auto": true
-    }
-  ],
+  "notices": [],
   "adjustments": [],
   "watch": {
     "timetables": {
