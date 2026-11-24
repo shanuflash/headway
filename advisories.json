@@ -1,12 +1,24 @@
 {
-  "updated": "2026-11-15T17:15:26.930Z",
+  "updated": "2026-11-24T02:56:30.408Z",
   "source": "Headway bundled advisories",
   "holidays": {},
-  "notices": [],
+  "notices": [
+    {
+      "id": "timetable-9c4011f0",
+      "level": "warn",
+      "title": "CMRL has published a new timetable",
+      "body": "Some train times may change. Headway will update to it soon; until then, check the timetable for first and last trains.",
+      "link": "https://chennaimetrorail.org/wp-content/uploads/2026/10/first-and-last-train-timings_terminal_phase1-and-Phase2-dated-23.10.2026.pdf",
+      "from": "2026-11-24T02:56:30.408Z",
+      "to": "2026-12-08T02:56:30.408Z",
+      "auto": true
+    }
+  ],
   "adjustments": [],
   "watch": {
     "timetables": {
-      "https://chennaimetrorail.org/wp-content/uploads/2024/03/chennai-metro-timetable.pdf": "527c1e7719b66a3601cae65f7322c49e86a49de294c3641c308fc021cea02a5c"
+      "https://chennaimetrorail.org/wp-content/uploads/2024/03/chennai-metro-timetable.pdf": "527c1e7719b66a3601cae65f7322c49e86a49de294c3641c308fc021cea02a5c",
+      "https://chennaimetrorail.org/wp-content/uploads/2026/10/first-and-last-train-timings_terminal_phase1-and-Phase2-dated-23.10.2026.pdf": "9c4011f081cc10fed4092250353efc99e6a5ab5471b2a6d688c7663c762d4638"
     }
   }
 }
