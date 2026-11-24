@@ -33,8 +33,8 @@ data class DaySpec(
 )
 
 object Timetable {
-    const val SOURCE_URL = "https://chennaimetrorail.org/wp-content/uploads/2026/10/first-and-last-train-timings_terminal_phase1-and-Phase2-dated-23.10.2026.pdf"
-    const val PUBLISHED = "2026-10-23"
+    const val SOURCE_URL = "https://chennaimetrorail.org/wp-content/uploads/2026/11/First-and-last-train-timings_terminal_w.e.f.-24.11.2026.pdf"
+    const val PUBLISHED = "2026-11-24"
 
     private val weekday = DaySpec(
         blue = LineSpec(
@@ -80,12 +80,12 @@ object Timetable {
             ),
         ),
         yellow = LineSpec(
-            firstFwd = 360,
-            firstRev = 360,
+            firstFwd = 420,
+            firstRev = 420,
             lastFwd = 1260,
             lastRev = 1260,
             bands = listOf(
-                Band(360, 480, 15, BandKind.OFFPEAK),
+                Band(420, 480, 15, BandKind.OFFPEAK),
                 Band(480, 660, 10, BandKind.PEAK),
                 Band(660, 1020, 15, BandKind.OFFPEAK),
                 Band(1020, 1200, 10, BandKind.PEAK),
@@ -139,12 +139,12 @@ object Timetable {
             ),
         ),
         yellow = LineSpec(
-            firstFwd = 360,
-            firstRev = 360,
+            firstFwd = 420,
+            firstRev = 420,
             lastFwd = 1260,
             lastRev = 1260,
             bands = listOf(
-                Band(360, 480, 15, BandKind.OFFPEAK),
+                Band(420, 480, 15, BandKind.OFFPEAK),
                 Band(480, 660, 10, BandKind.PEAK),
                 Band(660, 1020, 15, BandKind.OFFPEAK),
                 Band(1020, 1200, 10, BandKind.PEAK),
@@ -192,12 +192,12 @@ object Timetable {
             ),
         ),
         yellow = LineSpec(
-            firstFwd = 360,
-            firstRev = 360,
+            firstFwd = 420,
+            firstRev = 420,
             lastFwd = 1260,
             lastRev = 1260,
             bands = listOf(
-                Band(360, 1440, 15, BandKind.OFFPEAK),
+                Band(420, 1440, 15, BandKind.OFFPEAK),
             ),
         ),
         loop = null,
