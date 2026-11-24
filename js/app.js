@@ -205,12 +205,14 @@ function boardingTags(r, shown) {
   const own = shown?.timetabled != null && trainDelayOf(r.id, shown.timetabled) != null;
   const tag =
     saved && shown?.timetabled != null
-      ? `<button class="delay ${d > 0 ? 'late' : d < 0 ? 'early' : 'none'}" data-act="train-delay" data-route="${r.id}" data-train="${shown.timetabled}" aria-label="${delayText(
+      ? `<button class="chip delay sl ${d > 0 ? 'late' : d < 0 ? 'early' : 'none'}" data-act="train-delay" data-route="${r.id}" data-train="${shown.timetabled}" aria-label="${delayText(
           d,
         )}${own ? ', this train' : ''}. Change">${ic(d > 0 ? 'more_time' : d < 0 ? 'history' : 'schedule')}${delayText(d)}${own ? '<em>this train</em>' : ''}</button>`
       : '';
   if (!p && !c && !tag) return '';
-  return `<div class="boarding rc-pad">${p ? `<span>${esc(p)}</span>` : ''}${c ? `<span>${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''}${tag}</div>`;
+  return `<div class="boarding rc-pad">${p ? `<span class="chip">${ic('directions_railway')}${esc(p)}</span>` : ''}${
+    c ? `<span class="chip">${ic('train')}${c[0].toUpperCase()}${c.slice(1)} coach</span>` : ''
+  }${tag}</div>`;
 }
 
 /* ----- trips with changes ----- */
@@ -454,13 +456,13 @@ function flipCard(r) {
             ${row(!pm, 'light_mode', `Until ${t}`, home, other)}
             ${row(pm, 'bedtime', `From ${t}`, other, home)}
           </div>
-          <button class="fl-swap" data-act="flip-home" data-route="${esc(r.id)}" aria-label="Swap morning and evening">${ic('swap_vert')}</button>
+          <button class="fl-swap icon-btn tonal sl" data-act="flip-home" data-route="${esc(r.id)}" aria-label="Swap morning and evening">${ic('swap_vert')}</button>
         </div>
         <div class="fl-time">
           <span class="grow">Reverse at</span>
-          <button class="dl-step" data-act="flip-time" data-route="${esc(r.id)}" data-d="${-FLIP_STEP}" aria-label="30 minutes earlier" ${f.at <= FLIP_MIN ? 'disabled' : ''}>${ic('remove')}</button>
+          <button class="dl-step icon-btn tonal sl" data-act="flip-time" data-route="${esc(r.id)}" data-d="${-FLIP_STEP}" aria-label="30 minutes earlier" ${f.at <= FLIP_MIN ? 'disabled' : ''}>${ic('remove')}</button>
           <output class="fl-at" aria-live="polite">${t}</output>
-          <button class="dl-step" data-act="flip-time" data-route="${esc(r.id)}" data-d="${FLIP_STEP}" aria-label="30 minutes later" ${f.at >= FLIP_MAX ? 'disabled' : ''}>${ic('add')}</button>
+          <button class="dl-step icon-btn tonal sl" data-act="flip-time" data-route="${esc(r.id)}" data-d="${FLIP_STEP}" aria-label="30 minutes later" ${f.at >= FLIP_MAX ? 'disabled' : ''}>${ic('add')}</button>
         </div>
         <span class="fl-foot">Tap ⇅ on the card to reverse it any time.</span>
       </div>`;
@@ -557,24 +559,17 @@ function routeModel(r, now) {
 
 /* ---------- views ---------- */
 
-function topbar(right, left = '') {
-  return `<div class="topbar">${left}<span class="spacer"></span>${right}</div>`;
+/** Top app bar: a compact title that appears on scroll, then trailing actions. */
+function appbar(title, right = '') {
+  return `<header class="appbar"><span class="compact-title">${esc(title)}</span>${right}</header>`;
 }
 
 function routesScreen(now, models) {
   const notices = activeNotices(feedState.feed, now).map(noticeCard).join('');
   const head = `
-    ${topbar(`
-      <span class="glass-group glass">
-        ${
-          prefs.upi
-            ? `<button data-act="top-up" aria-label="Top up metro card">${ic('credit_card')}</button>`
-            : `<a href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" aria-label="Top up metro card with Airtel">${ic('credit_card')}</a>`
-        }
-        <button data-act="add-route" aria-label="Add a route">${ic('add')}</button>
-        <button data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>
-      </span>`)}
+    ${appbar('Routes')}
     <div class="title"><h1>Routes</h1></div>
+    <button class="searchbar sl" data-act="look">${ic('search')}<span>Check any station</span></button>
     ${prefs.mock ? mockBanner() : ''}
     ${Date.now() - (prefs.upiPaidAt || 0) < 30 * MIN ? loadCardBanner() : ''}
     ${notices}`;
@@ -588,26 +583,25 @@ function routesScreen(now, models) {
 
 /** After a UPI top-up: the money is paid in, but only the Airtel screen writes it to the card. */
 function loadCardBanner() {
-  return `<div class="strip load"><span class="grow"><span class="t">Top-up pending</span><span class="s">Tap the card in Airtel to add the balance.</span></span><a class="strip-btn load-go" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" data-act="card-loaded">Open Airtel</a><button class="mini" data-act="card-loaded" aria-label="Dismiss">${ic('close')}</button></div>`;
+  return `<div class="banner load">${ic('credit_card')}<span class="grow"><span class="t">Top-up pending</span><span class="s">Tap the card in Airtel to add the balance.</span><span class="actions"><a class="btn filled sl" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" data-act="card-loaded">Open Airtel</a><button class="btn text sl" data-act="card-loaded">Dismiss</button></span></span></div>`;
 }
 
 function mockBanner() {
-  return `<div class="strip mock"><span class="grow"><span class="t">Mock time · <span data-at="0" data-fmt="now">${clock(clockNow())}</span></span><span class="s">Real time: <span data-at="${prefs.mock.offset}" data-fmt="now">${clock(Date.now())}</span></span></span><button class="strip-btn mock-off" data-act="mock" data-v="off">Turn off</button></div>`;
+  return `<div class="banner warn">${ic('schedule')}<span class="grow"><span class="t">Mock time · <span data-at="0" data-fmt="now">${clock(clockNow())}</span></span><span class="s">Real time: <span data-at="${prefs.mock.offset}" data-fmt="now">${clock(Date.now())}</span></span><span class="actions"><button class="btn warn sl" data-act="mock" data-v="off">Turn off</button></span></span></div>`;
 }
 
 function noticeCard(n) {
-  return `<div class="strip info"><span class="grow"><span class="t">${esc(n.title)}</span><span class="s">${esc(n.body ?? '')}</span></span></div>`;
+  return `<div class="banner">${ic('info')}<span class="grow"><span class="t">${esc(n.title)}</span><span class="s">${esc(n.body ?? '')}</span></span></div>`;
 }
 
 function emptyState() {
   return `
-    <div class="card hero" style="padding-top: 20px; gap: 16px">
-      <span style="font-size: 28px; line-height: 34px; font-weight: 700">No saved routes</span>
-      <span class="sub" style="font-size: 15px; line-height: 20px">Save a route to see its next trains. Tap ⇅ to reverse it for the trip back.</span>
-      <button class="cta" data-act="add-route">${ic('add')}Add a route</button>
-    </div>
-    <span class="section-title">Or search a station</span>
-    <button class="search-like card" style="background: var(--card); height: 52px" data-act="look">${ic('search')}Search stations</button>`;
+    <div class="empty-hero">
+      <span class="shape" aria-hidden="true">${ic('commute')}</span>
+      <h2>No saved routes</h2>
+      <p>Save a route to see its next trains. Tap ⇅ to reverse it for the trip back.</p>
+      <button class="btn filled m sl" data-act="add-route">${ic('add')}Add a route</button>
+    </div>`;
 }
 
 const reminderOn = (r, dep) => !!(prefs.reminder && prefs.reminder.routeId === r.id && prefs.reminder.dep === dep && !prefs.reminder.fired);
@@ -634,14 +628,14 @@ function routeCard(m, isPreview) {
             : `<span class="s"><i class="dot ${line}"></i>${esc(routeLabel(r))}</span>`
         }
       </span>
-      <span class="pillgroup">
-        <button data-act="swap" data-route="${r.id}" class="${!isPreview && flipOf(r) && !bothSaved(r) ? 'auto' : ''}" aria-label="${
+      <span class="btn-group">
+        <button data-act="swap" data-route="${r.id}" class="icon-btn tonal sl ${!isPreview && flipOf(r) && !bothSaved(r) ? 'auto' : ''}" aria-label="${
           !isPreview && flipOf(r) && !bothSaved(r) ? `Reverse (automatic at ${minutesLabel(flipOf(r).at)})` : 'Reverse'
         }">${ic('swap_vert')}</button>
         ${
           isPreview
-            ? `<button data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
-            : `<button data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_horiz')}</button>`
+            ? `<button class="icon-btn sl" data-act="close-preview" aria-label="Close quick look">${ic('close')}</button>`
+            : `<button class="icon-btn sl" data-act="route-menu" data-route="${r.id}" aria-label="Route options">${ic('more_vert')}</button>`
         }
       </span>
     </div>`;
@@ -654,8 +648,9 @@ function routeCard(m, isPreview) {
     : '';
 
   let body = '';
+  let warnHero = false;
   if (m.kind === 'plan-none') {
-    body = `<div class="rc-pad sub" style="font-size: 15px">${m.plan.mode === 'arrive' ? 'No trains arrive by then.' : 'No trains after then.'}</div>`;
+    body = `<div class="rc-pad sub body-medium">${m.plan.mode === 'arrive' ? 'No trains arrive by then.' : 'No trains after then.'}</div>`;
   } else if (m.kind === 'plan') {
     const want = picked.get(r.id);
     const found = m.deps.findIndex((x) => pickKey(x) === want);
@@ -692,7 +687,7 @@ function routeCard(m, isPreview) {
       <div class="tchips" data-show-on>${chips}</div>
       ${hasChange(d) ? timelineHtml(d) : ''}`;
   } else if (m.kind === 'none') {
-    body = `<div class="rc-pad sub" style="font-size: 15px">No direct trains between these stations.</div>`;
+    body = `<div class="rc-pad sub body-medium">No direct trains between these stations.</div>`;
   } else {
     const closed = m.kind === 'closed';
     const want = picked.get(r.id);
@@ -742,24 +737,25 @@ function routeCard(m, isPreview) {
           })()}
           ${hasChange(d) ? legsLine(d) : ''}
         </div>
-        <button class="bell ${on ? 'on' : ''}" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${
+        <button class="icon-btn m tonal sl" data-act="remind" data-route="${r.id}" data-dep="${d.dep}" aria-pressed="${on}" aria-label="${
           on ? 'Stop countdown' : 'Start countdown'
-        }">${ic('notifications', on ? 'fill' : '')}</button>
+        }">${ic('notifications')}</button>
       </div>
       ${boardingTags(r, d)}
       <div class="tchips">${chips}</div>
       ${hasChange(d) ? timelineHtml(d) : ''}
       ${m.late && m.last ? `<div class="note rc-pad">${ic('bedtime')}<span>The ${clock(m.last.dep)} is the last train tonight.</span></div>` : ''}`;
+    warnHero = tone === 'warn';
   }
 
   return `
-    <div class="card rc">
+    <div class="card rc ${warnHero ? 'late' : ''}">
       ${head}
       ${when}
       ${body}
       ${
         isPreview && !prefs.routes.some((x) => x.from === r.from && x.to === r.to)
-          ? `<div class="rc-pad"><button class="cta" data-act="save-preview">${ic('add')}Save this route</button></div>`
+          ? `<div class="rc-pad"><button class="btn filled m block sl" data-act="save-preview">${ic('add')}Save this route</button></div>`
           : ''
       }
     </div>`;
@@ -803,24 +799,84 @@ async function scanCardQr(file) {
 
 const upiLink = (id) => `upi://pay?pa=${id}&pn=Airtel%20NCMC%20Topup&mc=7412&cu=INR`;
 
-function openTopUp() {
-  openSheet(
-    `${sheetHead('Top up metro card', null, null)}
-    <div class="sheet-body" style="flex: none">
-      <div class="card list">
-        <a class="row tap plain" href="${upiLink(prefs.upi)}" data-act="upi-paid" style="color: inherit; text-decoration: none">${ic('qr_code_2')}<span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app · No fee · Add to card in Airtel</span></span></a>
-        <a class="row tap plain" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">${ic('credit_card')}<span class="grow"><span class="t">Airtel Thanks</span><span class="s">No fee · Adds the balance to the card</span></span></a>
+/** Metro card tab: ways to top up and the card's UPI ID. The chip balance needs NFC (Android app). */
+function cardScreen() {
+  return `
+    ${appbar('Metro card')}
+    <div class="title"><h1>Metro card</h1></div>
+    ${Date.now() - (prefs.upiPaidAt || 0) < 30 * MIN ? loadCardBanner() : ''}
+    <span class="section-title">Top up</span>
+    <div class="list">
+      ${
+        prefs.upi
+          ? `<a class="row tap sl" href="${upiLink(prefs.upi)}" data-act="upi-paid"><span class="lead">${ic('qr_code_2')}</span><span class="grow"><span class="t">Pay by UPI</span><span class="s">Any UPI app · No fee · Add to card in Airtel</span></span></a>`
+          : ''
+      }
+      <a class="row tap sl" href="${AIRTEL_TOPUP}" target="_blank" rel="noopener"><span class="lead">${ic('credit_card')}</span><span class="grow"><span class="t">Airtel Thanks</span><span class="s">No fee · Adds the balance to the card</span></span>${ic('open_in_new')}</a>
+    </div>
+
+    <span class="section-title">Card UPI ID</span>
+    <div class="card set">
+      <div class="field-row">
+        <label class="field"><span class="fl">UPI ID</span><input id="upi-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ncmc.1234…@mairtel" value="${esc(
+          prefs.upi,
+        )}"></label>
+        <label class="icon-btn m tonal sl" aria-label="Scan QR" style="cursor: pointer">${ic('qr_code_scanner')}<input id="upi-scan" type="file" accept="image/*" capture="environment" hidden></label>
       </div>
-    </div>`,
-  );
-  sheetRoot.querySelector('.sheet').classList.add('short');
+      <span class="s">From the "Scan to recharge" QR on the card. Adds Pay by UPI.</span>
+    </div>
+
+    <div class="banner">${ic('contactless')}<span class="grow"><span class="t">Card balance</span><span class="s">Read the chip balance in the Headway Android app.</span></span></div>`;
 }
 
 /* ----- map tab ----- */
 
-const MAP_ZOOMS = [1, 1.6, 2.4, 3.2];
-let mapZoom = 0;
-const lineColor = { blue: 'var(--blue)', green: 'var(--green)', yellow: 'var(--yellow)' };
+// Map height per zoom level. Level 0 shows the whole network; level 1 (the default) fills the screen
+// height, so the landscape map pans sideways on a phone.
+const MAP_RATIO = MAP_SIZE.w / MAP_SIZE.h;
+const MAP_ZOOMS = [`min(100dvh, 100vw / ${MAP_RATIO})`, '100dvh', '160dvh', '240dvh'];
+let mapZoom = 1;
+// The point of the map in the middle of the screen, as fractions; kept across re-renders.
+let mapView = null;
+// Middle of the network, as a fraction of the map, to open the map there.
+const MAP_MID = (() => {
+  const pts = Object.values(MAP_STATIONS);
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return [(Math.min(...xs) + Math.max(...xs)) / 2 / MAP_SIZE.w, (Math.min(...ys) + Math.max(...ys)) / 2 / MAP_SIZE.h];
+})();
+
+/** The map's box inside its scroller, in scroll coordinates (SVG elements have no offsetLeft). */
+function mapBox(wrap, svg) {
+  const a = wrap.getBoundingClientRect();
+  const b = svg.getBoundingClientRect();
+  return { x: b.left - a.left + wrap.scrollLeft, y: b.top - a.top + wrap.scrollTop, w: b.width, h: b.height };
+}
+
+// Remember where the map is panned to (scroll doesn't bubble, so listen in the capture phase).
+document.addEventListener(
+  'scroll',
+  (e) => {
+    const wrap = e.target;
+    if (wrap?.id !== 'map-wrap') return;
+    const svg = wrap.querySelector('svg');
+    if (!svg) return;
+    const m = mapBox(wrap, svg);
+    mapView = [(wrap.scrollLeft + wrap.clientWidth / 2 - m.x) / m.w, (wrap.scrollTop + wrap.clientHeight / 2 - m.y) / m.h];
+  },
+  { capture: true, passive: true },
+);
+
+/** Scrolls the map so the point at fraction (fx, fy) of the map sits in the middle of the screen. */
+function centerMap(fx, fy) {
+  const wrap = document.getElementById('map-wrap');
+  const svg = wrap?.querySelector('svg');
+  if (!svg) return;
+  const m = mapBox(wrap, svg);
+  wrap.scrollLeft = m.x + fx * m.w - wrap.clientWidth / 2;
+  wrap.scrollTop = m.y + fy * m.h - wrap.clientHeight / 2;
+}
+const lineColor = { blue: 'var(--hw-blue)', green: 'var(--hw-green)', yellow: 'var(--hw-yellow)' };
 
 function mapLabel(text, x, y, side) {
   const t = esc(text);
@@ -849,40 +905,37 @@ function mapScreen() {
       const st = STATIONS[id];
       const dot =
         st.lines.length > 1
-          ? `<circle cx="${x}" cy="${y}" r="13" fill="var(--card)" stroke="var(--text)" stroke-width="5"/>`
-          : `<circle cx="${x}" cy="${y}" r="8" fill="var(--card)" stroke="${lineColor[st.lines[0]]}" stroke-width="5"/>`;
+          ? `<circle cx="${x}" cy="${y}" r="13" fill="var(--md-sys-color-surface-container-lowest)" stroke="var(--md-sys-color-on-surface)" stroke-width="5"/>`
+          : `<circle cx="${x}" cy="${y}" r="8" fill="var(--md-sys-color-surface-container-lowest)" stroke="${lineColor[st.lines[0]]}" stroke-width="5"/>`;
       return `<g class="mst" data-act="station" data-id="${id}" role="button" aria-label="${esc(name(id))}"><circle cx="${x}" cy="${y}" r="28" fill="transparent"/>${dot}${mapLabel(name(id), x, y, side)}</g>`;
     })
     .join('');
+  const H = MAP_ZOOMS[mapZoom];
+  // Edge to edge behind the floating bar: a title pill on top, zoom toolbar above the bar.
   return `
-    ${topbar(`<button class="round" data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>`)}
-    <div class="title"><h1>Map</h1></div>
-    <div class="card map-card">
+    <div class="map-full">
       <div class="map-wrap" id="map-wrap">
-        <svg class="metro-map" viewBox="0 0 ${w} ${h}" style="width: ${MAP_ZOOMS[mapZoom] * 100}%" role="img" aria-label="Chennai Metro network map">${water}${lines}${stations}</svg>
+        <svg class="metro-map" viewBox="0 0 ${w} ${h}" style="height: ${H}; width: calc(${H} * ${MAP_RATIO})" role="img" aria-label="Chennai Metro network map">${water}${lines}${stations}</svg>
       </div>
-      <span class="map-zoom glass-group glass">
-        <button data-act="zoom" data-v="-1" aria-label="Zoom out" ${mapZoom === 0 ? 'disabled' : ''}>${ic('remove')}</button>
-        <button data-act="zoom" data-v="1" aria-label="Zoom in" ${mapZoom === MAP_ZOOMS.length - 1 ? 'disabled' : ''}>${ic('add')}</button>
+      <div class="map-top"><h1 class="map-title">Map</h1><span class="map-hint">Tap a station for departures</span></div>
+      <span class="toolbar" role="toolbar" aria-label="Zoom">
+        <button class="icon-btn sl" data-act="zoom" data-v="1" aria-label="Zoom in" ${mapZoom === MAP_ZOOMS.length - 1 ? 'disabled' : ''}>${ic('add')}</button>
+        <button class="icon-btn sl" data-act="zoom" data-v="-1" aria-label="Zoom out" ${mapZoom === 0 ? 'disabled' : ''}>${ic('remove')}</button>
       </span>
-    </div>
-    <p class="footnote">Tap a station for departures. Map data © OpenStreetMap contributors.</p>`;
+      <span class="map-credit">© OpenStreetMap contributors</span>
+    </div>`;
 }
 
 function zoomMap(step) {
   const wrap = document.getElementById('map-wrap');
-  const before = MAP_ZOOMS[mapZoom];
+  const svg = wrap?.querySelector('svg');
+  // Keep the point in the middle of the screen where it was.
+  const m = svg && mapBox(wrap, svg);
+  const fx = m ? (wrap.scrollLeft + wrap.clientWidth / 2 - m.x) / m.w : MAP_MID[0];
+  const fy = m ? (wrap.scrollTop + wrap.clientHeight / 2 - m.y) / m.h : MAP_MID[1];
   mapZoom = Math.max(0, Math.min(MAP_ZOOMS.length - 1, mapZoom + step));
-  const k = MAP_ZOOMS[mapZoom] / before;
-  // Keep the middle of the view where it was.
-  const cx = wrap ? wrap.scrollLeft + wrap.clientWidth / 2 : 0;
-  const cy = wrap ? wrap.scrollTop + wrap.clientHeight / 2 : 0;
+  mapView = [fx, fy];
   render({ force: true });
-  const next = document.getElementById('map-wrap');
-  if (next) {
-    next.scrollLeft = cx * k - next.clientWidth / 2;
-    next.scrollTop = cy * k - next.clientHeight / 2;
-  }
 }
 
 /** Next trains each way from a station, with the platform for each direction. */
@@ -908,15 +961,15 @@ function openStationSheet(id) {
       return `
         <div class="card set">
           <span class="dir"><i class="dot ${g.line}"></i>Towards ${esc(g.terminals.map(name).join(' or '))}${p ? ` · ${esc(p)}` : ''}</span>
-          ${deps.length ? `<div class="st-deps">${chips}</div>` : '<span class="sub" style="font-size: 15px">No more trains today</span>'}
+          ${deps.length ? `<div class="st-deps">${chips}</div>` : '<span class="sub body-medium">No more trains today</span>'}
         </div>`;
     })
     .join('');
   openSheet(
     `${sheetHead(name(id), STATIONS[id].lines.map(lineName).join(' · '), null)}
-    <div class="sheet-body" style="flex: none; display: flex; flex-direction: column; gap: 12px">
+    <div class="sheet-body">
       ${rows}
-      <button class="cta" data-act="route-from" data-id="${id}">${ic('add')}Save a route from here</button>
+      <button class="btn filled m block sl" data-act="route-from" data-id="${id}">${ic('add')}Save a route from here</button>
     </div>`,
   );
   sheetRoot.querySelector('.sheet').classList.add('short');
@@ -938,7 +991,7 @@ function linesScreen() {
     const current = open ? bandAt(spec.bands, nowMin) : null;
     return `
       <div class="card tt">
-        <div class="tt-head"><span class="bar ${line}"></span><span class="grow"><span class="t">${title}</span><span class="s">${esc(name(a))} to ${esc(name(b))}${extra}</span></span></div>
+        <div class="tt-head"><span class="badge ${line}" aria-hidden="true">${ic('train')}</span><span class="grow"><span class="t">${title}</span><span class="s">${esc(name(a))} to ${esc(name(b))}${extra}</span></span></div>
         <div class="tt-grid">
           <span class="h">From</span><span class="h r">First</span><span class="h r">Last</span>
           <span>${esc(name(a))}</span><span class="r">${hm12(spec.first.fwd)}</span><span class="r">${hm12(spec.last.fwd)}</span>
@@ -956,7 +1009,7 @@ function linesScreen() {
   };
   const reason = today.reason !== today.label && today.reason.toLowerCase() !== today.type ? `, ${esc(today.reason)}` : '';
   return `
-    ${topbar(`<button class="round" data-act="settings" aria-label="Settings">${ic('more_horiz')}</button>`)}
+    ${appbar('Lines')}
     <div class="title"><h1>Lines</h1><span class="sub">${esc(today.label)} timetable${reason}</span></div>
     ${card('blue', 'Blue Line', 'blue')}
     ${card('green', 'Green Line', 'green')}
@@ -976,81 +1029,86 @@ function settingsScreen() {
   const override = prefs.override?.date === key ? prefs.override.type : 'auto';
   const autoName = { weekday: 'Weekday', saturday: 'Saturday', sunday: 'Holiday' }[auto.type];
   const select = (act, label, value, options) => `
-    <span class="select-wrap"><select data-act="${act}" aria-label="${label}">${options
+    <label class="field"><span class="fl">${label}</span><select data-act="${act}" aria-label="${label}">${options
       .map(([v, l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`)
-      .join('')}</select>${ic('unfold_more')}</span>`;
-  const seg = (act, value, options) => `
-    <div class="seg" role="radiogroup">${options
-      .map(([v, l]) => `<button role="radio" aria-checked="${v === value}" data-act="${act}" data-v="${v}">${l}</button>`)
+      .join('')}</select>${ic('arrow_drop_down')}</label>`;
+  // Connected button group (M3 Expressive's replacement for segmented buttons).
+  const seg = (act, value, options, label) => `
+    <div class="connected" role="radiogroup" aria-label="${label}">${options
+      .map(
+        ([v, l, icon]) =>
+          `<button class="sl" role="radio" aria-checked="${v === value}" data-act="${act}" data-v="${v}">${v === value ? ic('check') : icon ? ic(icon) : ''}${l}</button>`,
+      )
       .join('')}</div>`;
   return `
-    ${topbar(`<button class="round tinted" data-act="back" aria-label="Done">${ic('check')}</button>`)}
+    ${appbar('Settings')}
     <div class="title"><h1>Settings</h1></div>
 
-    <div class="card list">
-      <div class="row">
-        <span class="grow"><span class="t">Today's timetable</span></span>
-        ${select('override', "Today's timetable", override, [
-          ['auto', `Auto, ${autoName}`],
-          ['weekday', 'Weekday'],
-          ['saturday', 'Saturday'],
-          ['sunday', 'Sunday or holiday'],
-        ])}
+    <span class="section-title">Timetable</span>
+    <div class="card set">
+      ${select('override', "Today's timetable", override, [
+        ['auto', `Auto, ${autoName}`],
+        ['weekday', 'Weekday'],
+        ['saturday', 'Saturday'],
+        ['sunday', 'Sunday or holiday'],
+      ])}
+      <span class="s">Auto follows the calendar and public holidays (today: ${esc(auto.reason)}). Choose Sunday or holiday when CMRL runs a Sunday timetable.</span>
+    </div>
+
+    <span class="section-title">Trips</span>
+    <div class="list">
+      <div class="row stack">
+        <span class="t">Walking speed</span>
+        ${seg('walk', prefs.walk, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']], 'Walking speed')}
+        <span class="s">Sets the time to change trains. Fast takes tighter connections.</span>
       </div>
-    </div>
-    <p class="footnote">Auto follows the calendar and public holidays (today: ${esc(auto.reason)}). Choose Sunday or holiday when CMRL runs a Sunday timetable.</p>
-
-    <div class="card set">
-      <span>Walking speed</span>
-      ${seg('walk', prefs.walk, [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']])}
-    </div>
-    <p class="footnote">Sets the time to change trains. Fast takes tighter connections.</p>
-
-    <div class="card set">
-      <span>Departures per route</span>
-      ${seg('count', String(prefs.count), COUNT_CHOICES.map((n) => [String(n), String(n)]))}
-      <div class="set-row">
+      <div class="row stack">
+        <span class="t">Departures per route</span>
+        ${seg('count', String(prefs.count), COUNT_CHOICES.map((n) => [String(n), String(n)]), 'Departures per route')}
+      </div>
+      <div class="row">
+        <span class="lead">${ic('bedtime')}</span>
         <span class="grow"><span class="t">Last-train warning</span><span class="s">Shown in the final hour of service</span></span>
         <button class="switch" role="switch" aria-checked="${prefs.lastWarn}" data-act="last-warn" aria-label="Last-train warning"><i></i></button>
       </div>
     </div>
 
+    <span class="section-title">Appearance</span>
     <div class="card set">
-      <span>Appearance</span>
-      ${seg('theme', prefs.theme, [['light', 'Light'], ['dark', 'Dark'], ['auto', 'System']])}
+      ${seg('theme', prefs.theme, [['light', 'Light', 'light_mode'], ['dark', 'Dark', 'dark_mode'], ['auto', 'System', 'brightness_auto']], 'Appearance')}
     </div>
 
-    <div class="card set">
-      <span>Mock time</span>
-      ${seg('mock', prefs.mock ? String(prefs.mock.at) : 'off', [['off', 'Off'], ...MOCK_CHOICES.map(([m, l]) => [String(m), l])])}
-    </div>
-    <p class="footnote">For testing. Runs the app from the chosen time.</p>
-
-    <div class="card list">
-      <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px">
-        <label for="upi-id" class="t">Metro card UPI ID</label>
-        <div class="upi-row">
-          <input class="text-input" id="upi-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ncmc.1234…@mairtel" value="${esc(prefs.upi)}">
-          <label class="cta small scan">Scan QR<input id="upi-scan" type="file" accept="image/*" capture="environment" hidden></label>
-        </div>
-      </div>
-    </div>
-    <p class="footnote">From the “Scan to recharge” QR on the card. Enables top-up by UPI.</p>
-
-    <div class="card list">
-      <a class="row tap" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener" style="color: inherit; text-decoration: none">
-        <span class="grow"><span class="t">Official timetable</span></span>
-        <span class="v light">${TIMETABLE_SOURCE.published}</span>
-        ${ic('chevron_right', 'chev')}
+    <span class="section-title">Data</span>
+    <div class="list">
+      <a class="row tap sl" href="${TIMETABLE_SOURCE.url}" target="_blank" rel="noopener">
+        <span class="lead">${ic('calendar_month')}</span>
+        <span class="grow"><span class="t">Official timetable</span><span class="s">${TIMETABLE_SOURCE.published}</span></span>
+        ${ic('open_in_new')}
       </a>
-      <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px; --inset: 16px">
-        <label for="feed-url" class="t">Advisory feed</label>
-        <input class="text-input" id="feed-url" type="url" inputmode="url" placeholder="https://…/advisories.json" value="${esc(prefs.feedUrl)}">
+      <div class="row stack">
+        <label class="field"><span class="fl">Advisory feed</span><input id="feed-url" type="url" inputmode="url" placeholder="https://…/advisories.json" value="${esc(prefs.feedUrl)}"></label>
       </div>
     </div>
     <p class="footnote">First and last trains are from CMRL’s timetable. Times at other stations are estimates (±2 min).${
       feedState.status === 'live' ? ' Advisory feed connected.' : ''
-    }</p>`;
+    }</p>
+
+    ${
+      showTesting()
+        ? `
+    <span class="section-title">Testing</span>
+    <div class="card set">
+      <span class="t">Mock time</span>
+      ${seg('mock', prefs.mock ? String(prefs.mock.at) : 'off', [['off', 'Off'], ...MOCK_CHOICES.map(([m, l]) => [String(m), l])], 'Mock time')}
+      <span class="s">For testing. Runs the app from the chosen time.</span>
+    </div>`
+        : ''
+    }`;
+}
+
+/** Testing tools (mock time) stay out of riders' way: shown on a dev host, with ?debug, or while mock time is on. */
+function showTesting() {
+  return ['localhost', '127.0.0.1'].includes(location.hostname) || new URLSearchParams(location.search).has('debug') || !!prefs.mock;
 }
 
 /* ---------- dock ---------- */
@@ -1058,30 +1116,38 @@ function settingsScreen() {
 let dockMode = '';
 
 function renderDock(screen) {
-  const mode = screen === 'settings' ? 'none' : 'tabs';
+  // Icon-only floating bar: four destinations plus the metro card, which opens a sheet (or Airtel).
+  const mode = 'tabs';
   if (mode !== dockMode) {
     dockMode = mode;
-    dock.innerHTML =
-      mode === 'none'
-        ? ''
-        : `
-      <nav class="tabs glass" aria-label="Sections">
-        <span class="tab-pill"></span>
-        <a class="tab" href="#routes" data-tab="routes">${ic('commute')}Routes</a>
-        <a class="tab" href="#lines" data-tab="lines">${ic('schedule')}Lines</a>
-        <a class="tab" href="#map" data-tab="map">${ic('map')}Map</a>
-      </nav>
-      <button class="orb glass" data-act="look" aria-label="Check any station">${ic('search')}</button>`;
+    const tab = (id, icon, label) =>
+      `<a class="tab" href="#${id}" data-tab="${id}" aria-label="${label}" title="${label}"><span class="ind">${ic(icon)}</span></a>`;
+    dock.innerHTML = `
+      <div class="dock-row">
+        <nav class="navbar" aria-label="Sections">
+          ${tab('routes', 'route', 'Routes')}${tab('lines', 'linear_scale', 'Lines')}${tab('map', 'map', 'Map')}${tab('card', 'contactless', 'Metro card')}${tab('settings', 'settings', 'Settings')}
+        </nav>
+        <button class="fab" data-act="add-route" aria-label="Add a route">${ic('add')}</button>
+      </div>`;
   }
-  if (mode === 'tabs') {
-    const i = { routes: 0, lines: 1, map: 2 }[nav.tab] ?? 0;
-    dock.querySelector('.tab-pill').style.transform = `translateX(${i * 100}%)`;
+  {
+    // The FAB belongs to Routes, and only once there is a route (the empty state has its own button).
+    dock.querySelector('.fab').hidden = nav.tab !== 'routes' || !prefs.routes.length;
     dock.querySelectorAll('.tab').forEach((t) => {
       if (t.dataset.tab === nav.tab) t.setAttribute('aria-current', 'page');
       else t.removeAttribute('aria-current');
     });
   }
 }
+
+/* Top app bar fills on scroll. */
+addEventListener(
+  'scroll',
+  () => {
+    document.body.classList.toggle('scrolled', scrollY > 40);
+  },
+  { passive: true },
+);
 
 /* ---------- navigation + render ---------- */
 
@@ -1106,6 +1172,7 @@ function build(now) {
   if (screen === 'lines') return linesScreen();
   if (screen === 'map') return mapScreen();
   if (screen === 'settings') return settingsScreen();
+  if (screen === 'card') return cardScreen();
   return '';
 }
 
@@ -1122,6 +1189,10 @@ function render({ force = false, animate = false } = {}) {
   lastKey = key;
   const focused = document.activeElement?.id;
   view.innerHTML = html;
+  document.body.classList.toggle('map-mode', screenNow() === 'map');
+  // The map opens on the middle of the network, and keeps its place through re-renders.
+  if (screenNow() !== 'map') mapView = null;
+  else centerMap(...(mapView ?? MAP_MID));
   // Planned cards may pick a chip off to the right (arrive by: the last one); bring it into view.
   for (const row of view.querySelectorAll('.tchips[data-show-on]')) {
     const on = row.querySelector('.tchip.on');
@@ -1372,13 +1443,9 @@ function sheetHead(title, sub, backAct) {
   return `
     <div class="grab"><i></i></div>
     <div class="sheet-head">
-      ${
-        backAct
-          ? `<button class="round" data-act="${backAct}" aria-label="Back">${ic('chevron_left')}</button>`
-          : `<button class="round" data-act="close-sheet" aria-label="Close">${ic('close')}</button>`
-      }
+      ${backAct ? `<button class="icon-btn sl" data-act="${backAct}" aria-label="Back">${ic('arrow_back')}</button>` : ''}
       <div class="mid"><span class="t">${esc(title)}</span>${sub ? `<span class="s">${esc(sub)}</span>` : ''}</div>
-      <span></span>
+      <button class="icon-btn surface sl" data-act="close-sheet" aria-label="Close">${ic('close')}</button>
     </div>`;
 }
 
@@ -1388,20 +1455,20 @@ function openStationStep(mode, initial = false) {
   pickMode = mode;
   const html = `
     ${sheetHead(mode === 'look' ? 'Search' : 'Choose starting station', null, null)}
-    <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
+    <label class="searchbar">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
     <div class="sheet-body">
       ${PICKER_GROUPS.map(
         (g) => `
-        <div class="group" style="display: flex; flex-direction: column; gap: 14px">
-          <span class="section-title">${LINES[g.line].name}</span>
-          <div class="card list">${g.stations
+        <div class="group">
+          <span class="dir-head"><i class="dot ${g.line}"></i><span class="t">${LINES[g.line].name}</span></span>
+          <div class="list">${g.stations
             .map((id) => {
               const st = STATIONS[id];
               const tags = st.lines
                 .filter((l) => l !== g.line)
                 .map((l) => `<span class="pill-tag ${l}">${LINES[l].name}</span>`)
                 .join('');
-              return `<button class="row tap plain" data-board="${id}" data-search="${esc(`${st.name} ${st.long ?? ''}`.toLowerCase())}">
+              return `<button class="row tap sl" data-board="${id}" data-search="${esc(`${st.name} ${st.long ?? ''}`.toLowerCase())}">
                 <span class="grow"><span class="t">${esc(st.name)}</span>${st.long ? `<span class="s">${esc(st.long)}</span>` : ''}</span>${tags}</button>`;
             })
             .join('')}</div>
@@ -1410,11 +1477,12 @@ function openStationStep(mode, initial = false) {
     </div>`;
   if (initial) openSheet(html, mountSearch);
   else replaceSheet(html, mountSearch);
+  fullSheet();
 }
 
 /** Filters a picker's rows (data-search) as you type, hiding groups and sections left empty. */
 function mountSearch(sheet) {
-  const input = sheet.querySelector('.search input');
+  const input = sheet.querySelector('.searchbar input');
   const body = sheet.querySelector('.sheet-body');
   if (!input || !body) return;
   input.addEventListener('input', () => {
@@ -1446,14 +1514,14 @@ function openDestinationStep(from) {
   const direct = groups
     .map(
       (g) => `
-        <div class="group" style="display: flex; flex-direction: column; gap: 8px">
+        <div class="group">
           <div class="dir-head"><span class="dot ${g.line}"></span><span class="t">Towards ${esc(g.terminals.map(name).join(' or '))}</span></div>
-          <div class="card list">${g.stations
+          <div class="list">${g.stations
             .map((x) => {
               const st = STATIONS[x.id];
-              return `<button class="row tap plain" data-dest="${x.id}" data-from="${from}" data-search="${searchOf(st)}"><span class="grow"><span class="t">${esc(
+              return `<button class="row tap sl" data-dest="${x.id}" data-from="${from}" data-search="${searchOf(st)}"><span class="grow"><span class="t">${esc(
                 st.name,
-              )}</span></span>${tagsOf(st, g.line)}<span class="v light">${x.minutes} min</span></button>`;
+              )}</span></span>${tagsOf(st, g.line)}<span class="v">${x.minutes} min</span></button>`;
             })
             .join('')}</div>
         </div>`,
@@ -1467,27 +1535,35 @@ function openDestinationStep(from) {
       .filter((id) => changes.has(id) && !shown.has(id) && shown.add(id))
       .map((id) => {
         const st = STATIONS[id];
-        return `<button class="row tap plain" data-dest="${id}" data-from="${from}" data-search="${searchOf(st)}"><span class="grow"><span class="t">${esc(
+        return `<button class="row tap sl" data-dest="${id}" data-from="${from}" data-search="${searchOf(st)}"><span class="grow"><span class="t">${esc(
           st.name,
         )}</span>${viaText(changes.get(id))}</span>${tagsOf(st, g.line)}</button>`;
       })
       .join('');
     return rows
-      ? `<div class="group" style="display: flex; flex-direction: column; gap: 8px"><div class="dir-head"><span class="dot ${g.line}"></span><span class="t">${LINES[g.line].name}</span></div><div class="card list">${rows}</div></div>`
+      ? `<div class="group"><div class="dir-head"><span class="dot ${g.line}"></span><span class="t">${LINES[g.line].name}</span></div><div class="list">${rows}</div></div>`
       : '';
   }).join('');
   const html = `
     ${sheetHead('Choose destination', `From ${name(from)}`, 'pick-back')}
-    <label class="search">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
+    <label class="searchbar">${ic('search')}<input type="search" placeholder="Search stations" autocomplete="off" enterkeyhint="search" aria-label="Search stations"></label>
     <div class="sheet-body">
-      <div class="pick-section" style="display: flex; flex-direction: column; gap: 20px">${direct}</div>
+      <div class="pick-section">${direct}</div>
       ${
         others
-          ? `<div class="pick-section" style="display: flex; flex-direction: column; gap: 14px"><span class="section-title">With a change</span>${others}</div>`
+          ? `<div class="pick-section"><span class="section-title">With a change</span>${others}</div>`
           : ''
       }
     </div>`;
   replaceSheet(html, mountSearch);
+  fullSheet();
+}
+
+/** Station search is a full-screen search view on phones: it covers the app chrome. */
+function fullSheet() {
+  const sheet = sheetRoot.querySelector('.sheet');
+  sheet?.classList.remove('short', 'fit');
+  sheet?.classList.add('full');
 }
 
 sheetRoot.addEventListener('click', (e) => {
@@ -1547,18 +1623,21 @@ function routeMenuHtml(r) {
     `${sheetHead(`${name(r.from)} → ${name(r.to)}`, null, null)}
     <div class="sheet-body" style="flex: 0 1 auto">
       <div class="card set">
-        <span>Where to board</span>
-        <div class="seg" role="radiogroup" aria-label="Where to board">${[['', 'Off'], ['front', 'Front'], ['middle', 'Middle'], ['rear', 'Rear']]
-          .map(([v, l]) => `<button role="radio" aria-checked="${(prefs.coaches?.[id] ?? '') === v}" data-act="coach" data-route="${id}" data-v="${v}">${l}</button>`)
+        <span class="t">Where to board</span>
+        <div class="connected" role="radiogroup" aria-label="Where to board">${[['', 'Off'], ['front', 'Front'], ['middle', 'Middle'], ['rear', 'Rear']]
+          .map(([v, l]) => {
+            const on = (prefs.coaches?.[id] ?? '') === v;
+            return `<button class="sl" role="radio" aria-checked="${on}" data-act="coach" data-route="${id}" data-v="${v}">${on ? ic('check') : ''}${l}</button>`;
+          })
           .join('')}</div>
-        <span class="sub" style="font-size: 13px; line-height: 18px">Board the coach nearest your exit. Shown on the card.</span>
+        <span class="s">Board the coach nearest your exit. Shown on the card.</span>
       </div>
       ${delayCard(r)}
       ${flipCard(r)}
-      <div class="card list">
-        <button class="row tap plain" data-act="plan-route" data-route="${id}">${ic('schedule')}<span class="grow"><span class="t">Plan a trip</span><span class="s">Depart at or arrive by a set time</span></span></button>
-        ${prefs.routes[0]?.id === id ? '' : `<button class="row tap plain" data-act="top-route" data-route="${id}">${ic('vertical_align_top')}<span class="grow"><span class="t">Move to top</span></span></button>`}
-        <button class="row tap plain" data-act="remove-route" data-route="${id}" style="color: #d70015">${ic('delete')}<span class="grow"><span class="t">Remove route</span></span></button>
+      <div class="list">
+        <button class="row tap sl" data-act="plan-route" data-route="${id}"><span class="lead">${ic('schedule')}</span><span class="grow"><span class="t">Plan a trip</span><span class="s">Depart at or arrive by a set time</span></span></button>
+        ${prefs.routes[0]?.id === id ? '' : `<button class="row tap sl" data-act="top-route" data-route="${id}"><span class="lead">${ic('vertical_align_top')}</span><span class="grow"><span class="t">Move to top</span></span></button>`}
+        <button class="row tap sl danger" data-act="remove-route" data-route="${id}"><span class="lead danger">${ic('delete')}</span><span class="grow"><span class="t">Remove route</span></span></button>
       </div>
     </div>`
   );
@@ -1599,12 +1678,12 @@ function delayCard(r) {
         </div>
         <div class="dl-read" aria-hidden="true"><span class="dl-num">${d ? Math.abs(d) : ''}</span><span class="dl-unit">${d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time'}</span></div>
         <div class="dl-ctrl">
-          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="-1" aria-label="1 min earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
+          <button class="dl-step icon-btn tonal sl" data-act="delay-step" data-route="${esc(r.id)}" data-d="-1" aria-label="1 min earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
           <div class="dl-slider">
             <div class="dl-track" aria-hidden="true"><b class="dl-fill"></b>${ticks}</div>
             <input type="range" data-act="delay" data-route="${esc(r.id)}" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="Delay in minutes" aria-valuetext="${delayText(d)}" />
           </div>
-          <button class="dl-step" data-act="delay-step" data-route="${esc(r.id)}" data-d="1" aria-label="1 min later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
+          <button class="dl-step icon-btn tonal sl" data-act="delay-step" data-route="${esc(r.id)}" data-d="1" aria-label="1 min later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
         </div>
         <div class="dl-scale"><span>Early</span><button data-act="delay-reset" data-route="${esc(r.id)}" ${d ? '' : 'disabled'}>On time</button><span>Late</span></div>
         <div class="dl-preview">${delayPreviewHtml(r, d)}</div>
@@ -1685,17 +1764,17 @@ function trainDelayHtml() {
       <div class="card dl" data-tone="${tone}" style="--v:${d}; --max:${DELAY_MAX}">
         <div class="dl-read"><span class="dl-num">${d ? Math.abs(d) : ''}</span><span class="dl-unit">${d ? `min ${d > 0 ? 'late' : 'early'}` : 'On time'}</span></div>
         <div class="dl-ctrl">
-          <button class="dl-step" data-act="tdelay-step" data-d="-1" aria-label="1 min earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
+          <button class="dl-step icon-btn tonal sl" data-act="tdelay-step" data-d="-1" aria-label="1 min earlier" ${d <= -DELAY_MAX ? 'disabled' : ''}>${ic('remove')}</button>
           <div class="dl-slider"><div class="dl-track" aria-hidden="true"><b class="dl-fill"></b></div>
             <input type="range" data-act="tdelay" min="${-DELAY_MAX}" max="${DELAY_MAX}" step="1" value="${d}" aria-label="Delay for this train, in minutes" aria-valuetext="${delayText(d)}" /></div>
-          <button class="dl-step" data-act="tdelay-step" data-d="1" aria-label="1 min later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
+          <button class="dl-step icon-btn tonal sl" data-act="tdelay-step" data-d="1" aria-label="1 min later" ${d >= DELAY_MAX ? 'disabled' : ''}>${ic('add')}</button>
         </div>
         <span class="fl-foot">${
           own != null
             ? `This train only. Route delay: ${delayText(delayOf(id)).toLowerCase()}.`
             : `Uses the route delay (${delayText(delayOf(id)).toLowerCase()}).`
         }</span>
-        ${own != null ? `<button class="cta small" data-act="tdelay-reset" style="align-self: flex-start">${ic('history')}Use route delay</button>` : ''}
+        ${own != null ? `<button class="btn tonal sl" data-act="tdelay-reset" style="align-self: flex-start">${ic('history')}Use route delay</button>` : ''}
       </div>
     </div>`;
 }
@@ -1740,8 +1819,8 @@ function whenAt(draft) {
 function whenHtml() {
   const d = whenDraft;
   const seg = (act, value, opts) =>
-    `<div class="seg" role="radiogroup">${opts
-      .map(([v, l]) => `<button role="radio" aria-checked="${value === v}" data-act="${act}" data-v="${v}">${l}</button>`)
+    `<div class="connected" role="radiogroup">${opts
+      .map(([v, l]) => `<button class="sl" role="radio" aria-checked="${value === v}" data-act="${act}" data-v="${v}">${value === v ? ic('check') : ''}${l}</button>`)
       .join('')}</div>`;
   return `${sheetHead('When?', preview ? `${name(preview.from)} → ${name(preview.to)}` : null, null)}
     <div class="sheet-body" style="flex: 0 1 auto">
@@ -1749,12 +1828,12 @@ function whenHtml() {
         ${seg('when-mode', d.mode, [['now', 'Now'], ['leave', 'Depart at'], ['arrive', 'Arrive by']])}
         ${
           d.mode === 'now'
-            ? '<span class="sub" style="font-size: 13px; line-height: 18px">Live departures from now.</span>'
+            ? '<span class="s">Live departures from now.</span>'
             : `${seg('when-day', String(d.day), [['0', 'Today'], ['1', 'Tomorrow']])}
         <label class="when-time"><span>${d.mode === 'arrive' ? 'Arrive by' : 'Depart at'}</span><input type="time" value="${d.hm}" step="300" data-act="when-time" aria-label="Time"></label>`
         }
       </div>
-      <button class="cta" data-act="when-done">${ic(d.mode === 'now' ? 'schedule' : 'search')}Show trains</button>
+      <button class="btn filled m block sl" data-act="when-done">${ic(d.mode === 'now' ? 'schedule' : 'search')}Show trains</button>
     </div>`;
 }
 
@@ -1817,7 +1896,7 @@ const ACTIONS = {
   look: () => openStationStep('look', true),
   'pick-back': () => openStationStep(pickMode),
   'close-sheet': () => history.back(),
-  settings: () => push('settings'),
+  settings: () => switchTab('settings'),
   back: () => back(),
   swap: (el) => {
     buzz();
@@ -1873,17 +1952,13 @@ const ACTIONS = {
   },
   'upi-paid': () => {
     save({ upiPaidAt: Date.now() });
-    history.back();
     render({ force: true });
   },
   'card-loaded': () => {
     save({ upiPaidAt: 0 });
     render({ force: true });
   },
-  'top-up': () => {
-    buzz();
-    openTopUp();
-  },
+  'top-up': () => switchTab('card'),
   station: (el) => {
     buzz();
     openStationSheet(el.dataset.id);
@@ -2093,7 +2168,7 @@ function applyTheme() {
   if (prefs.theme === 'auto') delete root.dataset.theme;
   else root.dataset.theme = prefs.theme;
   const dark = prefs.theme === 'dark' || (prefs.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0b0b0d' : '#f2f2f7');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0d0e12' : '#faf9fe');
 }
 
 /* ---------- boot ---------- */
