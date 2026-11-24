@@ -128,7 +128,8 @@ object Alerts {
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setStyle(tripStyle(context, legs, j, i, text))
+                .setColor(leg?.let { lineColor(it) } ?: BRAND)
                 .setWhen(at - Clock.offset)
                 .setShowWhen(true)
                 .setUsesChronometer(true)
@@ -144,6 +145,7 @@ object Alerts {
                     if (leg != null) addAction(Notification.Action.Builder(null, "Missed it", tripIntent(context, route, trip, ACTION_MISSED)).build())
                 }
                 .addAction(Notification.Action.Builder(null, "End trip", broadcast(context, ACTION_STOP, route, at)).build())
+                .liveUpdate()
                 .build()
             val nm = context.getSystemService(NotificationManager::class.java)
             nm.cancel(ID_SOON)
@@ -243,6 +245,7 @@ object Alerts {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("${Network.name(route.from)} → ${Network.name(route.to)}")
             .setContentText(text)
+            .setColor(BRAND)
             .setWhen(dep - Clock.offset)
             .setShowWhen(true)
             .setUsesChronometer(true)
@@ -261,9 +264,64 @@ object Alerts {
             )
         }
         builder.addAction(Notification.Action.Builder(null, "Stop", broadcast(context, ACTION_STOP, route, dep)).build())
+        builder.liveUpdate()
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.cancel(ID_SOON)
         nm.notify(ID_COUNTDOWN, builder.build())
+    }
+
+    /** Headway's M3 primary: tints the small icon, app name and actions. */
+    private const val BRAND = 0xFF0058BB.toInt()
+
+    /** A leg's line colour (the inter-corridor service runs on Green Line track). */
+    private fun lineColor(leg: com.flash.headway.engine.Leg): Int = when {
+        leg.trip.route == com.flash.headway.data.RouteId.INTER -> 0xFF006E28.toInt()
+        leg.trip.line == com.flash.headway.data.Line.BLUE -> 0xFF005BC0.toInt()
+        leg.trip.line == com.flash.headway.data.Line.GREEN -> 0xFF006E28.toInt()
+        else -> 0xFFF2C230.toInt()
+    }
+
+    /**
+     * Android 16+: asks for a Live Update, so the countdown is promoted to the top of the shade,
+     * the lock screen and a status-bar chip counting down to the train.
+     */
+    private fun Notification.Builder.liveUpdate(): Notification.Builder = apply {
+        if (Build.VERSION.SDK_INT >= 36) {
+            addExtras(android.os.Bundle().apply { putBoolean(Notification.EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+        }
+    }
+
+    /**
+     * The trip as a progress bar (Android 16+): one segment per train in its line's colour, grey
+     * for waits and walks between, a point at each change, the tracker where the rider is now.
+     * Older Android shows the step as big text.
+     */
+    private fun tripStyle(context: Context, legs: List<com.flash.headway.engine.Leg>, j: RouteDeparture, current: Int, text: String): Notification.Style {
+        if (Build.VERSION.SDK_INT < 36 || legs.isEmpty()) return Notification.BigTextStyle().bigText(text)
+        val start = legs.first().dep
+        fun min(ms: Long) = ((ms - start) / 60_000L).toInt().coerceAtLeast(0)
+        val gap = 0xFFC4C6D0.toInt()
+        val segments = ArrayList<Notification.ProgressStyle.Segment>()
+        val points = ArrayList<Notification.ProgressStyle.Point>()
+        var at = 0
+        legs.forEachIndexed { k, l ->
+            val from = min(l.dep)
+            if (from > at) segments.add(Notification.ProgressStyle.Segment(from - at).setColor(gap))
+            if (k > 0) points.add(Notification.ProgressStyle.Point(maxOf(from, 1)).setColor(lineColor(l)))
+            val to = maxOf(min(l.arr), from + 1)
+            segments.add(Notification.ProgressStyle.Segment(to - from).setColor(lineColor(l)))
+            at = to
+        }
+        val progress = when (val l = legs.getOrNull(current)) {
+            null -> at
+            else -> min(l.dep)
+        }
+        return Notification.ProgressStyle()
+            .setStyledByProgress(true)
+            .setProgressSegments(segments)
+            .setProgressPoints(points)
+            .setProgress(progress.coerceIn(0, at))
+            .setProgressTrackerIcon(android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_notification))
     }
 
     private fun broadcast(context: Context, action: String, route: SavedRoute?, dep: Long, rule: DelayRule = DelayRule(), trip: ActiveTrip? = null): PendingIntent {
