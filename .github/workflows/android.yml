@@ -56,13 +56,13 @@ jobs:
         continue-on-error: true
 
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk "headway-1.0.${GITHUB_RUN_NUMBER}.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "headway-2.0.${GITHUB_RUN_NUMBER}.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: headway-1.0.${{ github.run_number }}
-          path: android/headway-1.0.${{ github.run_number }}.apk
+          name: headway-2.0.${{ github.run_number }}
+          path: android/headway-2.0.${{ github.run_number }}.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -74,9 +74,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          version="1.0.${GITHUB_RUN_NUMBER}"
+          version="2.0.${GITHUB_RUN_NUMBER}"
           tag="v${version}"
-          prev=$(git tag --list 'v1.0.*' --sort=-v:refname | head -n1)
+          prev=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
           {
             echo "Built from \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA::7}."
             echo
