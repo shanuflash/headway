@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flash.headway.app.Alerts
+import com.flash.headway.app.CrashLog
 import com.flash.headway.app.FeedWorker
 import com.flash.headway.app.HeadwayViewModel
 import com.flash.headway.app.ThemeMode
@@ -31,6 +32,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A crash is kept and shown on the next launch, so it can be sent without ADB.
+        CrashLog.install(this)
+        if (CrashLog.showIfCrashed(this) { start(null) }) return
+        start(savedInstanceState)
+    }
+
+    private fun start(savedInstanceState: Bundle?) {
         Alerts.createChannels(this)
         FeedWorker.schedule(this)
         // Only on a fresh start: after a rotation or theme change the route was already shown.

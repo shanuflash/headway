@@ -37,8 +37,11 @@ android {
     buildTypes {
         // What CI ships: not debuggable and shrunk by R8, so Compose runs at full speed.
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // R8 is off for now: 2.0.2095, the first release built with AGP 9.5 and Compose 1.12
+            // shrunk, crashed on launch while the same code unshrunk ran. Back on once the crash
+            // log (CrashLog) shows what R8 removed.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
         }
