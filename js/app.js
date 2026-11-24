@@ -1125,6 +1125,7 @@ function renderDock(screen) {
     dock.innerHTML = `
       <div class="dock-row">
         <nav class="navbar" aria-label="Sections">
+          <span class="nav-ind" aria-hidden="true"></span>
           ${tab('routes', 'route', 'Routes')}${tab('lines', 'linear_scale', 'Lines')}${tab('map', 'map', 'Map')}${tab('card', 'contactless', 'Metro card')}${tab('settings', 'settings', 'Settings')}
         </nav>
         <button class="fab" data-act="add-route" aria-label="Add a route">${ic('add')}</button>
@@ -1133,11 +1134,37 @@ function renderDock(screen) {
   {
     // The FAB belongs to Routes, and only once there is a route (the empty state has its own button).
     dock.querySelector('.fab').hidden = nav.tab !== 'routes' || !prefs.routes.length;
-    dock.querySelectorAll('.tab').forEach((t) => {
-      if (t.dataset.tab === nav.tab) t.setAttribute('aria-current', 'page');
-      else t.removeAttribute('aria-current');
+    const tabs = [...dock.querySelectorAll('.tab')];
+    tabs.forEach((t) => {
+      if (t.dataset.tab === nav.tab) {
+        if (!t.hasAttribute('aria-current')) {
+          // Pop the icon as it's picked (restart the animation).
+          t.classList.remove('pop');
+          void t.offsetWidth;
+          t.classList.add('pop');
+        }
+        t.setAttribute('aria-current', 'page');
+      } else t.removeAttribute('aria-current');
     });
+    moveNavIndicator(tabs.findIndex((t) => t.dataset.tab === nav.tab), tabs.length);
   }
+}
+
+/**
+ * One active indicator travels between destinations on the expressive spatial spring. Its leading
+ * edge rides the fast, bouncier spring and its trailing edge the default one, so it stretches as it
+ * goes. Edges are in percent of the bar: the tabs share it equally, so it stays put as the bar
+ * grows or shrinks around the FAB.
+ */
+let navIndex = -1;
+function moveNavIndicator(i, n) {
+  const ind = dock.querySelector('.nav-ind');
+  if (!ind || i < 0) return;
+  const right = i >= navIndex;
+  ind.dataset.dir = navIndex < 0 ? 'none' : right ? 'right' : 'left';
+  navIndex = i;
+  ind.style.setProperty('--i', i);
+  ind.style.setProperty('--n', n);
 }
 
 /* Top app bar fills on scroll. */

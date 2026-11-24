@@ -1,5 +1,8 @@
 package com.flash.headway.ui
 
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -596,59 +599,113 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
 }
 
 /**
- * The floating navigation bar (M3 Expressive floating toolbar, 64dp, 16dp from the edges):
- * icon-only destinations with a filled circle on the current one, and the add-route FAB riding
- * beside it on Routes.
+ * The floating navigation bar (M3 Expressive floating toolbar: a 64dp pill, 16dp from the edges)
+ * with the add-route FAB riding beside it on Routes.
+ *
+ * Expressive motion: one active indicator travels between destinations on the spatial spring, its
+ * leading edge on the fast (bouncier) spring and its trailing edge on the default one, so it
+ * stretches as it moves and settles with a little overshoot. The FAB grows and shrinks its own
+ * width, so the bar eases into the space instead of jumping.
  */
 @Composable
 private fun Dock(tab: Tab, onTab: (Tab) -> Unit, showFab: Boolean, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     val hw = LocalHw.current
-    val spatial = androidx.compose.material3.MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    val motion = androidx.compose.material3.MaterialTheme.motionScheme
+    val density = androidx.compose.ui.platform.LocalDensity.current
     Row(
         modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        androidx.compose.material3.HorizontalFloatingToolbar(
-            expanded = true,
-            modifier = Modifier.weight(1f, fill = false).widthIn(max = 480.dp),
-            colors = androidx.compose.material3.FloatingToolbarDefaults.standardFloatingToolbarColors(toolbarContainerColor = hw.card),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+        // Where each destination sits in the bar, so the indicator can travel to it.
+        val itemX = remember { androidx.compose.runtime.mutableStateMapOf<Tab, Float>() }
+        Box(
+            Modifier
+                .weight(1f)
+                .height(androidx.compose.material3.FloatingToolbarDefaults.ContainerSize)
+                .shadow(6.dp, androidx.compose.foundation.shape.CircleShape)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(hw.card)
+                .padding(horizontal = 6.dp),
         ) {
-            Tab.entries.forEach { t -> NavItem(t, t == tab) { onTab(t) } }
+            val x = itemX[tab]
+            if (x != null) {
+                // Direction of travel, fixed when the tab changes (not re-read every frame).
+                val last = remember { arrayOf(tab) }
+                val right = remember(tab) { (tab.ordinal >= last[0].ordinal).also { last[0] = tab } }
+                val lead = motion.fastSpatialSpec<androidx.compose.ui.unit.Dp>()
+                val trail = motion.defaultSpatialSpec<androidx.compose.ui.unit.Dp>()
+                val target = with(density) { x.toDp() }
+                val start by androidx.compose.animation.core.animateDpAsState(target, if (right) trail else lead, label = "indStart")
+                val end by androidx.compose.animation.core.animateDpAsState(target + NavItemSize, if (right) lead else trail, label = "indEnd")
+                Box(
+                    Modifier
+                        .align(Alignment.CenterStart)
+                        .offset(x = start)
+                        .size(width = (end - start).coerceAtLeast(NavItemSize * 0.6f), height = NavItemSize)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(hw.selected),
+                )
+            }
+            Row(
+                Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tab.entries.forEach { t ->
+                    NavItem(t, t == tab, Modifier.onPlaced { itemX[t] = it.positionInParent().x }) { onTab(t) }
+                }
+            }
         }
         androidx.compose.animation.AnimatedVisibility(
             visible = showFab,
-            enter = androidx.compose.animation.scaleIn(spatial) + fadeIn(),
-            exit = androidx.compose.animation.scaleOut(spatial) + fadeOut(),
+            enter = androidx.compose.animation.expandHorizontally(motion.defaultSpatialSpec(), expandFrom = Alignment.Start) +
+                androidx.compose.animation.scaleIn(motion.fastSpatialSpec()) + fadeIn(motion.defaultEffectsSpec()),
+            exit = androidx.compose.animation.shrinkHorizontally(motion.defaultSpatialSpec(), shrinkTowards = Alignment.Start) +
+                androidx.compose.animation.scaleOut(motion.fastSpatialSpec()) + fadeOut(motion.fastEffectsSpec()),
         ) {
-            androidx.compose.material3.FloatingActionButton(
-                onClick = onAdd,
-                modifier = Modifier.size(androidx.compose.material3.FloatingToolbarDefaults.ContainerSize),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                containerColor = hw.tint,
-                contentColor = hw.onTint,
-            ) {
-                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Add, contentDescription = "Add route", modifier = Modifier.size(28.dp))
+            // The gap travels with the FAB, so nothing is left behind when it goes.
+            Row {
+                Spacer(Modifier.width(12.dp))
+                androidx.compose.material3.FloatingActionButton(
+                    onClick = onAdd,
+                    modifier = Modifier.size(androidx.compose.material3.FloatingToolbarDefaults.ContainerSize),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    containerColor = hw.tint,
+                    contentColor = hw.onTint,
+                ) {
+                    androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Add, contentDescription = "Add route", modifier = Modifier.size(28.dp))
+                }
             }
         }
     }
 }
 
+private val NavItemSize = 52.dp
+
+/** One destination: icon only (named for TalkBack), filled when current, with a pop as it's picked. */
 @Composable
-private fun NavItem(t: Tab, selected: Boolean, onClick: () -> Unit) {
+private fun NavItem(t: Tab, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val hw = LocalHw.current
-    val spec = androidx.compose.material3.MaterialTheme.motionScheme.defaultEffectsSpec<androidx.compose.ui.graphics.Color>()
-    val bg by androidx.compose.animation.animateColorAsState(if (selected) hw.selected else hw.card, spec, label = "navBg")
-    val fg by androidx.compose.animation.animateColorAsState(if (selected) hw.onSelected else hw.sub, spec, label = "navFg")
+    val fg by androidx.compose.animation.animateColorAsState(
+        if (selected) hw.onSelected else hw.sub,
+        androidx.compose.material3.MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "navFg",
+    )
+    // Squash, then spring back past full size: the expressive "pop" on selection.
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(selected) {
+        if (selected) {
+            pop.snapTo(0.82f)
+            pop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 700f))
+        }
+    }
     Box(
-        Modifier
-            .size(52.dp)
+        modifier
+            .size(NavItemSize)
             .clip(androidx.compose.foundation.shape.CircleShape)
-            .background(bg)
             .selectable(
                 selected = selected,
                 onClick = onClick,
@@ -659,7 +716,15 @@ private fun NavItem(t: Tab, selected: Boolean, onClick: () -> Unit) {
             .semantics { contentDescription = t.label },
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.material3.Icon(if (selected) t.on else t.off, contentDescription = null, tint = fg)
+        androidx.compose.material3.Icon(
+            if (selected) t.on else t.off,
+            contentDescription = null,
+            tint = fg,
+            modifier = Modifier.graphicsLayer {
+                scaleX = pop.value
+                scaleY = pop.value
+            },
+        )
     }
 }
 

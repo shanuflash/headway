@@ -726,7 +726,7 @@ button.searchbar:active { border-radius: var(--md-sys-shape-corner-large); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: 0;
   flex: 1;
   min-width: 0;
 }
@@ -757,6 +757,28 @@ button.searchbar:active { border-radius: var(--md-sys-shape-corner-large); }
 .tab[aria-current='page']:active .ind { background: var(--md-sys-color-secondary-container); }
 .tab:focus-visible { outline: none; }
 .tab:focus-visible .ind { outline: 3px solid var(--md-sys-color-secondary); outline-offset: -3px; }
+
+/* The travelling indicator: a 52dp pill centred in its tab's slot (the bar's inner width over n). */
+.navbar { position: relative; }
+.nav-ind {
+  --slot: calc((100% - 16px) / var(--n, 5));
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: calc(8px + var(--slot) * var(--i, 0) + (var(--slot) - 52px) / 2);
+  right: calc(8px + var(--slot) * (var(--n, 5) - 1 - var(--i, 0)) + (var(--slot) - 52px) / 2);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-secondary-container);
+  pointer-events: none;
+}
+/* Moving right, the right edge leads (fast spring) and the left trails (default); and vice versa. */
+.nav-ind[data-dir='right'] { transition: right var(--spatial-fast), left var(--spatial); }
+.nav-ind[data-dir='left'] { transition: left var(--spatial-fast), right var(--spatial); }
+.tab { position: relative; z-index: 1; }
+.tab[aria-current='page'] .ind { background: transparent; }
+/* Squash, then spring back past full size: the pop on selection. */
+.tab.pop .ms { animation: nav-pop var(--md-spring-spatial-fast-dur) var(--md-spring-spatial-fast); }
+@keyframes nav-pop { from { transform: scale(0.82); } }
 
 /* FAB: 64dp to match the bar, primary, squircle corners; morphs on press. */
 .fab {
