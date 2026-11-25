@@ -299,7 +299,9 @@ fun BigCountdown(msLeft: Long, color: Color? = null) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         RollingText(number, HwType.big, if (number == "Now") hw.tint else color ?: hw.text, up)
-        if (unit.isNotEmpty()) Text(unit, style = HwType.bigUnit, color = hw.sub, modifier = Modifier.padding(bottom = 8.dp))
+        // The unit follows the number's colour when one is given (the trip hero sits on its own
+        // light container, where the theme's grey vanishes), a little softer than the digits.
+        if (unit.isNotEmpty()) Text(unit, style = HwType.bigUnit, color = color?.copy(alpha = 0.7f) ?: hw.sub, modifier = Modifier.padding(bottom = 8.dp))
     }
 }
 
