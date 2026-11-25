@@ -18,7 +18,8 @@ android {
         // 2.0 (the Material 3 Expressive redesign) numbers builds from 2000 + the CI run, above every
         // 1.x build and the 2.0 test builds (1.0.200). The name's last part is the versionCode, which is
         // all the in-app updater compares.
-        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(2000) ?: 1
+        // CI picks VERSION_CODE so it stays above every published release (see android.yml).
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()?.plus(2000) ?: 1
         versionName = "2.0.$versionCode"
     }
 

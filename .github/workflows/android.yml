@@ -51,6 +51,16 @@ jobs:
         with:
           gradle-version: '9.9.2'
 
+      # Above every published release: 2000 + the run, or one past the highest v2.0.N tag if
+      # builds made outside CI already went higher. The updater compares this number.
+      - name: Pick the version
+        run: |
+          last=$(git tag --list 'v2.0.*' | sed 's/^v2\.0\.//' | grep -E '^[0-9]+$' | sort -n | tail -n1)
+          code=$((GITHUB_RUN_NUMBER + 2000))
+          if [ -n "$last" ] && [ "$code" -le "$last" ]; then code=$((last + 1)); fi
+          echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "Version 2.0.$code"
+
       - name: Unit tests and release build
         run: gradle --no-daemon testDebugUnitTest assembleRelease --stacktrace
 
@@ -59,7 +69,7 @@ jobs:
         continue-on-error: true
 
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk "headway-2.0.$((GITHUB_RUN_NUMBER + 2000)).apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "headway-2.0.${VERSION_CODE}.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -77,8 +87,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # The versionCode: 2000 + the run (see build.gradle.kts); the updater reads it from the tag.
-          version="2.0.$((GITHUB_RUN_NUMBER + 2000))"
+          # The versionCode picked above; the updater reads it from the tag.
+          version="2.0.${VERSION_CODE}"
           tag="v${version}"
           prev=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
           {
